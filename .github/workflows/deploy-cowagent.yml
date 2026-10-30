@@ -26,6 +26,7 @@ jobs:
         run: |
           for f in deploy/*.sh; do bash -n "$f"; done
           python3 -m py_compile deploy/brand/apply.py deploy/agent-tools/*.py deploy/agent-tools/*/*.py
+          node --check deploy/brand/vault.js
           for f in .github/workflows/*.yml; do python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$f"; done
       - name: Compose file
         run: |

@@ -93,7 +93,7 @@ patch("agent/registry.py", 'name=builtin_name or "CowAgent",', f'name=builtin_na
 # the entry is merged into it (and restored if a saved menu lacks it).
 patch("static/js/core/menu.js",
       "    star: 'fa-star',",
-      "    whatsapp: 'fa-comments', star: 'fa-star',")
+      "    whatsapp: 'fa-comments', vault: 'fa-gem', star: 'fa-star',")
 patch("static/js/core/menu.js",
       "function menuMerge(saved) {",
       """function menuMerge(saved) {
@@ -101,8 +101,11 @@ patch("static/js/core/menu.js",
 }
 
 function _lrmEnsureWhatsApp(doc) {
-    // LRMagent pages: WhatsApp after Channels, Usage after Logs.
+    // LRMagent pages: Vault in place of Memory and Knowledge, WhatsApp after Channels,
+    // Usage after Logs. Pages it replaces are hidden once, when it is first added, so
+    // showing them again from the menu editor sticks.
     const pages = [
+        { after: 'knowledge', hide: ['memory', 'knowledge'], item: { id: 'lrm-vault', type: 'url', url: '/assets/brand/vault.html', open: 'frame', title: 'Vault', icon: 'vault', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
         { after: 'logs', item: { id: 'lrm-usage', type: 'url', url: '/assets/brand/usage.html', open: 'frame', title: 'Usage', icon: 'chart', hidden: false } },
     ];
@@ -111,6 +114,7 @@ function _lrmEnsureWhatsApp(doc) {
         const group = doc.groups.find(g => g.items.some(i => i.view === page.after)) || doc.groups[doc.groups.length - 1];
         const at = group.items.findIndex(i => i.view === page.after);
         group.items.splice(at + 1, 0, Object.assign({}, page.item));
+        for (const g of doc.groups) for (const i of g.items) if ((page.hide || []).includes(i.view)) i.hidden = true;
     }
     return doc;
 }
@@ -130,7 +134,8 @@ patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conven
 
 `knowledge/` doubles as an Obsidian vault, so keep every page valid Obsidian Markdown:
 - Start each page with YAML properties: `tags`, `aliases`, `created`, `updated`, and `source` for ingested material.
-- Link pages with relative Markdown links, `[Page title](../category/page.md)`, not `[[wikilinks]]`: the console's knowledge graph only follows Markdown links, and Obsidian reads both.
+- Link pages with Obsidian wikilinks, `[[page-slug]]` or `[[page-slug|Page title]]` (`[[category/page-slug]]` when two pages share a name); `[[page#Heading]]` links a section. The console's Vault page and Obsidian both follow them, show backlinks and draw the graph from them. Existing relative Markdown links still work; don't rewrite them just to convert.
+- Tag with `#tags` or the `tags` property; use callouts (`> [!note]`) for key takeaways and `- [ ]` for open tasks.
 - End a page with a `## Related` list of links; keep `index.md` as the map of content.
 - For callouts, embeds and properties load the `obsidian-markdown` skill; for visual maps `json-canvas`; for table views `obsidian-bases`.
 
@@ -140,6 +145,8 @@ patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conven
 - Never read the whole vault, or long pages end to end, to answer a question.
 
 ## Core Operations""", root=app)
+# ---- English only: the regenerated knowledge/index.md is headed in Chinese upstream.
+patch("agent/knowledge/service.py", 'lines = ["# 知识库目录", ""]', 'lines = ["# Knowledge Index", ""]', root=app)
 # ---- switch_model tool (deploy/agent-tools/model_switch, copied in by the Dockerfile):
 # register it so every agent can change model when asked in chat.
 patch("agent/tools/__init__.py",
@@ -186,9 +193,11 @@ patch("agent/protocol/agent_stream.py",
       "            from agent.lrm_usage import record as _lrm_record_usage\n"
       "            _lrm_record_usage(self, snapshot)\n", root=app)
 patch("web_channel.py", "\nURLS = (\n",
-      "\nfrom channel.web.api.lrm_usage import LrmUsageHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "\nfrom channel.web.api.lrm_usage import LrmUsageHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_vault import LrmVaultHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
-      "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n")
+      "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
+      "    '/api/lrm/vault', 'LrmVaultHandler',\n")
 # ---- Logs: upstream masks settings named *key*/*secret* only, so the console
 # password and the internal API token were written to run.log in clear text.
 patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',

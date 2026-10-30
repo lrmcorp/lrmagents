@@ -85,7 +85,17 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
 
 ## Second brain (Obsidian vault, low-token recall)
 
-- The agent's knowledge base (`knowledge/`) is kept as an **Obsidian-compatible vault**: YAML properties on every page, relative Markdown links (which the console's knowledge graph also follows), and a `## Related` section, with `index.md` as the map of content.
+- The agent's knowledge base (`knowledge/`) is kept as an **Obsidian-compatible vault**: YAML properties on every page, `[[wikilinks]]` between pages, and a `## Related` section, with `index.md` as the map of content. Older relative Markdown links keep working.
+- **Vault page** (console sidebar → Vault, in place of Memory and Knowledge, which you can show again with the menu editor): each agent's `MEMORY.md`, daily notes (`memory/`) and knowledge wiki in one Obsidian-style workspace.
+  - **Explorer:** file tree with new note/folder, rename, move (drag onto a folder) and delete.
+  - **Notes:** tabs; reading and editing views (Ctrl/⌘ E); `[[` link suggestions; properties, callouts, embeds (`![[note]]`, images), `#tags`, highlights and clickable tasks.
+  - **Links:** backlinks, outgoing links and outline in the right pane; clicking a link to a note that doesn't exist creates it.
+  - **Graph view:** whole vault or one note's neighbourhood, coloured by folder.
+  - **Finding notes:** full-text search (`tag:#name` too), quick switcher (Ctrl/⌘ O), command palette (Ctrl/⌘ P) and today's daily note.
+  - **Saving:** edits save automatically. If the agent changed the same note meanwhile, you choose which version to keep. Notes the agent changes while open refresh by themselves.
+  - **Renames and deletes:** renaming or moving a note rewrites the links that point to it. Deleted files go to `.trash/` in the agent's workspace, not away. `knowledge/index.md` and `log.md` are the agent's own and read-only here.
+  - **Search index:** saves feed the same memory search the agent uses.
+  - **Per agent:** pick the agent at the top. One that reads the shared knowledge base shows it as SHARED.
 - Skills vendored from [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) (MIT, `deploy/skills/`):
   - `obsidian-markdown`: callouts, embeds, properties.
   - `json-canvas`: visual maps.
