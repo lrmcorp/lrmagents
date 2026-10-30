@@ -44,6 +44,32 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
 
 `agent.lnint.xyz` stops being served after the switch. Delete the variable to go back to it.
 
+## WhatsApp
+
+`whatsapp-bridge/` connects a WhatsApp Business number through Meta's official **WhatsApp Cloud API**:
+- Meta delivers each message to `https://agent.lnint.xyz/whatsapp/webhook`, and the bridge checks Meta's signature on it.
+- The bridge passes the text to CowAgent's OpenAI-compatible API. Each phone number gets its own conversation, so the agent remembers context.
+- The reply goes back through the Cloud API, split into parts of up to 4,000 characters, with read receipts and a typing indicator while the agent works.
+- **Only allowlisted numbers get answered.** The agent can run commands, so strangers are ignored. Non-text messages get a short explanation.
+
+The bridge reaches CowAgent with a random API token generated once on the VPS (`~/cowagent/.env.api-token`). CowAgent's API stays switched off until WhatsApp is configured.
+
+### Connect your number
+
+1. At [developers.facebook.com](https://developers.facebook.com), create an app of type **Business** and add the **WhatsApp** product. Add your business phone number in **WhatsApp → API Setup**, or test with Meta's test number first.
+2. Create a permanent access token. In Business Settings → **System users**, add a system user, give it the app and your WhatsApp account, and generate a token with `whatsapp_business_messaging` and `whatsapp_business_management`. The 24-hour token on the API Setup page expires.
+3. In **lrmcorp/lrmagents → Settings → Secrets and variables → Actions**, add:
+   - Secret `WHATSAPP_ACCESS_TOKEN`: the token from step 2.
+   - Secret `WHATSAPP_APP_SECRET`: from App settings → Basic → App secret.
+   - Secret `WHATSAPP_VERIFY_TOKEN`: any long random string you choose.
+   - Variable `WHATSAPP_PHONE_NUMBER_ID`: the **Phone number ID** from API Setup. This is not the phone number itself.
+   - Variable `WHATSAPP_ALLOWED_NUMBERS`: the numbers that may use the agent, comma-separated with country code, for example `6281234567890,6289876543210`.
+4. Run the deploy workflow. Its summary should say `WhatsApp bridge: true`.
+5. In the Meta app, go to **WhatsApp → Configuration → Webhook**. Set the callback URL to `https://agent.lnint.xyz/whatsapp/webhook` and the verify token to the same value as `WHATSAPP_VERIFY_TOKEN`. Save, then subscribe to the **messages** field.
+6. Message your WhatsApp Business number from an allowlisted phone.
+
+The webhook needs the public HTTPS domain: the `agent` DNS record must exist first. Meta's rules apply. You can reply freely within 24 hours of a user's message, but messages the business starts outside that window need approved templates; the bridge only replies.
+
 ## Access without the domain
 
 ```bash

@@ -45,22 +45,47 @@ jobs:
           OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_APP_SECRET: ${{ secrets.WHATSAPP_APP_SECRET }}
+          WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ vars.WHATSAPP_PHONE_NUMBER_ID }}
+          WHATSAPP_ALLOWED_NUMBERS: ${{ vars.WHATSAPP_ALLOWED_NUMBERS }}
         run: |
           host="${AGENT_DOMAIN%%,*}"; export WEB_PUBLIC_URL="https://${host// /}"
           if [[ ${#WEB_PASSWORD} -lt 12 ]]; then
             echo '::error::Set the COWAGENT_WEB_PASSWORD secret (12+ characters); the console is public and the agent has shell access.'
             exit 1
           fi
+          whatsapp=false
+          if [[ -n "$WHATSAPP_ACCESS_TOKEN" ]]; then
+            for name in WHATSAPP_APP_SECRET WHATSAPP_VERIFY_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_ALLOWED_NUMBERS; do
+              if [[ -z "${!name}" ]]; then echo "::error::WhatsApp is half configured: set $name too."; exit 1; fi
+            done
+            whatsapp=true
+          fi
+          echo "WhatsApp bridge: $whatsapp" >> "$GITHUB_STEP_SUMMARY"
           for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
             if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
           done | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.cowagent'
+          for name in WHATSAPP_ACCESS_TOKEN WHATSAPP_APP_SECRET WHATSAPP_VERIFY_TOKEN WHATSAPP_PHONE_NUMBER_ID WHATSAPP_ALLOWED_NUMBERS; do
+            if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
+          done | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.whatsapp'
+          # The bridge reaches CowAgent through its OpenAI-compatible API with a token
+          # generated once on the server; the API stays off unless WhatsApp is set up.
+          if [[ "$whatsapp" == true ]]; then
+            $SSH "$VPS" 'umask 077 && cd ~/cowagent && { test -s .env.api-token || openssl rand -hex 32 > .env.api-token; } \
+              && token="$(cat .env.api-token)" \
+              && printf "EXTERNAL_API_ENABLED=True\nEXTERNAL_API_TOKEN=%s\n" "$token" >> .env.cowagent \
+              && printf "COWAGENT_API_TOKEN=%s\n" "$token" >> .env.whatsapp'
+          fi
       - name: Start and verify CowAgent
         run: |
           $SSH "$VPS" "cd ~/cowagent && test \"\$(cat .deploy-revision)\" = '$GITHUB_SHA' \
             && (sudo -n docker network inspect lnint-edge >/dev/null 2>&1 || sudo -n docker network create lnint-edge) \
             && sudo -n docker compose -f deploy/compose.yaml build --pull \
             && sudo -n docker compose -f deploy/compose.yaml up -d \
-            && curl -fsS --retry 30 --retry-delay 2 --retry-all-errors --max-time 5 http://127.0.0.1:9899/ >/dev/null"
+            && curl -fsS --retry 30 --retry-delay 2 --retry-all-errors --max-time 5 http://127.0.0.1:9899/ >/dev/null \
+            && sudo -n docker compose -f deploy/compose.yaml exec -T whatsapp-bridge python -c \"import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/whatsapp/health', timeout=5).read().decode())\""
       - name: Verify public console
         continue-on-error: true
         run: |

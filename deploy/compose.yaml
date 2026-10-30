@@ -36,6 +36,22 @@ services:
       edge:
         aliases: [cowagent]
 
+  # WhatsApp Cloud API webhook -> CowAgent; Caddy routes /whatsapp/* on the agent domain here.
+  whatsapp-bridge:
+    image: lrm-whatsapp-bridge
+    build:
+      context: ../whatsapp-bridge
+    restart: unless-stopped
+    env_file: ../.env.whatsapp
+    environment:
+      COWAGENT_URL: http://cowagent:9899
+    depends_on:
+      - cowagent
+    networks:
+      default:
+      edge:
+        aliases: [whatsapp-bridge]
+
 networks:
   # Shared only with the ln Caddy container, so the agent cannot reach the ln database.
   edge:
