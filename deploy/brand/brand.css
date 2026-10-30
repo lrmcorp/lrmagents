@@ -1,0 +1,61 @@
+/* LRM look (after LRMsmm) on top of the LRM color theme. Loaded last so it wins
+   over the stock sheets. */
+
+/* ---- Light sidebar ----
+   Stock CowAgent keeps the sidebar dark in both appearances; LRMsmm uses a
+   white rail with an emerald active item. Dark mode keeps the dark sidebar. */
+html:not(.dark) #sidebar {
+    background: #f9faf9 !important;
+    backdrop-filter: none !important;
+    color: #4f5967;
+    border-right: 1px solid #e0e4e9;
+}
+html:not(.dark) #sidebar .border-white\/10 { border-color: #e0e4e9; }
+html:not(.dark) #sidebar .text-white { color: #101725; }
+html:not(.dark) #sidebar .text-neutral-500,
+html:not(.dark) #sidebar .text-neutral-600 { color: #7a8597; }
+html:not(.dark) #sidebar .menu-group-head { color: #5a6579; font-size: 11px; }
+html:not(.dark) #sidebar .menu-group-head:hover { color: #101725; }
+html:not(.dark) #sidebar .sidebar-item { color: #2d3949; font-weight: 500; }
+html:not(.dark) #sidebar .sidebar-item:hover { background: #f1f5f9; color: #101725; }
+html:not(.dark) #sidebar .sidebar-item .item-icon { color: #4f5967; }
+html:not(.dark) .sidebar-item.active,
+html:not(.dark) #sidebar .sidebar-item.active {
+    background: #e2f2eb;
+    color: #015f44;
+    font-weight: 700;
+}
+html:not(.dark) #sidebar .sidebar-item.active .item-icon { color: #015f44; }
+html:not(.dark) #sidebar-nav:hover { scrollbar-color: rgba(15, 23, 42, 0.18) transparent; }
+html:not(.dark) #sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
+html:not(.dark) .sidebar-footer { background: rgba(248, 250, 252, 0.8); }
+html:not(.dark) .sidebar-collapse-btn:hover { color: #101725; background: #f1f5f9; }
+
+/* ---- Brand marks ----
+   Black artwork on light surfaces, white on dark ones. */
+.lrm-on-dark { display: none; }
+.dark .lrm-on-light { display: none; }
+.dark .lrm-on-dark { display: block; }
+.lrm-wordtext { height: 30px; width: auto; max-width: 100%; }
+.lrm-wordmark { height: 56px; width: auto; max-width: 80vw; }
+/* The mark doubles as the home button; give it the hairline LRMsmm puts on white tiles. */
+#sidebar-home { border: 1px solid #e0e4e9; }
+
+/* One language only, so no switcher. */
+#lang-selector { display: none !important; }
+
+/* Upstream project links (docs, website, GitHub) are not part of this deployment. */
+#docs-link,
+a[href="https://cowagent.ai"],
+a[href^="https://github.com/zhayujie/"] { display: none !important; }
+
+/* ---- Shape and focus, after LRMsmm ---- */
+.rounded-lg { border-radius: 10px; }
+.rounded-xl { border-radius: 12px; }
+.rounded-2xl { border-radius: 16px; }
+button[class*="bg-primary-"] { font-weight: 700; }
+:where(a, button, [role="button"]):focus-visible {
+    outline: 2px solid #015f44;
+    outline-offset: 2px;
+}
+.dark :where(a, button, [role="button"]):focus-visible { outline-color: #34b38a; }

@@ -6,16 +6,23 @@ Deploys [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899
 - The CowAgent container is not on the `ln` network, so it cannot reach the `ln` PostgreSQL database.
 - Workspace (skills, memory) and data (`config.json`, logs) live in Docker volumes `cowagent_workspace` and `cowagent_data`. They survive redeploys.
 
-## Daily Dose look
+## LRM brand and look
 
-The console is built from `deploy/Dockerfile`, a thin layer over the upstream image. It follows the Daily Dose v2 design baseline: sage-green brand `#396552`, cream canvas `#f8f5ef`, a deep-green sidebar, Poppins, and softer corners. It opens in light mode with the **Daily Dose** color theme. Viewers can still switch between light and dark, or pick another theme from the sidebar menu.
+The console is built from `deploy/Dockerfile`, a thin layer over the upstream CowAgent image. It is branded **LRM Agents / Liando Reyfort Management** and follows the LRMsmm look:
+- **Logo:** the wordmark appears on the login and welcome screens, and the RL mark is the favicon, the sidebar icon and the agent avatar.
+- **Look:** a white sidebar with an emerald active item, a `#f1f2f1` canvas, white cards, `#015f44` primary buttons, and Plus Jakarta Sans.
+- **Language:** English only, with no language switcher. `COW_LANG=en` makes the agent work in English too.
+- **Name:** the agent calls itself LRM Agents. Upstream docs, website and GitHub links are hidden.
 
-![Daily Dose console](docs/dailydose-console.png)
+It opens in light mode. Viewers can switch to the matching dark mode, which uses a dark sidebar.
 
-- `deploy/dailydose-theme/theme.json`: light and dark palettes, added as a built-in CowAgent color theme.
-- `deploy/dailydose-theme/dailydose.css`: corners, focus ring, button weight.
-- `deploy/dailydose-theme/apply.py`: patches the theme in at build. Each edit must match upstream exactly once, so an upstream change fails the deploy rather than shipping the stock look.
-- `deploy/dailydose-theme/fonts/`: Poppins under the SIL Open Font License.
+![LRM Agents console](docs/lrm-console.png)
+
+- `deploy/brand/apply.py`: the build-time edits. Each must match upstream, so an upstream change fails the deploy rather than shipping CowAgent branding.
+- `deploy/brand/theme.json`: light and dark palettes, added as the built-in **LRM** color theme.
+- `deploy/brand/brand.css`: the light sidebar, logo sizing, hidden links, corners and focus ring.
+- `deploy/brand/img/`: the logo, wordmarks and favicon, generated from the supplied LRM artwork.
+- `deploy/brand/fonts/`: Plus Jakarta Sans under the SIL Open Font License.
 
 ## One-time setup
 
@@ -27,7 +34,7 @@ The console is built from `deploy/Dockerfile`, a thin layer over the upstream im
    - Optional secrets for model keys: `CLAUDE_API_KEY`, `OPEN_AI_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`. You can also set keys later in the web console.
    - Optional variable `COWAGENT_MODEL`, for example `claude-sonnet-4-5`.
    - Variable `VPS_DEPLOY_ENABLED=true`.
-4. Run **Actions → Deploy CowAgent to Tencent Lighthouse → Run workflow**. Every push to `main` redeploys.
+4. Run **Actions → Deploy CowAgent to Tencent Lighthouse → Run workflow**. Every push to `main` rebuilds and redeploys automatically.
 
 ## Move the console to lrmcorporation.id
 
