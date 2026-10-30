@@ -2,7 +2,12 @@ name: cowagent
 
 services:
   cowagent:
-    image: ${COWAGENT_IMAGE:-zhayujie/chatgpt-on-wechat:latest}
+    image: cowagent-dailydose
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        BASE_IMAGE: ${COWAGENT_IMAGE:-zhayujie/chatgpt-on-wechat:latest}
     restart: unless-stopped
     # Same as upstream CowAgent compose; the agent's browser tools need it.
     security_opt:

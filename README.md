@@ -6,6 +6,17 @@ Deploys [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899
 - The CowAgent container is not on the `ln` network, so it cannot reach the `ln` PostgreSQL database.
 - Workspace (skills, memory) and data (`config.json`, logs) live in Docker volumes `cowagent_workspace` and `cowagent_data`. They survive redeploys.
 
+## Daily Dose look
+
+The console is built from `deploy/Dockerfile`, a thin layer over the upstream image. It follows the Daily Dose v2 design baseline: sage-green brand `#396552`, cream canvas `#f8f5ef`, a deep-green sidebar, Poppins, and softer corners. It opens in light mode with the **Daily Dose** color theme. Viewers can still switch between light and dark, or pick another theme from the sidebar menu.
+
+![Daily Dose console](docs/dailydose-console.png)
+
+- `deploy/dailydose-theme/theme.json`: light and dark palettes, added as a built-in CowAgent color theme.
+- `deploy/dailydose-theme/dailydose.css`: corners, focus ring, button weight.
+- `deploy/dailydose-theme/apply.py`: patches the theme in at build. Each edit must match upstream exactly once, so an upstream change fails the deploy rather than shipping the stock look.
+- `deploy/dailydose-theme/fonts/`: Poppins under the SIL Open Font License.
+
 ## One-time setup
 
 1. **DNS (DNSPod, `lnint.xyz`):** add an `A` record with host `agent` and value `43.152.240.47`. Do not add an `AAAA` record.
@@ -40,4 +51,4 @@ Then open http://localhost:9899/.
 cd ~/cowagent && sudo docker compose -f deploy/compose.yaml logs -f --tail 100
 ```
 
-The image tracks `zhayujie/chatgpt-on-wechat:latest`; each deploy pulls the newest version. To pin a version, create `~/cowagent/deploy/.env` on the VPS containing `COWAGENT_IMAGE=zhayujie/chatgpt-on-wechat:<tag>`. Deploys keep that file.
+The base image tracks `zhayujie/chatgpt-on-wechat:latest`; each deploy rebuilds on the newest version. To pin a version, create `~/cowagent/deploy/.env` on the VPS containing `COWAGENT_IMAGE=zhayujie/chatgpt-on-wechat:<tag>`. Deploys keep that file.

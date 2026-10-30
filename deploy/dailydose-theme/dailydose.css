@@ -1,0 +1,18 @@
+/* Daily Dose finish on top of the color theme: softer corners and the brand focus ring.
+   Loaded last so it wins over the stock sheets. Text fields keep the stock focus style,
+   which already follows the theme accent and fits the rounded composer. */
+:root { --dd-brand: #396552; }
+.dark { --dd-brand: #7fb39a; }
+
+:where(a, button, [role="button"]):focus-visible {
+    outline: 2px solid var(--dd-brand);
+    outline-offset: 3px;
+}
+
+/* Daily Dose uses 8px controls and 14px panels; stock CowAgent is tighter. */
+.rounded-lg { border-radius: 10px; }
+.rounded-xl { border-radius: 14px; }
+.rounded-2xl { border-radius: 22px; }
+
+/* Brand buttons and the composer read heavier, like the Daily Dose CTAs. */
+button[class*="bg-primary-"] { font-weight: 600; }
