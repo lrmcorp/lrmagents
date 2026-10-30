@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage · LRMagent</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/brand/plus-jakarta-sans.css">
+<style>
+  :root { --brand: #015f44; --brand-soft: #e2f2eb; --canvas: #f1f2f1; --surface: #fff; --muted-bg: #f8fafc;
+          --text: #101725; --text-2: #4f5967; --text-3: #5a6579; --line: #e0e4e9; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 'Plus Jakarta Sans', Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .lede { color: var(--text-2); margin: 0 0 20px; }
+  .tabs { display: inline-flex; gap: 4px; padding: 4px; background: var(--muted-bg); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 16px; }
+  .tabs button { font: 600 13px 'Plus Jakarta Sans', system-ui, sans-serif; border: 0; background: none; padding: 6px 12px; border-radius: 9px; cursor: pointer; color: var(--text-2); }
+  .tabs button[aria-pressed="true"] { background: var(--surface); color: var(--brand); box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .label { font-size: 12px; font-weight: 600; color: var(--text-3); }
+  .value { font-size: 24px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .sub { font-size: 12px; color: var(--text-3); }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-size: 12px; color: var(--text-3); font-weight: 600; }
+  td.num, th.num { text-align: right; }
+  tr:last-child td { border-bottom: 0; }
+  .bar { height: 6px; border-radius: 3px; background: var(--brand); min-width: 2px; }
+  .note { font-size: 12px; color: var(--text-3); margin-top: 8px; }
+  .empty { color: var(--text-2); padding: 8px 0; }
+  code { font-size: 12px; background: var(--muted-bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 5px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Usage</h1>
+  <p class="lede">Tokens used by each agent, across the console, WhatsApp, other channels and scheduled tasks.</p>
+  <div class="tabs" role="group" aria-label="Period">
+    <button data-days="1">Today</button><button data-days="7" aria-pressed="true">7 days</button><button data-days="30">30 days</button>
+  </div>
+  <div class="cards" id="cards"></div>
+  <section class="panel"><h2>By agent</h2><div class="scroll"><table id="by-agent"></table></div></section>
+  <section class="panel"><h2>By agent, model and channel</h2><div class="scroll"><table id="detail"></table></div>
+    <p class="note" id="price-note"></p></section>
+</main>
+<script>
+if (window.self !== window.top) document.documentElement.style.background = 'var(--canvas)';
+const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+const usd = (n) => n == null ? '—' : `$${n < 1 ? n.toFixed(4) : n.toFixed(2)}`;
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const CHANNEL = { web: 'Console', openai_api: 'WhatsApp / API', other: 'Other' };
+let data = null;
+let days = 7;
+
+function sum(rows) {
+  const t = { calls: 0, prompt: 0, completion: 0, cached: 0, cost: 0, unpriced: 0 };
+  for (const r of rows) {
+    t.calls += r.calls; t.prompt += r.prompt; t.completion += r.completion; t.cached += r.cached;
+    if (r.cost == null) t.unpriced += r.prompt + r.completion; else t.cost += r.cost;
+  }
+  return t;
+}
+
+function group(rows, keyOf) {
+  const map = new Map();
+  for (const r of rows) { const k = keyOf(r); map.set(k, [...(map.get(k) || []), r]); }
+  return [...map].map(([k, list]) => ({ key: k, ...sum(list) })).sort((a, b) => (b.prompt + b.completion) - (a.prompt + a.completion));
+}
+
+function render() {
+  const since = new Date(); since.setDate(since.getDate() - (days - 1));
+  const cutoff = since.toLocaleDateString('en-CA');
+  const rows = data.rows.filter((r) => r.day >= cutoff);
+  const t = sum(rows);
+  const priced = data.priced_models.length > 0;
+  document.getElementById('cards').innerHTML = `
+    <div class="card"><div class="label">Tokens</div><div class="value">${fmt(t.prompt + t.completion)}</div><div class="sub">${fmt(t.prompt)} in · ${fmt(t.completion)} out</div></div>
+    <div class="card"><div class="label">Model calls</div><div class="value">${fmt(t.calls)}</div><div class="sub">${fmt(t.cached)} input tokens from cache</div></div>
+    <div class="card"><div class="label">Estimated cost</div><div class="value">${priced ? usd(t.cost) : '—'}</div><div class="sub">${priced ? (t.unpriced ? `${fmt(t.unpriced)} tokens on unpriced models` : 'All models priced') : 'Add prices to see cost'}</div></div>`;
+  const agents = group(rows, (r) => r.agent);
+  const top = Math.max(1, ...agents.map((a) => a.prompt + a.completion));
+  document.getElementById('by-agent').innerHTML = agents.length ? `
+    <tr><th>Agent</th><th class="num">Tokens</th><th style="width:30%"></th><th class="num">Calls</th><th class="num">Est. cost</th></tr>
+    ${agents.map((a) => `<tr><td>${esc(a.key)}</td><td class="num">${fmt(a.prompt + a.completion)}</td>
+      <td><div class="bar" style="width:${((a.prompt + a.completion) / top) * 100}%"></div></td>
+      <td class="num">${fmt(a.calls)}</td><td class="num">${priced && (a.cost || !a.unpriced) ? usd(a.cost) + (a.unpriced ? '+' : '') : '—'}</td></tr>`).join('')}`
+    : '<tr><td class="empty">No model calls in this period yet.</td></tr>';
+  const detail = group(rows, (r) => `${r.agent}\u0000${r.model}\u0000${r.channel}`);
+  document.getElementById('detail').innerHTML = detail.length ? `
+    <tr><th>Agent</th><th>Model</th><th>Channel</th><th class="num">Input</th><th class="num">Output</th><th class="num">Calls</th><th class="num">Est. cost</th></tr>
+    ${detail.map((d) => { const [agent, model, channel] = d.key.split('\u0000'); return `<tr><td>${esc(agent)}</td><td>${esc(model)}</td>
+      <td>${esc(CHANNEL[channel] || channel)}</td><td class="num">${fmt(d.prompt)}</td><td class="num">${fmt(d.completion)}</td>
+      <td class="num">${fmt(d.calls)}</td><td class="num">${d.unpriced ? '—' : usd(d.cost)}</td></tr>`; }).join('')}`
+    : '<tr><td class="empty">No model calls in this period yet.</td></tr>';
+  document.getElementById('price-note').innerHTML = priced
+    ? `Cost is estimated from your price list (${data.priced_models.length} model${data.priced_models.length > 1 ? 's' : ''}), in USD per million tokens; your provider's invoice is authoritative.`
+    : 'To estimate cost, set the <code>LRMAGENT_PRICES</code> deploy variable, e.g. <code>{"claude-sonnet": [3, 15]}</code> (USD per million input / output tokens, matched by model-name prefix).';
+}
+
+async function load() {
+  const res = await fetch('/api/lrm/usage?days=31', { credentials: 'same-origin' });
+  if (res.status === 401) { (window.top || window).location.href = '/'; return; }
+  data = await res.json();
+  render();
+}
+
+document.querySelector('.tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-days]');
+  if (!b) return;
+  days = Number(b.dataset.days);
+  document.querySelectorAll('.tabs button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  render();
+});
+load().catch(() => { document.getElementById('cards').innerHTML = '<p class="empty">Could not load usage.</p>'; });
+</script>
+</body>
+</html>

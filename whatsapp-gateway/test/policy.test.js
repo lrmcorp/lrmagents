@@ -17,7 +17,7 @@ test('settings fall back to safe defaults', () => {
 
 test('allowlisted DM is answered, stranger gets pairing', () => {
   const s = settings({ allowFrom: ['6281111111111'] });
-  assert.deepEqual(decide({ ...dm('6281111111111', 'hi'), settings: s, myJids: ME }), { action: 'answer', text: 'hi' });
+  assert.deepEqual(decide({ ...dm('6281111111111', 'hi'), settings: s, myJids: ME }), { action: 'answer', text: 'hi', media: '' });
   assert.deepEqual(decide({ ...dm('6282222222222', 'hi'), settings: s, myJids: ME }), { action: 'pairing', phone: '6282222222222' });
   assert.equal(decide({ ...dm('6282222222222', 'hi'), settings: settings({ dmPolicy: 'allowlist' }), myJids: ME }).action, 'ignore');
 });
@@ -30,7 +30,7 @@ test('LID-addressed DM uses the alternate phone jid', () => {
 
 test('self chat is the owner; other fromMe messages are ignored', () => {
   const own = { key: { remoteJid: '6280000000001@s.whatsapp.net', fromMe: true, id: 'x' }, message: { conversation: 'note this' } };
-  assert.deepEqual(decide({ ...own, settings: settings({}), myJids: ME, selfChat: true }), { action: 'answer', text: 'note this' });
+  assert.deepEqual(decide({ ...own, settings: settings({}), myJids: ME, selfChat: true }), { action: 'answer', text: 'note this', media: '' });
   assert.equal(decide({ ...dm('6281111111111', 'sent by me', { fromMe: true }), settings: settings({ dmPolicy: 'open' }), myJids: ME }).action, 'ignore');
 });
 
@@ -42,14 +42,20 @@ test('groups need the mention policy, an @mention and an allowed sender', () => 
   const s = settings({ groupPolicy: 'mention', allowFrom: ['6281111111111'] });
   assert.equal(decide({ ...group('@6280000000001 hello', true), settings: settings({ allowFrom: ['6281111111111'] }), myJids: ME }).action, 'ignore');
   assert.equal(decide({ ...group('hello', false), settings: s, myJids: ME }).action, 'ignore');
-  assert.deepEqual(decide({ ...group('@6280000000001 hello', true), settings: s, myJids: ME }), { action: 'answer', text: 'hello' });
+  assert.deepEqual(decide({ ...group('@6280000000001 hello', true), settings: s, myJids: ME }), { action: 'answer', text: 'hello', media: '' });
   assert.equal(decide({ ...group('@6280000000001 hi', true, '6283333333333@s.whatsapp.net'), settings: s, myJids: ME }).action, 'ignore');
 });
 
-test('broadcasts are ignored and captionless media is unsupported', () => {
+test('photos and voice notes are answered; other captionless media is unsupported', () => {
   assert.equal(decide({ key: { remoteJid: 'status@broadcast', id: 'x' }, message: { conversation: 'x' }, settings: settings({ dmPolicy: 'open' }), myJids: ME }).action, 'ignore');
-  const img = { key: { remoteJid: '6281111111111@s.whatsapp.net', id: 'x' }, message: { imageMessage: {} } };
-  assert.deepEqual(decide({ ...img, settings: settings({ allowFrom: ['6281111111111'] }), myJids: ME }), { action: 'unsupported' });
+  const s = settings({ allowFrom: ['6281111111111'] });
+  const msg = (message) => ({ key: { remoteJid: '6281111111111@s.whatsapp.net', id: 'x' }, message, settings: s, myJids: ME });
+  assert.deepEqual(decide(msg({ imageMessage: {} })), { action: 'answer', text: '', media: 'image' });
+  assert.deepEqual(decide(msg({ imageMessage: { caption: 'what is this?' } })), { action: 'answer', text: 'what is this?', media: 'image' });
+  assert.deepEqual(decide(msg({ audioMessage: { ptt: true } })), { action: 'answer', text: '', media: 'audio' });
+  assert.deepEqual(decide(msg({ viewOnceMessageV2: { message: { imageMessage: {} } } })), { action: 'answer', text: '', media: 'image' });
+  assert.deepEqual(decide(msg({ videoMessage: {} })), { action: 'unsupported' });
+  assert.deepEqual(decide(msg({ videoMessage: { caption: 'look' } })), { action: 'answer', text: 'look', media: '' });
 });
 
 test('pairing codes: stable per phone, capped, approvable, expiring', () => {
@@ -76,4 +82,25 @@ test('chunks keep text and respect size', () => {
   const parts = chunks(text, 200);
   assert.ok(parts.every((p) => p.length <= 200));
   assert.equal(parts.join('\n'), text);
+});
+
+test('rate limit: per sender, warn once, recover after the window', async () => {
+  const { RateLimiter } = await import('../src/policy.js');
+  let now = 0;
+  const rl = new RateLimiter({ perSender: 3, perAccount: 5, windowMs: 1000 }, () => now);
+  assert.deepEqual([rl.check('a'), rl.check('a'), rl.check('a'), rl.check('a'), rl.check('a')], ['ok', 'ok', 'ok', 'warn', 'drop']);
+  assert.deepEqual([rl.check('b'), rl.check('b'), rl.check('c')], ['ok', 'ok', 'warn']); // account cap of 5 reached
+  now = 1500;
+  assert.equal(rl.check('a'), 'ok');
+});
+
+test('group history: bounded, injected once, expires', async () => {
+  const { GroupHistory } = await import('../src/policy.js');
+  let now = 0;
+  const h = new GroupHistory({ limit: 3, maxChars: 1000, ttlMs: 100 }, () => now);
+  for (const n of [1, 2, 3, 4]) h.add('g', `P${n}`, `msg ${n}`);
+  assert.equal(h.take('g'), '[Recent messages in this group, oldest first:\n- P2: msg 2\n- P3: msg 3\n- P4: msg 4]');
+  assert.equal(h.take('g'), '');
+  h.add('g', 'Old', 'stale'); now = 200; h.add('g', 'New', 'fresh');
+  assert.equal(h.take('g'), '[Recent messages in this group, oldest first:\n- New: fresh]');
 });

@@ -6,11 +6,22 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Accounts } from './accounts.js';
+import crypto from 'node:crypto';
 import { consoleUser, listAgents } from './cowagent.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const PAGE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'index.html');
 const accounts = new Accounts();
+const INTERNAL_TOKEN = process.env.COWAGENT_API_TOKEN || '';
+
+// Container-to-container calls (scheduled messages from LRMagent) carry the
+// shared API token and never pass through Caddy, which adds X-Forwarded-For.
+function internalCaller(req) {
+  if (!INTERNAL_TOKEN || req.headers['x-forwarded-for']) return false;
+  const given = Buffer.from(String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''));
+  const want = Buffer.from(INTERNAL_TOKEN);
+  return given.length === want.length && crypto.timingSafeEqual(given, want);
+}
 
 function send(res, status, body, type = 'application/json; charset=utf-8') {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
@@ -57,7 +68,24 @@ async function route(req, res) {
 
   if (url.pathname === '/whatsapp/health') {
     const views = await Promise.all([...accounts.byAgent.keys()].map((id) => accounts.view(id)));
-    return send(res, 200, { ok: true, connected: views.filter((v) => v.status === 'connected').length });
+    const body = { ok: true, connected: views.filter((v) => v.status === 'connected').length };
+    // Per-agent link states only for callers inside the Docker network (the
+    // health check runs there); the public answer stays minimal.
+    if (!req.headers['x-forwarded-for']) {
+      body.accounts = views.map((v) => ({ agent: v.agentId, status: v.status, phone: v.phone ? `…${v.phone.slice(-4)}` : '' }));
+    }
+    return send(res, 200, body);
+  }
+  if (url.pathname === '/whatsapp/internal/send') {
+    if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' });
+    if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
+    const body = await readJson(req);
+    try {
+      await accounts.deliver(String(body.agentId || ''), String(body.chat || ''), String(body.text || ''));
+      return send(res, 200, { ok: true });
+    } catch (error) {
+      return send(res, 503, { error: error.message });
+    }
   }
   if (url.pathname === '/whatsapp') {
     res.writeHead(308, { Location: '/whatsapp/' });
@@ -69,7 +97,7 @@ async function route(req, res) {
       res.writeHead(302, { Location: '/' });
       return res.end();
     }
-    return send(res, 401, { error: 'Sign in to the LRM Agents console first.' });
+    return send(res, 401, { error: 'Sign in to the LRMagent console first.' });
   }
 
   if (url.pathname === '/whatsapp/' && req.method === 'GET') {

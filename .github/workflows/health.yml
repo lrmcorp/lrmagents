@@ -1,0 +1,63 @@
+name: LRMagent health
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: lrmagent-health
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: ${{ vars.VPS_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      VPS: ubuntu@43.152.240.47
+      AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.lnint.xyz' }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: 'LRMagent health alert'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Collect problems
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/ln_vps"
+          cp deploy/known_hosts "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/ln_vps" "$HOME/.ssh/known_hosts"
+          problems="$(ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "$VPS" 'bash ~/cowagent/deploy/healthcheck.sh' 2>&1)" \
+            || problems="Could not reach the VPS over SSH: ${problems:-no output}"
+          host="${AGENT_DOMAIN%%,*}"; host="${host// /}"
+          if getent ahostsv4 "$host" | grep -q '43.152.240.47'; then
+            curl -fsS --connect-timeout 5 --max-time 15 --retry 2 --retry-all-errors -o /dev/null "https://$host/" \
+              || problems="${problems:+$problems$'\n'}https://$host is not reachable from the internet."
+          fi
+          printf '%s\n' "$problems" | sed '/^$/d' > problems.txt
+          echo "Problems:"; cat problems.txt
+      # One open issue at a time: opened on the first failure, commented only when
+      # the problem list changes, closed once everything is healthy again.
+      - name: Open, update or close the alert issue
+        run: |
+          issue="$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")"
+          if [[ -s problems.txt ]]; then
+            body="$(printf 'Detected %s UTC:\n\n' "$(date -u '+%Y-%m-%d %H:%M')"; sed 's/^/- /' problems.txt)"
+            if [[ -z "$issue" ]]; then
+              gh issue create --title "$TITLE" --body "$body"$'\n\nThis issue closes itself when the next check is healthy.'
+            else
+              last="$(gh issue view "$issue" --json comments,body --jq '(.comments | last | .body) // .body')"
+              if [[ "$(printf '%s' "$last" | grep '^- ' )" != "$(sed 's/^/- /' problems.txt)" ]]; then
+                gh issue comment "$issue" --body "$body"
+              fi
+            fi
+            echo "::warning::$(paste -sd ' | ' problems.txt)"
+          elif [[ -n "$issue" ]]; then
+            gh issue close "$issue" --comment "Healthy again at $(date -u '+%Y-%m-%d %H:%M') UTC."
+          fi

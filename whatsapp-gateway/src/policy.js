@@ -75,9 +75,36 @@ export function contextInfo(message) {
   return undefined;
 }
 
-export function hasMedia(message) {
+function unwrap(message) {
   const m = message ?? {};
-  return Boolean(m.imageMessage || m.videoMessage || m.audioMessage || m.documentMessage || m.stickerMessage);
+  const inner = m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message;
+  return inner ? unwrap(inner) : m;
+}
+
+// 'image' | 'audio' (voice notes included) | 'video' | 'document' | 'sticker' | ''
+export function mediaKind(message) {
+  const m = unwrap(message);
+  if (m.imageMessage) return 'image';
+  if (m.audioMessage) return 'audio';
+  if (m.videoMessage) return 'video';
+  if (m.documentMessage) return 'document';
+  if (m.stickerMessage) return 'sticker';
+  return '';
+}
+
+export function hasMedia(message) {
+  return Boolean(mediaKind(message));
+}
+
+// Photos go to the vision tool and voice notes to transcribe_audio; other media
+// is only answered through its caption.
+const READABLE_MEDIA = new Set(['image', 'audio']);
+
+function answer(text, message) {
+  const kind = mediaKind(message);
+  const media = READABLE_MEDIA.has(kind) ? kind : '';
+  if (!text && !media) return kind ? { action: 'unsupported' } : { action: 'ignore', reason: 'empty' };
+  return { action: 'answer', text, media };
 }
 
 // Was the linked account @mentioned, or is this a reply to one of its messages?
@@ -108,13 +135,9 @@ export function decide({ key, message, settings, myJids, selfChat }) {
   }
   const isGroup = remote.endsWith('@g.us');
   const text = messageText(message);
-  const media = hasMedia(message);
 
   // "Message yourself" on the linked phone is the owner talking to the agent.
-  if (selfChat) {
-    if (!text) return media ? { action: 'unsupported' } : { action: 'ignore', reason: 'empty' };
-    return { action: 'answer', text };
-  }
+  if (selfChat) return answer(text, message);
   if (key?.fromMe) return { action: 'ignore', reason: 'from-me' };
 
   const phone = senderPhone(key);
@@ -124,9 +147,7 @@ export function decide({ key, message, settings, myJids, selfChat }) {
     if (settings.groupPolicy !== 'mention') return { action: 'ignore', reason: 'groups-off' };
     if (!addressesMe(message, myJids)) return { action: 'ignore', reason: 'not-addressed' };
     if (!allowed && settings.dmPolicy !== 'open') return { action: 'ignore', reason: 'group-sender-not-allowed' };
-    const cleaned = removeMentions(text, myJids);
-    if (!cleaned) return media ? { action: 'unsupported' } : { action: 'ignore', reason: 'empty' };
-    return { action: 'answer', text: cleaned };
+    return answer(removeMentions(text, myJids), message);
   }
 
   if (settings.dmPolicy === 'disabled') return { action: 'ignore', reason: 'dm-disabled' };
@@ -134,8 +155,7 @@ export function decide({ key, message, settings, myJids, selfChat }) {
     if (settings.dmPolicy === 'pairing' && phone) return { action: 'pairing', phone };
     return { action: 'ignore', reason: 'not-allowed' };
   }
-  if (!text) return media ? { action: 'unsupported' } : { action: 'ignore', reason: 'empty' };
-  return { action: 'answer', text };
+  return answer(text, message);
 }
 
 // WhatsApp formatting differs from Markdown: *bold*, _italic_, ~strike~, and no
@@ -210,5 +230,72 @@ export class PairingBook {
   prune() {
     const now = this.now();
     for (const [phone, entry] of this.pending) if (entry.expires <= now) this.pending.delete(phone);
+  }
+}
+
+// Sliding-window limits per sender, plus one for the whole account. A sender who
+// goes over is told once, then ignored until the window frees up: it protects
+// the number from bursts WhatsApp reads as spam, and the model bill from abuse.
+export class RateLimiter {
+  constructor({ perSender = 8, perAccount = 40, windowMs = 60_000 } = {}, now = () => Date.now()) {
+    this.limits = { perSender, perAccount, windowMs };
+    this.now = now;
+    this.hits = new Map(); // key -> timestamps
+    this.warned = new Set();
+  }
+
+  #count(key) {
+    const cutoff = this.now() - this.limits.windowMs;
+    const list = (this.hits.get(key) || []).filter((t) => t > cutoff);
+    this.hits.set(key, list);
+    return list;
+  }
+
+  // 'ok' | 'warn' (first refusal: tell the sender) | 'drop'
+  check(sender) {
+    const mine = this.#count(sender);
+    const all = this.#count('*');
+    if (mine.length >= this.limits.perSender || all.length >= this.limits.perAccount) {
+      if (this.warned.has(sender)) return 'drop';
+      this.warned.add(sender);
+      return 'warn';
+    }
+    this.warned.delete(sender);
+    const t = this.now();
+    mine.push(t);
+    all.push(t);
+    return 'ok';
+  }
+}
+
+// Group messages the agent was not asked about, kept so that when someone does
+// @mention it, it sees what the conversation was about (OpenClaw does the same).
+export class GroupHistory {
+  constructor({ limit = 20, maxChars = 4000, ttlMs = 6 * 60 * 60 * 1000 } = {}, now = () => Date.now()) {
+    Object.assign(this, { limit, maxChars, ttlMs, now });
+    this.groups = new Map(); // group jid -> [{ who, text, at }]
+  }
+
+  add(group, who, text) {
+    const clean = String(text ?? '').trim();
+    if (!clean) return;
+    const list = (this.groups.get(group) || []).filter((e) => e.at > this.now() - this.ttlMs);
+    list.push({ who: String(who || 'someone').slice(0, 40), text: clean.slice(0, 500), at: this.now() });
+    this.groups.set(group, list.slice(-this.limit));
+  }
+
+  // The buffered lines as a context block (newest kept within maxChars), then cleared.
+  take(group) {
+    const list = (this.groups.get(group) || []).filter((e) => e.at > this.now() - this.ttlMs);
+    this.groups.delete(group);
+    const lines = [];
+    let size = 0;
+    for (const e of list.reverse()) {
+      const line = `- ${e.who}: ${e.text}`;
+      if (size + line.length > this.maxChars) break;
+      lines.unshift(line);
+      size += line.length;
+    }
+    return lines.length ? `[Recent messages in this group, oldest first:\n${lines.join('\n')}]` : '';
   }
 }

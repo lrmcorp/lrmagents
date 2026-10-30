@@ -4,7 +4,7 @@ Only models whose provider has an API key on file are offered, the same list
 the console's model picker shows. The switch takes effect on the next model
 call, so the reply that confirms it already comes from the new model.
 
-Installed into CowAgent by the LRM image (deploy/agent-tools); see README.
+Installed into LRMagent by its image (deploy/agent-tools); see README.
 """
 
 import re

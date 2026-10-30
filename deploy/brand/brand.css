@@ -2,7 +2,7 @@
    over the stock sheets. */
 
 /* ---- Light sidebar ----
-   Stock CowAgent keeps the sidebar dark in both appearances; LRMsmm uses a
+   The stock console keeps the sidebar dark in both appearances; LRMsmm uses a
    white rail with an emerald active item. Dark mode keeps the dark sidebar. */
 html:not(.dark) #sidebar {
     background: #f9faf9 !important;
@@ -60,3 +60,10 @@ button[class*="bg-primary-"] { font-weight: 700; }
     outline-offset: 2px;
 }
 .dark :where(a, button, [role="button"]):focus-visible { outline-color: #34b38a; }
+
+/* Settings the deployment owns (the server refuses them too): the console
+   password, the listen address and the in-place updater. */
+div:has(> #cfg-password),
+div:has(> #cfg-password-save),
+#cfg-listen-row,
+#update-action-item { display: none !important; }

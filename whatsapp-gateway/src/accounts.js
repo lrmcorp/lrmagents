@@ -8,14 +8,21 @@ import QRCode from 'qrcode';
 import makeWASocket, {
   Browsers,
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
 } from 'baileys';
 import { ask } from './cowagent.js';
-import { PairingBook, chunks, decide, normalizeSettings, phoneOf, toWhatsApp } from './policy.js';
+import { GroupHistory, PairingBook, RateLimiter, chunks, decide, mediaKind, messageText, normalizeSettings, phoneOf, toWhatsApp } from './policy.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
+// Shared with the agent container (read-only there) so its vision and
+// transcribe_audio tools can open what people send.
+const MEDIA_DIR = process.env.MEDIA_DIR || '/media/whatsapp';
+const MEDIA_MAX_BYTES = 20 * 1024 * 1024;
+const MEDIA_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/wav': 'wav' };
 const UNSUPPORTED_REPLY = 'I can only read text messages for now. Please type your question.';
 const ERROR_REPLY = 'Sorry, something went wrong on my side. Please try again in a moment.';
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -51,6 +58,8 @@ class Account {
     this.sock = null;
     this.settings = normalizeSettings();
     this.pairing = new PairingBook();
+    this.limiter = new RateLimiter();
+    this.history = new GroupHistory();
     this.sentIds = new Set(); // ids we sent, so self-chat replies don't loop
     this.retry = 0;
     this.stopped = false;
@@ -105,7 +114,7 @@ class Account {
       version: await version(),
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, quiet) },
       logger: quiet,
-      browser: Browsers.ubuntu('LRM Agents'),
+      browser: Browsers.ubuntu('LRMagent'),
       markOnlineOnConnect: false, // keeps the phone's own notifications working
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
@@ -202,13 +211,26 @@ class Account {
     const verdict = decide({ key: msg.key, message: msg.message, settings: this.settings, myJids, selfChat });
     const chat = msg.key.remoteJid;
 
-    if (verdict.action === 'ignore') return;
+    if (verdict.action === 'ignore') {
+      // Remember group talk the agent wasn't asked about, for context when it is.
+      if (verdict.reason === 'not-addressed') this.history.add(chat, msg.pushName, messageText(msg.message));
+      return;
+    }
     if (verdict.action === 'pairing') {
       const { code, fresh } = this.pairing.request(verdict.phone);
       if (fresh && code) {
-        await this.send(sock, chat, `Hi! This assistant is private. Ask its owner to approve pairing code *${code}* in the LRM Agents console (WhatsApp page). The code expires in 1 hour.`);
+        await this.send(sock, chat, `Hi! This assistant is private. Ask its owner to approve pairing code *${code}* in the LRMagent console (WhatsApp page). The code expires in 1 hour.`);
       }
       return;
+    }
+    // The owner's own "Message yourself" chat is never throttled.
+    if (!selfChat) {
+      const rate = this.limiter.check(chat);
+      if (rate === 'drop') return;
+      if (rate === 'warn') {
+        await this.send(sock, chat, 'You are sending messages faster than I can answer. Please wait a minute and try again.', msg);
+        return;
+      }
     }
     await sock.readMessages([msg.key]).catch(() => {});
     if (verdict.action === 'unsupported') {
@@ -219,7 +241,20 @@ class Account {
     await sock.sendPresenceUpdate('composing', chat).catch(() => {});
     const typing = setInterval(() => sock.sendPresenceUpdate('composing', chat).catch(() => {}), 10_000);
     try {
-      const reply = await ask({ agentId: this.agentId, conversationId: `whatsapp:${this.agentId}:${chat}`, text: verdict.text });
+      let prompt = verdict.text;
+      if (verdict.media) {
+        const file = await this.saveMedia(sock, msg);
+        const note = verdict.media === 'image'
+          ? `[The user sent a photo, saved at ${file}. Look at it with the vision tool before answering.]`
+          : `[The user sent a voice note, saved at ${file}. Transcribe it with transcribe_audio, then reply to what they said.]`;
+        prompt = verdict.text ? `${note}\n${verdict.text}` : note;
+      }
+      if (chat.endsWith('@g.us')) {
+        const earlier = this.history.take(chat);
+        const who = msg.pushName ? `[${msg.pushName} asks:]\n` : '';
+        prompt = [earlier, `${who}${prompt}`].filter(Boolean).join('\n\n');
+      }
+      const reply = await ask({ agentId: this.agentId, conversationId: `whatsapp:${this.agentId}:${chat}`, text: prompt });
       clearInterval(typing);
       await this.send(sock, chat, reply, msg);
     } catch (error) {
@@ -228,6 +263,32 @@ class Account {
       await this.send(sock, chat, ERROR_REPLY, msg);
     } finally {
       await sock.sendPresenceUpdate('paused', chat).catch(() => {});
+    }
+  }
+
+  async saveMedia(sock, msg) {
+    const kind = mediaKind(msg.message);
+    const unwrapped = msg.message?.ephemeralMessage?.message ?? msg.message?.viewOnceMessage?.message
+      ?? msg.message?.viewOnceMessageV2?.message ?? msg.message;
+    const part = unwrapped?.[`${kind}Message`] ?? {};
+    if (Number(part.fileLength || 0) > MEDIA_MAX_BYTES) throw new Error('media too large');
+    const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: quiet, reuploadRequest: sock.updateMediaMessage });
+    if (buffer.length > MEDIA_MAX_BYTES) throw new Error('media too large');
+    const dir = path.join(MEDIA_DIR, this.agentId);
+    await fs.mkdir(dir, { recursive: true });
+    await this.pruneMedia(dir);
+    const ext = EXT[String(part.mimetype || '').split(';')[0]] || (kind === 'image' ? 'jpg' : 'ogg');
+    const file = path.join(dir, `${new Date().toISOString().slice(0, 10)}-${String(msg.key.id).replace(/[^A-Za-z0-9]/g, '')}.${ext}`);
+    await fs.writeFile(file, buffer, { mode: 0o644 });
+    return file;
+  }
+
+  async pruneMedia(dir) {
+    const cutoff = Date.now() - MEDIA_KEEP_MS;
+    for (const name of await fs.readdir(dir).catch(() => [])) {
+      const file = path.join(dir, name);
+      const stat = await fs.stat(file).catch(() => null);
+      if (stat?.isFile() && stat.mtimeMs < cutoff) await fs.rm(file, { force: true });
     }
   }
 
@@ -346,6 +407,15 @@ export class Accounts {
       await account.send(account.sock, `${phone}@s.whatsapp.net`, 'You are approved. Send your message again and I will answer.').catch(() => {});
     }
     return phone;
+  }
+
+  // A message the agent sends on its own (a scheduled reminder), not a reply.
+  async deliver(agentId, chat, text) {
+    const account = this.get(agentId);
+    if (!account || account.status !== 'connected' || !account.sock) throw new Error('WhatsApp is not connected for this agent');
+    if (!/@(s\.whatsapp\.net|g\.us|lid)$/.test(chat)) throw new Error('not a WhatsApp chat id');
+    if (!text.trim()) return;
+    await account.send(account.sock, chat, text);
   }
 
   async shutdown() {

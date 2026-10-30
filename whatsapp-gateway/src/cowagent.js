@@ -1,4 +1,4 @@
-// Calls into the LRM Agents (CowAgent) container.
+// Calls into the LRMagent container.
 
 const BASE = (process.env.COWAGENT_URL || 'http://cowagent:9899').replace(/\/$/, '');
 const API_TOKEN = process.env.COWAGENT_API_TOKEN || '';
@@ -33,7 +33,7 @@ export async function ask({ agentId, conversationId, text }) {
 }
 
 // The console's own session decides who may manage WhatsApp: the browser's
-// cookie is forwarded to CowAgent, so there is no second password.
+// cookie is forwarded to LRMagent, so there is no second password.
 export async function consoleUser(cookieHeader) {
   try {
     const response = await fetch(`${BASE}/auth/check`, {

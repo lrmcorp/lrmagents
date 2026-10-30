@@ -1,24 +1,24 @@
 # lrmagents
 
-Deploys [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899) to the same Tencent Lighthouse VPS as the `ln` demo (`43.152.240.47`, `int.lnint.xyz`).
+Deploys **LRMagent**, the LRM agent console built on the open-source [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899), to the same Tencent Lighthouse VPS as the `ln` demo (`43.152.240.47`, `int.lnint.xyz`).
 
 - Public URL: `https://agent.lnint.xyz` now; `https://lrmcorporation.id` once that domain is switched on (see below). TLS terminates in the existing `ln` Caddy container, which reaches CowAgent over the shared `lnint-edge` Docker network.
-- The CowAgent container is not on the `ln` network, so it cannot reach the `ln` PostgreSQL database.
+- The LRMagent container is not on the `ln` network, so it cannot reach the `ln` PostgreSQL database.
 - Workspace (skills, memory) and data (`config.json`, logs) live in Docker volumes `cowagent_workspace` and `cowagent_data`. They survive redeploys.
 
 ## LRM brand and look
 
-The console is built from `deploy/Dockerfile`, a thin layer over the upstream CowAgent image. It is branded **LRM Agents / Liando Reyfort Management** and follows the LRMsmm look:
+The console is built from `deploy/Dockerfile`, a thin layer over the upstream image. It is branded **LRMagent / Liando Reyfort Management** and follows the LRMsmm look:
 - **Logo:** the wordmark appears on the login and welcome screens, and the RL mark is the favicon, the sidebar icon and the agent avatar.
 - **Look:** a white sidebar with an emerald active item, a `#f1f2f1` canvas, white cards, `#015f44` primary buttons, and Plus Jakarta Sans.
 - **Language:** English only, with no language switcher. `COW_LANG=en` makes the agent work in English too.
-- **Name:** the agent calls itself LRM Agents. Upstream docs, website and GitHub links are hidden.
+- **Name:** the agent calls itself LRMagent. Upstream docs, website and GitHub links are hidden.
 
 It opens in light mode. Viewers can switch to the matching dark mode, which uses a dark sidebar.
 
-![LRM Agents console](docs/lrm-console.png)
+![LRMagent console](docs/lrm-console.png)
 
-- `deploy/brand/apply.py`: the build-time edits. Each must match upstream, so an upstream change fails the deploy rather than shipping CowAgent branding.
+- `deploy/brand/apply.py`: the build-time edits. Each must match upstream, so an upstream change fails the deploy rather than shipping upstream branding.
 - `deploy/brand/theme.json`: light and dark palettes, added as the built-in **LRM** color theme.
 - `deploy/brand/brand.css`: the light sidebar, logo sizing, hidden links, corners and focus ring.
 - `deploy/brand/img/`: the logo, wordmarks and favicon, generated from the supplied LRM artwork.
@@ -34,7 +34,7 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
    - Optional secrets for model keys: `CLAUDE_API_KEY`, `OPEN_AI_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`. You can also set keys later in the web console.
    - Optional variable `COWAGENT_MODEL`, for example `claude-sonnet-4-5`.
    - Variable `VPS_DEPLOY_ENABLED=true`.
-4. Run **Actions → Deploy CowAgent to Tencent Lighthouse → Run workflow**. Every push to `main` rebuilds and redeploys automatically.
+4. Run **Actions → Deploy LRMagent to Tencent Lighthouse → Run workflow**. Every push to `main` rebuilds and redeploys automatically.
 
 ## Move the console to lrmcorporation.id
 
@@ -64,7 +64,7 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
   - Direct messages default to **pairing**: a stranger gets an 8-character code (valid 1 hour, at most 3 waiting), and you approve it on the WhatsApp page. Other options are allowlist only, anyone, or nobody.
   - Groups are ignored by default. Set them to answer only when the number is @mentioned or replied to, and only for approved senders.
   - On the linked phone, **Message yourself** always reaches the agent.
-- **Conversations:** each WhatsApp chat keeps its own conversation with its agent, through CowAgent's API and a token generated on the VPS.
+- **Conversations:** each WhatsApp chat keeps its own conversation with its agent, through LRMagent's API and a token generated on the VPS.
 - **Replies:**
   - Markdown is converted to WhatsApp formatting.
   - Long replies are split into parts with short pauses between them.
@@ -72,6 +72,12 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
   - Media without a caption gets a short "text only for now" reply.
 - **Sessions:** stored in the `cowagent_whatsapp` Docker volume, so redeploys keep numbers linked. A dropped link reconnects with backoff (2 s, growing to 30 s, 12 tries). Unlinking from the phone is detected and the session is wiped.
 - **Sign-in:** the page uses the console's own login (the gateway checks the console session cookie). Writes must come from the page itself.
+
+- **Reminders and scheduled tasks** set up in a WhatsApp chat ("remind me at 5pm") are delivered back to that chat through the gateway. If the number is disconnected at that moment, the scheduler retries on its next tick.
+- **Photos and voice notes:** the gateway saves them to a shared media volume that the agent can read but not write. Photos go to the vision tool. Voice notes go to `transcribe_audio`, which uses the Speech Recognition provider set in Config → Models. Files are kept 7 days. Video, documents and stickers are answered only through their caption.
+- **Groups:** when the agent is @mentioned, it also sees up to the last 20 messages it wasn't asked about (within 6 hours), so it can follow the conversation.
+- **Rate limit:** at most 8 messages per minute per chat and 40 per number. A sender who goes over is told once, then ignored until the minute passes. "Message yourself" is never limited.
+- **Permissions:** WhatsApp chats run with **workspace-write** permission, because WhatsApp senders are less trusted than you in the console. Console chats keep your default.
 
 **Risk:** WhatsApp does not support bots on WhatsApp Web. Use a dedicated number and avoid bulk or spam-like messaging, or the number can be banned.
 
@@ -84,9 +90,67 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
   - `obsidian-bases`: table views.
 
   `obsidian-cli` needs the desktop app, and `defuddle` and `knap` need extra CLIs, so they are left out.
-- **Recall:** CowAgent's `memory_search` already does hybrid keyword and vector search with a reranker over memory and the vault, returning short snippets. Its default is lowered from 10 to 6 results, OpenClaw's setting. The knowledge-wiki skill now says to search first and read only the page or lines needed.
+- **Recall:** LRMagent's `memory_search` already does hybrid keyword and vector search with a reranker over memory and the vault, returning short snippets. Its default is lowered from 10 to 6 results, OpenClaw's setting. The knowledge-wiki skill now says to search first and read only the page or lines needed.
 - **Khoj is not deployed.** It would duplicate this search, and it needs about 1.2–1.7 GB more RAM (Django, torch and pgvector) on a 4 GB VPS that also runs the `ln` app, plus a sync job to push notes into it. Revisit it if the VPS gets more memory.
 - **Embeddings:** configure a provider (Config → Models → Embedding). Without one, recall falls back to keyword search.
+
+### Open the vault in Obsidian (hourly two-way sync)
+
+The vault can be synced with a **private** GitHub repo, so you can read and edit it in Obsidian on desktop or phone (for example with the Obsidian Git plugin).
+
+1. Create an empty **private** repository, for example `lrmcorp/lrmagent-vault`. This repo (`lrmagents`) is public, so it must not hold the vault.
+2. In this repo, add the Actions variable `LRMAGENT_VAULT_REPO=lrmcorp/lrmagent-vault` and run the deploy.
+3. The deploy summary shows a public key generated on the VPS. Add it under the vault repo's Settings → Deploy keys, **with write access**. The private key never leaves the VPS.
+
+Every hour at :41, `deploy/vault-sync.sh`:
+- commits the agents' changes;
+- merges them with your Obsidian edits using git;
+- pushes the result, and writes your edits back to the agents.
+
+If one note was changed on both sides, your Obsidian version wins and the agent's version is kept beside it as `note (agent copy <date>).md`, so nothing is lost. The synced folders are `knowledge/` (shared) and `agents/<id>/knowledge/` (agents with their own vault). Remove the variable to stop syncing.
+
+## Usage and cost
+
+**Usage** (under Monitor in the sidebar) shows tokens and model calls per agent, model and channel for today, 7 days and 30 days. That covers the console, WhatsApp, other channels, scheduled tasks and sub-agents. Data: `lrm_usage.sqlite` in the data volume.
+
+Cost is shown once you set the Actions variable `LRMAGENT_PRICES`, in USD per million input and output tokens, matched by model-name prefix. For example:
+
+```json
+{"claude-sonnet": [3, 15], "gpt-5.5": [1.25, 10]}
+```
+
+Take the numbers from your providers' price pages; there is no built-in price list because prices change. Your invoice is the authority.
+
+## Reliability
+
+- **Backup model:** set a fallback chain in Config → Models → Main Model → Fallback. Alternatively, set the Actions variable `LRMAGENT_MODEL_FALLBACK`, for example `claudeAPI:claude-sonnet-5-5,openai:gpt-5.5`, so it survives rebuilds.
+- **Nightly backups:** at 02:17 Jakarta time, `deploy/backup.sh` saves the `cowagent_workspace` (memory, vault, skills), `cowagent_data` (settings) and `cowagent_whatsapp` (sessions) volumes to `~/backups/lrmagent` on the VPS. It keeps 7 days, and the folder is readable only by `ubuntu` because it contains keys. To restore one volume, stop the stack and run:
+
+  ```bash
+  cd ~/cowagent && sudo docker compose -f deploy/compose.yaml stop
+  sudo docker run --rm -v cowagent_workspace:/v -v ~/backups/lrmagent:/b:ro alpine:3.20 sh -c 'rm -rf /v/* && tar -C /v -xzf /b/cowagent_workspace-YYYYMMDD-HHMM.tar.gz'
+  sudo docker compose -f deploy/compose.yaml up -d
+  ```
+
+  The backups stay on the VPS. Copy them elsewhere from time to time if the VPS itself is at risk.
+- **Health alerts:** every 15 minutes, the **LRMagent health** workflow checks:
+  - the console and containers;
+  - linked WhatsApp numbers (logged out on the phone, or unable to reconnect);
+  - disk space;
+  - the last backup;
+  - vault sync errors;
+  - public HTTPS.
+
+  On a problem it opens a GitHub issue titled *LRMagent health alert*, which GitHub emails you, and comments only when the problem changes. It closes the issue when everything is healthy again.
+- **Locked settings:** the console password (the `COWAGENT_WEB_PASSWORD` secret), the listen address and in-place updates are managed by the deployment. They are hidden in the console and refused by the server. Passwords and tokens are masked in the logs.
+
+## Updating the upstream version
+
+The base image is pinned by digest in `deploy/compose.yaml` and `deploy/Dockerfile`, so deploys never pick up an untested upstream release. To update:
+1. Pull the new `zhayujie/chatgpt-on-wechat` image locally.
+2. Copy its digest into both files.
+3. Run `docker compose -f deploy/compose.yaml build`. `apply.py` stops the build if anything it patches moved.
+4. Fix any patch the build reports, then push.
 
 ## Access without the domain
 
@@ -102,4 +166,4 @@ Then open http://localhost:9899/.
 cd ~/cowagent && sudo docker compose -f deploy/compose.yaml logs -f --tail 100
 ```
 
-The base image tracks `zhayujie/chatgpt-on-wechat:latest`; each deploy rebuilds on the newest version. To pin a version, create `~/cowagent/deploy/.env` on the VPS containing `COWAGENT_IMAGE=zhayujie/chatgpt-on-wechat:<tag>`. Deploys keep that file.
+Logs: `~/backups/lrmagent-backup.log` (backups) and `~/vault-sync/sync.log` (vault). The base image is pinned (see "Updating the upstream version").

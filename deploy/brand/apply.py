@@ -1,7 +1,7 @@
-"""Apply the LRM brand and look to the CowAgent web console at image build time.
+"""Apply the LRMagent brand and look to the upstream web console at image build time.
 
 Every edit must match upstream, so an upstream change fails the build instead
-of silently shipping the stock CowAgent look or name.
+of silently shipping the stock upstream look or name.
 """
 import json
 import pathlib
@@ -10,7 +10,7 @@ import sys
 app = pathlib.Path(sys.argv[1])
 theme = json.loads(pathlib.Path(sys.argv[2]).read_text())
 web = app / "channel" / "web"
-NAME = "LRM Agents"
+NAME = "LRMagent"
 LEGAL = "Liando Reyfort Management"
 
 
@@ -78,7 +78,7 @@ patch("templates/layout/login.html",
       '<img src="/assets/logo.jpg" alt="CowAgent" class="w-16 h-16 rounded-2xl mb-4 shadow-lg">',
       pair("lrm-wordmark mb-4", "wordmark.png", "wordmark-white.png", LEGAL))
 
-# ---- Name: every visible "CowAgent" in the console and its /config title.
+# ---- Name: every visible upstream product name in the console and its /config title.
 for rel in ("chat.html", "templates/layout/sidebar.html", "templates/layout/login.html",
             "templates/views/chat.html", "static/js/chat/new-chat.js", "static/js/chat/state.js",
             "static/js/chat/send.js", "static/js/boot.js", "static/js/views/shares.js",
@@ -101,11 +101,17 @@ patch("static/js/core/menu.js",
 }
 
 function _lrmEnsureWhatsApp(doc) {
-    if (doc.groups.some(g => g.items.some(i => i.id === 'lrm-whatsapp'))) return doc;
-    const group = doc.groups.find(g => g.items.some(i => i.view === 'channels')) || doc.groups[doc.groups.length - 1];
-    const at = group.items.findIndex(i => i.view === 'channels');
-    group.items.splice(at + 1, 0, { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame',
-                                    title: 'WhatsApp', icon: 'whatsapp', hidden: false });
+    // LRMagent pages: WhatsApp after Channels, Usage after Logs.
+    const pages = [
+        { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
+        { after: 'logs', item: { id: 'lrm-usage', type: 'url', url: '/assets/brand/usage.html', open: 'frame', title: 'Usage', icon: 'chart', hidden: false } },
+    ];
+    for (const page of pages) {
+        if (doc.groups.some(g => g.items.some(i => i.id === page.item.id))) continue;
+        const group = doc.groups.find(g => g.items.some(i => i.view === page.after)) || doc.groups[doc.groups.length - 1];
+        const at = group.items.findIndex(i => i.view === page.after);
+        group.items.splice(at + 1, 0, Object.assign({}, page.item));
+    }
     return doc;
 }
 
@@ -139,6 +145,50 @@ patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conven
 patch("agent/tools/__init__.py",
       "from agent.tools.subagent.subagent import SubagentTool\n",
       "from agent.tools.subagent.subagent import SubagentTool\n"
-      "from agent.tools.model_switch.model_switch import ModelSwitch\n", root=app)
-patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n", root=app)
+      "from agent.tools.model_switch.model_switch import ModelSwitch\n"
+      "from agent.tools.transcribe.transcribe import TranscribeAudio\n", root=app)
+patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n", root=app)
+# ---- Scheduled messages from WhatsApp chats go back to WhatsApp through the
+# gateway (deploy/agent-tools/whatsapp_relay.py, installed as channel/lrm_whatsapp_relay.py).
+patch("agent/tools/scheduler/integration.py",
+      'def _resolve_delivery_channel(channel_type: str, instance_id: str = "", receiver: str = ""):\n',
+      'def _resolve_delivery_channel(channel_type: str, instance_id: str = "", receiver: str = ""):\n'
+      '    if channel_type == "openai_api":\n'
+      '        from channel.lrm_whatsapp_relay import relay_for\n'
+      '        return relay_for(receiver)\n', root=app)
+# ---- Lock-down: settings the deployment owns can't be changed from the console.
+# The password comes from the COWAGENT_WEB_PASSWORD secret; clearing it in the
+# UI would turn login off on a public console whose agent can run commands.
+patch("api/config.py", '"self_evolution_enabled", "web_password",', '"self_evolution_enabled",')
+# The listen address is fixed by the compose file; changing it takes the site down.
+patch("api/integrations.py",
+      '        if "web_host" not in data and "web_port" not in data:\n',
+      '        if "web_host" in data or "web_port" in data:\n'
+      '            return _error("The listen address is managed by the LRMagent deployment.", "managed_by_deploy")\n'
+      '        if "web_host" not in data and "web_port" not in data:\n')
+# Updates arrive by redeploying the image; an in-place update would fight it.
+patch("api/update.py",
+      '            logger.info("[WebChannel] one-click update requested")\n',
+      '            return json.dumps({"status": "error", "message": "LRMagent updates are installed by redeploying."})\n')
+# WhatsApp chats come from people outside the console: unless a chat has its own
+# setting, they run with workspace-write instead of the console's default.
+patch("bridge/agent_bridge.py",
+      'agent.apply_permission_mode(permission_mode or prefs.get("permission"))',
+      'agent.apply_permission_mode(permission_mode or prefs.get("permission") or ('
+      '"workspace-write" if str(session_id).startswith("openai:conversation:whatsapp:") else None))', root=app)
+# ---- Usage: every model call's tokens are recorded per agent/model/channel
+# (agent/lrm_usage.py) and served to the Usage page (channel/web/api/lrm_usage.py).
+patch("agent/protocol/agent_stream.py",
+      "        if snapshot:\n            self.run_usage = self._merge_usage(self.run_usage, snapshot)\n",
+      "        if snapshot:\n            self.run_usage = self._merge_usage(self.run_usage, snapshot)\n"
+      "            from agent.lrm_usage import record as _lrm_record_usage\n"
+      "            _lrm_record_usage(self, snapshot)\n", root=app)
+patch("web_channel.py", "\nURLS = (\n",
+      "\nfrom channel.web.api.lrm_usage import LrmUsageHandler  # noqa: F401,E402\n\nURLS = (\n")
+patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
+      "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n")
+# ---- Logs: upstream masks settings named *key*/*secret* only, so the console
+# password and the internal API token were written to run.log in clear text.
+patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',
+      'if any(word in k for word in ("key", "secret", "password", "token")) and isinstance(v, str):', root=app)
 print("LRM brand applied")

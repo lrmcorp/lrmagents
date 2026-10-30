@@ -7,9 +7,10 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
       args:
-        BASE_IMAGE: ${COWAGENT_IMAGE:-zhayujie/chatgpt-on-wechat:latest}
+        # Pinned upstream build (v2.2.2). To update: README "Updating the upstream version".
+        BASE_IMAGE: ${COWAGENT_IMAGE:-zhayujie/chatgpt-on-wechat@sha256:5e3d2bad4c4d63cb71cbf1acaa83b7cd10f07832fcf2a96c2a20f132075ae933}
     restart: unless-stopped
-    # Same as upstream CowAgent compose; the agent's browser tools need it.
+    # Same as the upstream compose file; the agent's browser tools need it.
     security_opt:
       - seccomp:unconfined
     env_file: ../.env.cowagent
@@ -24,13 +25,15 @@ services:
       TZ: Asia/Jakarta
       # English only, and the agent introduces itself by the LRM name.
       COW_LANG: en
-      DEFAULT_AGENT_NAME: LRM Agents
+      DEFAULT_AGENT_NAME: LRMagent
     ports:
       # For an SSH tunnel: ssh -L 9899:127.0.0.1:9899 ubuntu@43.152.240.47
       - "127.0.0.1:9899:9899"
     volumes:
       - workspace:/home/agent/cow
       - data:/home/agent/.cow
+      # Photos and voice notes received over WhatsApp, read-only for the agent.
+      - whatsapp_media:/media/whatsapp:ro
     networks:
       default:
       edge:
@@ -47,6 +50,7 @@ services:
       COWAGENT_URL: http://cowagent:9899
     volumes:
       - whatsapp:/data
+      - whatsapp_media:/media/whatsapp
     depends_on:
       - cowagent
     networks:
@@ -65,3 +69,5 @@ volumes:
   data:
   # WhatsApp session keys: losing this volume means re-scanning every QR.
   whatsapp:
+  # Received WhatsApp media; the gateway deletes files older than 7 days.
+  whatsapp_media:
