@@ -1,0 +1,71 @@
+name: Deploy CowAgent to Tencent Lighthouse
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cowagent-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ vars.VPS_DEPLOY_ENABLED == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      VPS: ubuntu@43.152.240.47
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prepare pinned SSH identity
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          test -n "$VPS_SSH_KEY"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/ln_vps"
+          cp deploy/known_hosts "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/ln_vps" "$HOME/.ssh/known_hosts"
+          ssh-keygen -F 43.152.240.47 -f "$HOME/.ssh/known_hosts" >/dev/null
+          echo "SSH=ssh -i $HOME/.ssh/ln_vps -o StrictHostKeyChecking=yes" >> "$GITHUB_ENV"
+      - name: Upload deploy files
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > .deploy-revision
+          $SSH "$VPS" 'mkdir -p ~/cowagent'
+          rsync -az --delete -e "$SSH" --exclude='.git/' --exclude='.env*' ./ "$VPS":~/cowagent/
+      # Secrets travel over stdin, never on a command line. Blank values are omitted so keys saved in the web console survive.
+      - name: Write server environment
+        env:
+          WEB_PASSWORD: ${{ secrets.COWAGENT_WEB_PASSWORD }}
+          MODEL: ${{ vars.COWAGENT_MODEL }}
+          CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+          OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [[ ${#WEB_PASSWORD} -lt 12 ]]; then
+            echo '::error::Set the COWAGENT_WEB_PASSWORD secret (12+ characters); the console is public and the agent has shell access.'
+            exit 1
+          fi
+          for name in WEB_PASSWORD MODEL CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
+            if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
+          done | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.cowagent'
+      - name: Start and verify CowAgent
+        run: |
+          $SSH "$VPS" "cd ~/cowagent && test \"\$(cat .deploy-revision)\" = '$GITHUB_SHA' \
+            && (sudo -n docker network inspect lnint-edge >/dev/null 2>&1 || sudo -n docker network create lnint-edge) \
+            && sudo -n docker compose -f deploy/compose.yaml pull \
+            && sudo -n docker compose -f deploy/compose.yaml up -d \
+            && curl -fsS --retry 30 --retry-delay 2 --retry-all-errors --max-time 5 http://127.0.0.1:9899/ >/dev/null"
+      - name: Verify public console
+        continue-on-error: true
+        run: |
+          addresses="$(getent ahostsv4 agent.lnint.xyz | awk '{print $1}' | sort -u || true)"
+          echo "agent.lnint.xyz A: ${addresses:-none}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$addresses" != '43.152.240.47' ]]; then
+            echo '::warning::agent.lnint.xyz does not resolve to the VPS yet; console is reachable only via SSH tunnel.'
+            exit 0
+          fi
+          curl -fsSL --connect-timeout 5 --max-time 12 --retry 5 --retry-delay 3 --retry-all-errors https://agent.lnint.xyz/ -o /dev/null
+          echo 'https://agent.lnint.xyz is up.' >> "$GITHUB_STEP_SUMMARY"

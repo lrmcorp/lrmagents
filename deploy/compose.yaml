@@ -1,0 +1,39 @@
+name: cowagent
+
+services:
+  cowagent:
+    image: ${COWAGENT_IMAGE:-zhayujie/chatgpt-on-wechat:latest}
+    restart: unless-stopped
+    # Same as upstream CowAgent compose; the agent's browser tools need it.
+    security_opt:
+      - seccomp:unconfined
+    env_file: ../.env.cowagent
+    environment:
+      CHANNEL_TYPE: web
+      # Reachable by the ln Caddy proxy over the lnint-edge network; the host port below stays on loopback.
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 9899
+      AGENT: 'True'
+      AGENT_PERMISSION_MODE: full-access
+      COW_DATA_DIR: /home/agent/.cow
+      TZ: Asia/Jakarta
+    ports:
+      # For an SSH tunnel: ssh -L 9899:127.0.0.1:9899 ubuntu@43.152.240.47
+      - "127.0.0.1:9899:9899"
+    volumes:
+      - workspace:/home/agent/cow
+      - data:/home/agent/.cow
+    networks:
+      default:
+      edge:
+        aliases: [cowagent]
+
+networks:
+  # Shared only with the ln Caddy container, so the agent cannot reach the ln database.
+  edge:
+    name: lnint-edge
+    external: true
+
+volumes:
+  workspace:
+  data:
