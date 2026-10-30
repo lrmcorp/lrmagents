@@ -44,6 +44,17 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
 
 `agent.lnint.xyz` stops being served after the switch. Delete the variable to go back to it.
 
+## Switch models by asking
+
+Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so you can say things like "which models can you use?", "switch to Claude Sonnet", "use gpt-5.5 from now on", or "go back to the default model".
+
+- **Allowed models:** only providers with an API key on file are offered, the same list as the console's model picker. A family name such as "claude sonnet" picks that family's newest model. A name that is too broad ("gpt") makes the agent ask which one.
+- **This chat** (the default): the switch takes effect on the next model call and lasts for that conversation, including WhatsApp chats. "Go back to the default" clears it.
+- **As the agent's default** ("from now on", "make it the default"):
+  - For the main agent, this saves the global model (Config → Models).
+  - For any other agent, it saves that agent's default model (Agents page).
+- **Team chats:** each agent keeps its own model, as in the console.
+
 ## WhatsApp (QR link, one number per agent)
 
 `whatsapp-gateway/` links WhatsApp numbers through **WhatsApp Web**, using Baileys `7.0.0-rc14`, the same library and version OpenClaw pins. Each agent can have its own number.

@@ -134,4 +134,11 @@ patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conven
 - Never read the whole vault, or long pages end to end, to answer a question.
 
 ## Core Operations""", root=app)
+# ---- switch_model tool (deploy/agent-tools/model_switch, copied in by the Dockerfile):
+# register it so every agent can change model when asked in chat.
+patch("agent/tools/__init__.py",
+      "from agent.tools.subagent.subagent import SubagentTool\n",
+      "from agent.tools.subagent.subagent import SubagentTool\n"
+      "from agent.tools.model_switch.model_switch import ModelSwitch\n", root=app)
+patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n", root=app)
 print("LRM brand applied")

@@ -5,6 +5,8 @@ FROM ${BASE_IMAGE}
 COPY deploy/brand /tmp/brand
 # Obsidian skills (kepano/obsidian-skills, MIT), copied into every workspace at startup.
 COPY deploy/skills /app/skills/
+# switch_model tool: change model by asking in chat (registered by apply.py).
+COPY deploy/agent-tools/model_switch /app/agent/tools/model_switch/
 RUN set -eux; \
     python /tmp/brand/apply.py /app /tmp/brand/theme.json; \
     static=/app/channel/web/static; \
