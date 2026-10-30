@@ -14,7 +14,8 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from 'baileys';
 import { ask } from './cowagent.js';
-import { GroupHistory, PairingBook, RateLimiter, chunks, decide, mediaKind, messageText, normalizeSettings, phoneOf, toWhatsApp } from './policy.js';
+import crypto from 'node:crypto';
+import { GroupHistory, PairingBook, RateLimiter, bareJid, chunks, decide, extractLocalFiles, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 // Shared with the agent container (read-only there) so its vision and
@@ -30,7 +31,22 @@ const quiet = pino({ level: 'silent' });
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 // A QR login that nobody scans is stopped after this long (OpenClaw uses 3 min).
 const QR_LOGIN_TTL_MS = 3 * 60 * 1000;
+// After this many quick reconnects the link is reported as down ('error') and
+// retried every few minutes instead, until it comes back or is unlinked.
 const MAX_RECONNECTS = 12;
+const SLOW_RETRY_MS = 5 * 60 * 1000;
+const KNOWN_CHATS_MAX = 5000;
+// The agent's workspace, mounted read-only at the same path, so files it links
+// in a reply (generated images, documents) can be attached.
+const FILE_ROOTS = [(process.env.WORKSPACE_DIR || '/home/agent/cow').replace(/\/?$/, '/')];
+const FILE_MAX_BYTES = 16 * 1024 * 1024;
+const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif',
+  '.pdf': 'application/pdf', '.csv': 'text/csv', '.txt': 'text/plain', '.md': 'text/markdown', '.json': 'application/json',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.zip': 'application/zip', '.mp3': 'audio/mpeg', '.mp4': 'video/mp4', '.html': 'text/html' };
+const DELIVERY_DEDUPE_MS = 60 * 60 * 1000;
 
 let waVersion;
 async function version() {
@@ -66,6 +82,24 @@ class Account {
     this.queues = new Map(); // chat jid -> promise chain, one answer at a time per chat
     this.seen = new Set(); // inbound ids already handled; WhatsApp can redeliver
     this.qrTimer = null;
+    this.retryTimer = null;
+    this.knownChats = new Set(); // chats that wrote to this agent: the only ones it may message first
+  }
+
+  async loadKnownChats() {
+    try {
+      this.knownChats = new Set(JSON.parse(await fs.readFile(path.join(this.dir, 'known-chats.json'), 'utf8')));
+    } catch {
+      this.knownChats = new Set();
+    }
+  }
+
+  async rememberChat(chat) {
+    if (this.knownChats.has(chat)) return;
+    this.knownChats.add(chat);
+    while (this.knownChats.size > KNOWN_CHATS_MAX) this.knownChats.delete(this.knownChats.values().next().value);
+    await fs.mkdir(this.dir, { recursive: true });
+    await fs.writeFile(path.join(this.dir, 'known-chats.json'), JSON.stringify([...this.knownChats]));
   }
 
   async loadSettings() {
@@ -166,28 +200,39 @@ class Account {
       }
       // A QR that rotated out unscanned closes the socket too; the timer above owns that case.
       if (this.status === 'unlinked') return;
-      // Back off 2s growing x1.8 to 30s with jitter (OpenClaw's curve), then give up
-      // so a dead session doesn't hammer WhatsApp forever.
-      this.retry += 1;
-      this.error = lastDisconnect?.error?.message || '';
-      if (this.retry > MAX_RECONNECTS) {
-        this.status = 'error';
-        this.error = `Could not reconnect (${this.error || code}). Click Link to retry.`;
-        return;
-      }
-      this.status = 'reconnecting';
-      const base = Math.min(30_000, 2000 * 1.8 ** (this.retry - 1));
-      const wait = Math.round(base * (0.75 + Math.random() * 0.5));
-      log.info({ agent: this.agentId, code, wait }, 'whatsapp reconnecting');
-      await sleep(wait);
-      if (!this.stopped && sock === this.sock) this.start().catch((e) => this.fail(e));
+      this.scheduleRetry(lastDisconnect?.error?.message || String(code || 'connection closed'));
     }
   }
 
+  // Back off 2s growing x1.8 to 30s with jitter (OpenClaw's curve). After
+  // MAX_RECONNECTS the link is reported as down ('error', which the health check
+  // alerts on) but still retried every 5 minutes, so it heals on its own.
+  scheduleRetry(reason) {
+    if (this.stopped) return;
+    this.retry += 1;
+    let wait;
+    if (this.retry > MAX_RECONNECTS) {
+      this.status = 'error';
+      this.error = `WhatsApp is not connecting (${reason}). Retrying every 5 minutes; you can also unlink and link again.`;
+      wait = SLOW_RETRY_MS;
+    } else {
+      this.status = 'reconnecting';
+      this.error = reason;
+      const base = Math.min(30_000, 2000 * 1.8 ** (this.retry - 1));
+      wait = Math.round(base * (0.75 + Math.random() * 0.5));
+    }
+    log.info({ agent: this.agentId, reason, wait }, 'whatsapp reconnect scheduled');
+    clearTimeout(this.retryTimer);
+    const sock = this.sock;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      if (!this.stopped && sock === this.sock) this.start().catch((e) => this.fail(e));
+    }, wait);
+  }
+
   fail(error) {
-    this.status = 'reconnecting';
-    this.error = error.message;
     log.error({ agent: this.agentId, err: error.message }, 'whatsapp start failed');
+    this.scheduleRetry(error.message);
   }
 
   enqueue(sock, msg) {
@@ -205,15 +250,16 @@ class Account {
     this.seen.add(msg.key.id);
     if (this.seen.size > 5000) this.seen.delete(this.seen.values().next().value);
     const myJids = [sock.user?.id, sock.user?.lid].filter(Boolean);
-    const myPhone = phoneOf(sock.user?.id);
-    const chatPhone = phoneOf(msg.key.remoteJid) || phoneOf(msg.key.remoteJidAlt);
-    const selfChat = Boolean(msg.key.fromMe && myPhone && chatPhone === myPhone);
+    const selfChat = isSelfChat(msg.key, myJids);
     const verdict = decide({ key: msg.key, message: msg.message, settings: this.settings, myJids, selfChat });
     const chat = msg.key.remoteJid;
 
     if (verdict.action === 'ignore') {
       // Remember group talk the agent wasn't asked about, for context when it is.
-      if (verdict.reason === 'not-addressed') this.history.add(chat, msg.pushName, messageText(msg.message));
+      // Only approved members: text from others never reaches the agent.
+      if (verdict.reason === 'not-addressed' && (this.settings.dmPolicy === 'open' || this.settings.allowFrom.includes(senderPhone(msg.key)))) {
+        this.history.add(chat, msg.pushName, messageText(msg.message));
+      }
       return;
     }
     if (verdict.action === 'pairing') {
@@ -232,6 +278,7 @@ class Account {
         return;
       }
     }
+    await this.rememberChat(chat).catch(() => {});
     await sock.readMessages([msg.key]).catch(() => {});
     if (verdict.action === 'unsupported') {
       await this.send(sock, chat, UNSUPPORTED_REPLY, msg);
@@ -292,22 +339,53 @@ class Account {
     }
   }
 
+  async sendFile(sock, chat, file) {
+    try {
+      const real = await fs.realpath(file.path);
+      if (!FILE_ROOTS.some((root) => real.startsWith(root))) throw new Error('outside the workspace');
+      const stat = await fs.stat(real);
+      if (!stat.isFile() || stat.size > FILE_MAX_BYTES) throw new Error('missing or larger than 16 MB');
+      const data = await fs.readFile(real);
+      const ext = path.extname(real).toLowerCase();
+      const content = file.image
+        ? { image: data, caption: file.caption || undefined }
+        : { document: data, fileName: file.name, mimetype: MIME[ext] || 'application/octet-stream', caption: file.caption && file.caption !== file.name ? file.caption : undefined };
+      const sent = await sock.sendMessage(chat, content);
+      if (sent?.key?.id) this.sentIds.add(sent.key.id);
+    } catch (error) {
+      log.warn({ agent: this.agentId, file: file.name, err: error.message }, 'attachment not sent');
+      await sock.sendMessage(chat, { text: `(Could not attach ${file.name}.)` }).catch(() => {});
+    }
+  }
+
   async send(sock, chat, text, quoted) {
-    const parts = chunks(toWhatsApp(text));
+    const { text: body, files } = extractLocalFiles(text, FILE_ROOTS);
+    const parts = chunks(toWhatsApp(body));
     for (let i = 0; i < parts.length; i += 1) {
       // A short human-like pause between parts; bursts of instant messages are
       // the pattern WhatsApp flags most readily.
       if (i) await sleep(800 + Math.random() * 700);
-      const sent = await sock.sendMessage(chat, { text: parts[i] }, i === 0 && quoted ? { quoted } : undefined);
+      let sent;
+      try {
+        sent = await sock.sendMessage(chat, { text: parts[i] }, i === 0 && quoted ? { quoted } : undefined);
+      } catch (error) {
+        throw Object.assign(error, { partial: i > 0 });
+      }
       if (sent?.key?.id) {
         this.sentIds.add(sent.key.id);
         if (this.sentIds.size > 2000) this.sentIds.delete(this.sentIds.values().next().value);
       }
     }
+    for (const file of files) {
+      await sleep(600 + Math.random() * 600);
+      await this.sendFile(sock, chat, file);
+    }
   }
 
   async stop() {
     this.stopped = true;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
     clearTimeout(this.qrTimer);
     this.qrTimer = null;
     const sock = this.sock;
@@ -342,6 +420,7 @@ class Account {
 export class Accounts {
   constructor() {
     this.byAgent = new Map();
+    this.deliveries = new Map(); // idempotency key -> time, so a retried reminder is not sent twice
   }
 
   get(agentId, create = false) {
@@ -361,6 +440,7 @@ export class Accounts {
       if (!entry.isDirectory() || !SAFE_ID.test(entry.name)) continue;
       const account = this.get(entry.name, true);
       await account.loadSettings();
+      await account.loadKnownChats();
       if (await account.hasSession()) account.start().catch((e) => account.fail(e));
     }
   }
@@ -376,6 +456,7 @@ export class Accounts {
   async link(agentId) {
     const account = this.get(agentId, true);
     await account.loadSettings();
+    await account.loadKnownChats();
     if (['connected', 'qr', 'starting', 'reconnecting'].includes(account.status) && account.sock) return account.view();
     await account.stop();
     account.retry = 0;
@@ -410,12 +491,31 @@ export class Accounts {
   }
 
   // A message the agent sends on its own (a scheduled reminder), not a reply.
+  // Only to chats that wrote to this agent, approved numbers, or the owner's own
+  // chat, so a misled agent can't use the number to message strangers. The
+  // scheduler retries on errors; the key makes sure a retry never sends twice.
   async deliver(agentId, chat, text) {
     const account = this.get(agentId);
-    if (!account || account.status !== 'connected' || !account.sock) throw new Error('WhatsApp is not connected for this agent');
-    if (!/@(s\.whatsapp\.net|g\.us|lid)$/.test(chat)) throw new Error('not a WhatsApp chat id');
+    if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });
+    if (!/@(s\.whatsapp\.net|g\.us|lid)$/.test(chat)) throw Object.assign(new Error('not a WhatsApp chat id'), { status: 400 });
+    const own = [account.sock.user?.id, account.sock.user?.lid].some((jid) => jid && bareJid(jid) === bareJid(chat));
+    const approved = account.settings.allowFrom.includes(phoneOf(chat));
+    if (!own && !approved && !account.knownChats.has(chat)) {
+      throw Object.assign(new Error('this chat never wrote to the agent; refusing to start a conversation'), { status: 403 });
+    }
     if (!text.trim()) return;
-    await account.send(account.sock, chat, text);
+    const key = crypto.createHash('sha256').update(`${agentId}\n${chat}\n${text}`).digest('hex');
+    const now = Date.now();
+    for (const [k, at] of this.deliveries) if (now - at > DELIVERY_DEDUPE_MS) this.deliveries.delete(k);
+    if (this.deliveries.has(key)) return; // already sent (or being sent) within the hour
+    this.deliveries.set(key, now);
+    try {
+      await account.send(account.sock, chat, text);
+    } catch (error) {
+      // Nothing went out yet: let the scheduler retry. A partial send is not retried.
+      if (!error.partial) this.deliveries.delete(key);
+      throw error;
+    }
   }
 
   async shutdown() {

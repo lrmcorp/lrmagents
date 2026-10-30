@@ -2,7 +2,7 @@
 
 Deploys **LRMagent**, the LRM agent console built on the open-source [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899), to the same Tencent Lighthouse VPS as the `ln` demo (`43.152.240.47`, `int.lnint.xyz`).
 
-- Public URL: `https://agent.lnint.xyz` now; `https://lrmcorporation.id` once that domain is switched on (see below). TLS terminates in the existing `ln` Caddy container, which reaches CowAgent over the shared `lnint-edge` Docker network.
+- Public URL: `https://agent.lnint.xyz` now; `https://lrmcorporation.id` once that domain is switched on (see below). TLS terminates in the existing `ln` Caddy container, which reaches LRMagent over the shared `lnint-edge` Docker network.
 - The LRMagent container is not on the `ln` network, so it cannot reach the `ln` PostgreSQL database.
 - Workspace (skills, memory) and data (`config.json`, logs) live in Docker volumes `cowagent_workspace` and `cowagent_data`. They survive redeploys.
 
@@ -73,11 +73,13 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
 - **Sessions:** stored in the `cowagent_whatsapp` Docker volume, so redeploys keep numbers linked. A dropped link reconnects with backoff (2 s, growing to 30 s, 12 tries). Unlinking from the phone is detected and the session is wiped.
 - **Sign-in:** the page uses the console's own login (the gateway checks the console session cookie). Writes must come from the page itself.
 
-- **Reminders and scheduled tasks** set up in a WhatsApp chat ("remind me at 5pm") are delivered back to that chat through the gateway. If the number is disconnected at that moment, the scheduler retries on its next tick.
+- **Reminders and scheduled tasks** set up in a WhatsApp chat ("remind me at 5pm") are delivered back to that chat through the gateway. If the number is disconnected at that moment, the scheduler retries on its next tick; a retry never sends a reminder twice. The agent can only start messages to chats that wrote to it, approved numbers, or your own chat. It cannot message strangers.
+- **Files from the agent:** images it generates and files it sends arrive as WhatsApp photos and documents (up to 16 MB), not as links.
 - **Photos and voice notes:** the gateway saves them to a shared media volume that the agent can read but not write. Photos go to the vision tool. Voice notes go to `transcribe_audio`, which uses the Speech Recognition provider set in Config → Models. Files are kept 7 days. Video, documents and stickers are answered only through their caption.
-- **Groups:** when the agent is @mentioned, it also sees up to the last 20 messages it wasn't asked about (within 6 hours), so it can follow the conversation.
+- **Groups:** when the agent is @mentioned, it also sees up to the last 20 messages from **approved** members that it wasn't asked about (within 6 hours), so it can follow the conversation.
 - **Rate limit:** at most 8 messages per minute per chat and 40 per number. A sender who goes over is told once, then ignored until the minute passes. "Message yourself" is never limited.
-- **Permissions:** WhatsApp chats run with **workspace-write** permission, because WhatsApp senders are less trusted than you in the console. Console chats keep your default.
+- **Permissions:** WhatsApp chats run with **workspace-write** permission, because WhatsApp senders are less trusted than you in the console. In fact every conversation over the chat API is held to that level and can't be raised to full access. A WhatsApp chat can switch its own model, but not the default. Console chats keep your default.
+- **Remaining risk:** the agent's shell commands run as the same user as LRMagent itself, so a chat that can run commands could in principle read the console password. LRMagent's permission checks are not an operating-system sandbox. Approve only people you trust, and keep "Who can talk" on pairing or allowlist.
 
 **Risk:** WhatsApp does not support bots on WhatsApp Web. Use a dedicated number and avoid bulk or spam-like messaging, or the number can be banned.
 
@@ -101,6 +103,8 @@ The vault can be synced with a **private** GitHub repo, so you can read and edit
 1. Create an empty **private** repository, for example `lrmcorp/lrmagent-vault`. This repo (`lrmagents`) is public, so it must not hold the vault.
 2. In this repo, add the Actions variable `LRMAGENT_VAULT_REPO=lrmcorp/lrmagent-vault` and run the deploy.
 3. The deploy summary shows a public key generated on the VPS. Add it under the vault repo's Settings → Deploy keys, **with write access**. The private key never leaves the VPS.
+
+Only the synced folders below are written from the server; `.obsidian/`, notes at the top level and any other folders are left as Obsidian keeps them. A folder created in Obsidian for an existing agent (`agents/<id>/knowledge/`) is created on the server too.
 
 Every hour at :41, `deploy/vault-sync.sh`:
 - commits the agents' changes;
@@ -132,16 +136,27 @@ Take the numbers from your providers' price pages; there is no built-in price li
   sudo docker compose -f deploy/compose.yaml up -d
   ```
 
-  The backups stay on the VPS. Copy them elsewhere from time to time if the VPS itself is at risk.
+  **Off-site copy:** with the vault repo set up, add the secret `LRMAGENT_BACKUP_PASSPHRASE`. Each night's archives are then encrypted (AES-256) and pushed to the vault repo's `backups` branch, keeping only the latest night. Keep the passphrase somewhere safe; without it the copy can't be opened. To restore from it:
+
+  ```bash
+  git clone -b backups git@github.com:lrmcorp/lrmagent-vault.git restore && cd restore
+  openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in lrmagent-backup-*.tar.gz.enc | tar -x
+  ```
+
+  Then restore each volume as shown above.
 - **Health alerts:** every 15 minutes, the **LRMagent health** workflow checks:
   - the console and containers;
   - linked WhatsApp numbers (logged out on the phone, or unable to reconnect);
+  - AI model failures (3 or more failed model calls in 15 minutes: key, credit or provider);
   - disk space;
   - the last backup;
   - vault sync errors;
   - public HTTPS.
 
   On a problem it opens a GitHub issue titled *LRMagent health alert*, which GitHub emails you, and comments only when the problem changes. It closes the issue when everything is healthy again.
+- **Weekly update check:** every Monday the **LRMagent update check** workflow compares the pinned agent image and WhatsApp library with the newest releases, and opens an issue titled *LRMagent update available* when something new is out. Nothing is updated automatically.
+- **Tests before deploy:** every push first runs the gateway tests and syntax checks, then builds both images, which applies every brand patch. Nothing reaches the VPS unless all of that passes.
+- **Login lockout:** 5 wrong passwords lock out only the address that typed them, for 10 minutes, not everyone.
 - **Locked settings:** the console password (the `COWAGENT_WEB_PASSWORD` secret), the listen address and in-place updates are managed by the deployment. They are hidden in the console and refused by the server. Passwords and tokens are masked in the logs.
 
 ## Updating the upstream version

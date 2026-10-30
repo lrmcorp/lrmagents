@@ -104,3 +104,26 @@ test('group history: bounded, injected once, expires', async () => {
   h.add('g', 'Old', 'stale'); now = 200; h.add('g', 'New', 'fresh');
   assert.equal(h.take('g'), '[Recent messages in this group, oldest first:\n- New: fresh]');
 });
+
+test('self chat: own number or own LID only, never the alt sender number', async () => {
+  const { isSelfChat } = await import('../src/policy.js');
+  const me = ['6280000000001:7@s.whatsapp.net', '99999:7@lid'];
+  assert.equal(isSelfChat({ fromMe: true, remoteJid: '6280000000001@s.whatsapp.net' }, me), true);
+  assert.equal(isSelfChat({ fromMe: true, remoteJid: '99999@lid' }, me), true);
+  // Owner writing to a customer in a LID chat; Baileys puts the owner's number in remoteJidAlt.
+  assert.equal(isSelfChat({ fromMe: true, remoteJid: '55555@lid', remoteJidAlt: '6280000000001@s.whatsapp.net' }, me), false);
+  assert.equal(isSelfChat({ fromMe: false, remoteJid: '6280000000001@s.whatsapp.net' }, me), false);
+  assert.equal(isSelfChat({ fromMe: true, remoteJid: '99999@s.whatsapp.net' }, me), false); // same digits, other namespace
+});
+
+test('local file links become attachments; web links and outside paths stay text', async () => {
+  const { extractLocalFiles } = await import('../src/policy.js');
+  const roots = ['/home/agent/cow/'];
+  const r = extractLocalFiles('Here is the chart:\n\n![Sales Q3](/home/agent/cow/images/q3.png)\n\n[report.pdf](/home/agent/cow/out/report%20v2.pdf)\nSee [site](https://x.io) and ![x](/etc/passwd) and [y](/home/agent/cow/../.cow/config.json)', roots);
+  assert.equal(r.text, 'Here is the chart:\n\nSee [site](https://x.io) and ![x](/etc/passwd) and [y](/home/agent/cow/../.cow/config.json)');
+  assert.deepEqual(r.files, [
+    { path: '/home/agent/cow/images/q3.png', name: 'q3.png', caption: 'Sales Q3', image: true },
+    { path: '/home/agent/cow/out/report v2.pdf', name: 'report v2.pdf', caption: 'report.pdf', image: false },
+  ]);
+  assert.deepEqual(extractLocalFiles('plain', roots), { text: 'plain', files: [] });
+});

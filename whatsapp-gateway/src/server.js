@@ -84,7 +84,7 @@ async function route(req, res) {
       await accounts.deliver(String(body.agentId || ''), String(body.chat || ''), String(body.text || ''));
       return send(res, 200, { ok: true });
     } catch (error) {
-      return send(res, 503, { error: error.message });
+      return send(res, error.status || 503, { error: error.message });
     }
   }
   if (url.pathname === '/whatsapp') {

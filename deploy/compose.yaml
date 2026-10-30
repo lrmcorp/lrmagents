@@ -13,7 +13,10 @@ services:
     # Same as the upstream compose file; the agent's browser tools need it.
     security_opt:
       - seccomp:unconfined
-    env_file: ../.env.cowagent
+    # raw: values are taken literally, so a password with $, # or quotes survives.
+    env_file:
+      - path: ../.env.cowagent
+        format: raw
     environment:
       CHANNEL_TYPE: web
       # Reachable by the ln Caddy proxy over the lnint-edge network; the host port below stays on loopback.
@@ -45,12 +48,17 @@ services:
     build:
       context: ../whatsapp-gateway
     restart: unless-stopped
-    env_file: ../.env.whatsapp
+    # raw: values are taken literally, so a password with $, # or quotes survives.
+    env_file:
+      - path: ../.env.whatsapp
+        format: raw
     environment:
       COWAGENT_URL: http://cowagent:9899
     volumes:
       - whatsapp:/data
       - whatsapp_media:/media/whatsapp
+      # Read-only, same path as in the agent, to attach files the agent links in replies.
+      - workspace:/home/agent/cow:ro
     depends_on:
       - cowagent
     networks:

@@ -10,7 +10,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Everything that can be checked without the VPS. A failure here stops the deploy.
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: WhatsApp gateway tests
+        working-directory: whatsapp-gateway
+        run: npm ci --no-audit --no-fund && npm test
+      - name: Script and code syntax
+        run: |
+          for f in deploy/*.sh; do bash -n "$f"; done
+          python3 -m py_compile deploy/brand/apply.py deploy/agent-tools/*.py deploy/agent-tools/*/*.py
+          for f in .github/workflows/*.yml; do python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$f"; done
+      - name: Compose file
+        run: |
+          docker network create lnint-edge
+          touch .env.cowagent .env.whatsapp
+          docker compose -f deploy/compose.yaml config --quiet
+      # Builds both images exactly as the VPS will; apply.py fails the build if any
+      # brand patch no longer matches the pinned upstream image.
+      - name: Build images
+        run: docker compose -f deploy/compose.yaml build
+
   deploy:
+    needs: validate
     if: ${{ vars.VPS_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -95,9 +123,10 @@ jobs:
       - name: Set up vault sync
         env:
           VAULT_REPO: ${{ vars.LRMAGENT_VAULT_REPO }}
+          BACKUP_PASSPHRASE: ${{ secrets.LRMAGENT_BACKUP_PASSPHRASE }}
         run: |
           if [[ -z "$VAULT_REPO" ]]; then
-            $SSH "$VPS" '{ crontab -l 2>/dev/null | grep -v "# lrmagent-vault"; } | crontab -'
+            $SSH "$VPS" '{ crontab -l 2>/dev/null | grep -v "# lrmagent-vault"; } | crontab -; rm -f ~/.lrmagent-backup-pass ~/.lrmagent-offsite-repo'
             echo "Vault sync: off (set the LRMAGENT_VAULT_REPO variable to turn it on)." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -109,6 +138,14 @@ jobs:
             && line='41 * * * * bash \$HOME/cowagent/deploy/vault-sync.sh $VAULT_REPO >> \$HOME/vault-sync/sync.log 2>&1 # lrmagent-vault' \
             && { crontab -l 2>/dev/null | grep -v '# lrmagent-vault'; echo \"\$line\"; } | crontab - \
             && cat ~/.ssh/lrmagent_vault.pub")"
+          # Off-site backups: encrypted with this passphrase, pushed to the same private repo.
+          if [[ -n "$BACKUP_PASSPHRASE" ]]; then
+            printf '%s\n' "$BACKUP_PASSPHRASE" | $SSH "$VPS" "umask 077 && cat > ~/.lrmagent-backup-pass && printf '%s\n' '$VAULT_REPO' > ~/.lrmagent-offsite-repo"
+            echo "Off-site backups: nightly, encrypted, to $VAULT_REPO (branch backups)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            $SSH "$VPS" 'rm -f ~/.lrmagent-backup-pass ~/.lrmagent-offsite-repo'
+            echo "Off-site backups: off (add the LRMAGENT_BACKUP_PASSPHRASE secret to turn them on)." >> "$GITHUB_STEP_SUMMARY"
+          fi
           {
             echo "### Vault sync: $VAULT_REPO (hourly)"
             echo "Add this as a **deploy key with write access** in $VAULT_REPO → Settings → Deploy keys:"

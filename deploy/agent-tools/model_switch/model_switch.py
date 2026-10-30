@@ -135,6 +135,11 @@ class ModelSwitch(BaseTool):
         model.set_session_override(provider, name)
         if scope != "agent":
             return ToolResult.success(f"Switched this chat to {name} ({provider}). Other chats keep their model.")
+        if str(session_id).startswith("openai:"):
+            # WhatsApp / API chats come from outside the console: they may switch
+            # their own conversation, but not the agent's or everyone's default.
+            return ToolResult.success(f"Switched this chat to {name} ({provider}). Changing the default for everyone "
+                                      "can only be done from the LRMagent console.")
 
         try:
             from channel.web.api.agents import _agent_admin_service

@@ -24,14 +24,23 @@ for a in json.load(sys.stdin).get("accounts", []):
         print("WhatsApp for agent {} {}; open the WhatsApp page and link it again.".format(a["agent"], what))
 '
 fi
+# Model calls that failed for good (bad key, no credit, provider down). Counted
+# from LRMagent's own log markers; only the count goes into the alert.
+failed="$(compose logs --since 15m --no-log-prefix cowagent 2>/dev/null | grep -cE 'LLM API error after|LLM call error \(non-retryable\)' || true)"
+[[ "${failed:-0}" -ge 3 ]] && echo "${failed} AI model calls failed in the last 15 minutes: check the API key, credit or the provider's status (Config -> Models)."
 used="$(df -P "$HOME" | awk 'NR==2 {gsub("%", "", $5); print $5}')"
 [[ "${used:-0}" -ge 90 ]] && echo "VPS disk is ${used}% full."
 last="$(ls -t "$HOME"/backups/lrmagent/*.tar.gz 2>/dev/null | head -1)"
 if [[ -z "$last" ]] || [[ -n "$(find "$last" -mmin +1560 2>/dev/null)" ]]; then
   echo "No LRMagent backup in the last 26 hours."
 fi
+offsite="$(cat "$HOME/backups/lrmagent/offsite-status" 2>/dev/null || true)"
+[[ -s "$HOME/.lrmagent-backup-pass" && "$offsite" == FAIL* ]] && echo "Off-site backup: ${offsite#* * }"
 status="$(cat "$HOME/vault-sync/status" 2>/dev/null || true)"
 case "$status" in
   FAIL*|CONFLICT*) echo "Vault sync: ${status#* * }" ;;
+  RETRY*) [[ "$(cat "$HOME/vault-sync/retries" 2>/dev/null || echo 0)" -ge 3 ]] && echo "Vault sync keeps retrying: ${status#* * }" ;;
 esac
+# A status older than 3 hours means the hourly sync stopped running.
+[[ -n "$status" ]] && [[ -n "$(find "$HOME/vault-sync/status" -mmin +180 2>/dev/null)" ]] && echo "Vault sync has not run for over 3 hours."
 exit 0

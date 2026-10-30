@@ -9,6 +9,7 @@ network. Installed as channel/lrm_whatsapp_relay.py by the LRMagent image.
 
 import json
 import os
+import urllib.error
 import urllib.request
 
 from common.log import logger
@@ -35,10 +36,18 @@ class WhatsAppRelay:
             method="POST",
         )
         # Raising makes the scheduler keep the task and retry on its next tick
-        # (e.g. while the phone is offline or the number is relinking).
-        with urllib.request.urlopen(request, timeout=30) as response:
-            if response.status != 200:
-                raise RuntimeError(f"WhatsApp gateway answered {response.status}")
+        # (e.g. while the phone is offline or the number is relinking). A refusal
+        # (400/403: not a chat this agent may message) is final: retrying can't help.
+        # The gateway de-duplicates, so a retry after a timeout never sends twice.
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                if response.status != 200:
+                    raise RuntimeError(f"WhatsApp gateway answered {response.status}")
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 403):
+                logger.warning(f"[WhatsAppRelay] gateway refused {self.agent_id}/...{self.chat[-8:]}: {e.read()[:200]!r}")
+                return
+            raise
         logger.info(f"[WhatsAppRelay] delivered scheduled message to {self.agent_id}/...{self.chat[-8:]}")
 
 

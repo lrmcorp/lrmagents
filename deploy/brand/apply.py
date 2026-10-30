@@ -170,12 +170,14 @@ patch("api/integrations.py",
 patch("api/update.py",
       '            logger.info("[WebChannel] one-click update requested")\n',
       '            return json.dumps({"status": "error", "message": "LRMagent updates are installed by redeploying."})\n')
-# WhatsApp chats come from people outside the console: unless a chat has its own
-# setting, they run with workspace-write instead of the console's default.
+# Conversations over the chat API (WhatsApp, and anything holding the API token)
+# come from outside the console: they run with workspace-write, unless a stricter
+# setting applies, and can never be raised to full access that way.
 patch("bridge/agent_bridge.py",
       'agent.apply_permission_mode(permission_mode or prefs.get("permission"))',
-      'agent.apply_permission_mode(permission_mode or prefs.get("permission") or ('
-      '"workspace-write" if str(session_id).startswith("openai:conversation:whatsapp:") else None))', root=app)
+      'agent.apply_permission_mode('
+      '("read-only" if (permission_mode or prefs.get("permission")) == "read-only" else "workspace-write") '
+      'if str(session_id).startswith("openai:") else (permission_mode or prefs.get("permission")))', root=app)
 # ---- Usage: every model call's tokens are recorded per agent/model/channel
 # (agent/lrm_usage.py) and served to the Usage page (channel/web/api/lrm_usage.py).
 patch("agent/protocol/agent_stream.py",
@@ -191,4 +193,18 @@ patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
 # password and the internal API token were written to run.log in clear text.
 patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',
       'if any(word in k for word in ("key", "secret", "password", "token")) and isinstance(v, str):', root=app)
+# ---- Login lockout per visitor: behind Caddy every request comes from Caddy's
+# private Docker address, which upstream doesn't treat as a proxy, so all
+# visitors shared one lockout and 5 wrong guesses by anyone locked the owner out.
+# The console is reachable only through Caddy or the host's loopback port, so a
+# private-network peer is our proxy and its X-Forwarded-For is the real client.
+patch("core/_common.py",
+      'if addr in ("::1", "::ffff:127.0.0.1") or addr.startswith("127."):',
+      'if addr in ("::1", "::ffff:127.0.0.1") or addr.startswith(("127.", "10.", "172.", "192.168.")):')
+# ---- Files the agent sends (send tool) reach chat-API replies as links to their
+# local path; the WhatsApp gateway turns those into real attachments. Upstream
+# only links files when a cloud URL exists, so self-hosted API replies lost them.
+patch("agent/chat/service.py",
+      '                url = data.get("url") or ""\n',
+      '                url = data.get("url") or (data.get("path") if channel_type == "openai_api" else "") or ""\n', root=app)
 print("LRM brand applied")

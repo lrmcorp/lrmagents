@@ -20,6 +20,20 @@ export const DEFAULT_SETTINGS = Object.freeze({
   groupPolicy: 'off',
 });
 
+// "6281234567890:7@s.whatsapp.net" -> "6281234567890"; works for LIDs too.
+export function bareJid(jid) {
+  return String(jid ?? '').split('@')[0].split(':')[0];
+}
+
+// "Message yourself": a message I sent into the chat whose address is my own
+// number or my own LID. remoteJidAlt is deliberately not used: for messages I
+// send, Baileys fills it with the sender's number (mine), not the chat's.
+export function isSelfChat(key, myJids) {
+  if (!key?.fromMe) return false;
+  const chat = String(key.remoteJid ?? '');
+  return myJids.filter(Boolean).some((jid) => bareJid(jid) === bareJid(chat) && String(jid).endsWith('@lid') === chat.endsWith('@lid'));
+}
+
 export function digits(value) {
   return String(value ?? '').replace(/\D/g, '');
 }
@@ -298,4 +312,25 @@ export class GroupHistory {
     }
     return lines.length ? `[Recent messages in this group, oldest first:\n${lines.join('\n')}]` : '';
   }
+}
+
+// Local files the agent linked in a reply (generated images, documents it sent):
+// Markdown links whose target is a path under one of `roots`. Returns the text
+// without those links and the files to attach. Web links are left in the text.
+const IMAGE_EXT = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif']);
+export function extractLocalFiles(text, roots) {
+  const files = [];
+  const seen = new Set();
+  const out = String(text ?? '').replace(/(!?)\[([^\]\n]*)\]\(<?(\/[^)\s>]+)>?\)/g, (match, bang, label, target) => {
+    let file = target;
+    try { file = decodeURI(target); } catch { /* keep as written */ }
+    if (file.split('/').includes('..') || !roots.some((root) => file.startsWith(root))) return match;
+    if (!seen.has(file)) {
+      seen.add(file);
+      const ext = file.slice(file.lastIndexOf('.')).toLowerCase();
+      files.push({ path: file, name: file.split('/').pop(), caption: label.trim(), image: IMAGE_EXT.has(ext) });
+    }
+    return '';
+  });
+  return { text: out.replace(/\n{3,}/g, '\n\n').trim(), files };
 }
