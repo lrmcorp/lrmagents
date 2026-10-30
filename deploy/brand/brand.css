@@ -41,8 +41,9 @@ html:not(.dark) .sidebar-collapse-btn:hover { color: #101725; background: #f1f5f
 /* The mark doubles as the home button; give it the hairline LRMsmm puts on white tiles. */
 #sidebar-home { border: 1px solid #e0e4e9; }
 
-/* One language only, so no switcher. */
-#lang-selector { display: none !important; }
+/* One language only, so no switcher in the header or in Settings → System. */
+#lang-selector,
+div:has(> #cfg-lang-select) { display: none !important; }
 
 /* Upstream project links (docs, website, GitHub) are not part of this deployment. */
 #docs-link,

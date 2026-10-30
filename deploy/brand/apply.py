@@ -58,6 +58,11 @@ for page in ("chat.html", "templates/guest/page.html"):
           "window.__cowNormalizeLang__ = function(raw) {",
           "window.__cowNormalizeLang__ = function(raw) {\n        return 'en';  // LRM: English only")
 
+# The Settings language picker offers Chinese too; leave English as its only option.
+patch("static/js/views/config.js",
+      "[{ value: 'zh', label: '简体中文' }, { value: 'zh-Hant', label: '繁體中文' }, { value: 'en', label: 'English' }]",
+      "[{ value: 'en', label: 'English' }]")
+
 # ---- Brand marks.
 patch("templates/layout/sidebar.html",
       '<span class="text-white font-semibold text-sm truncate">CowAgent</span>\n'
