@@ -44,31 +44,38 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
 
 `agent.lnint.xyz` stops being served after the switch. Delete the variable to go back to it.
 
-## WhatsApp
+## WhatsApp (QR link, one number per agent)
 
-`whatsapp-bridge/` connects a WhatsApp Business number through Meta's official **WhatsApp Cloud API**:
-- Meta delivers each message to `https://agent.lnint.xyz/whatsapp/webhook`, and the bridge checks Meta's signature on it.
-- The bridge passes the text to CowAgent's OpenAI-compatible API. Each phone number gets its own conversation, so the agent remembers context.
-- The reply goes back through the Cloud API, split into parts of up to 4,000 characters, with read receipts and a typing indicator while the agent works.
-- **Only allowlisted numbers get answered.** The agent can run commands, so strangers are ignored. Non-text messages get a short explanation.
+`whatsapp-gateway/` links WhatsApp numbers through **WhatsApp Web**, using Baileys `7.0.0-rc14`, the same library and version OpenClaw pins. Each agent can have its own number.
 
-The bridge reaches CowAgent with a random API token generated once on the VPS (`~/cowagent/.env.api-token`). CowAgent's API stays switched off until WhatsApp is configured.
+- **Link:** open **WhatsApp** in the console sidebar (under Channels). Click **Link WhatsApp** on an agent and scan the QR from the phone: Settings → Linked devices → Link a device. The QR refreshes itself, and an unscanned login stops after 3 minutes.
+- **Who can talk:** each agent has a "Who can talk to this agent" panel.
+  - Direct messages default to **pairing**: a stranger gets an 8-character code (valid 1 hour, at most 3 waiting), and you approve it on the WhatsApp page. Other options are allowlist only, anyone, or nobody.
+  - Groups are ignored by default. Set them to answer only when the number is @mentioned or replied to, and only for approved senders.
+  - On the linked phone, **Message yourself** always reaches the agent.
+- **Conversations:** each WhatsApp chat keeps its own conversation with its agent, through CowAgent's API and a token generated on the VPS.
+- **Replies:**
+  - Markdown is converted to WhatsApp formatting.
+  - Long replies are split into parts with short pauses between them.
+  - The sender sees read ticks and "typing…" while the agent works.
+  - Media without a caption gets a short "text only for now" reply.
+- **Sessions:** stored in the `cowagent_whatsapp` Docker volume, so redeploys keep numbers linked. A dropped link reconnects with backoff (2 s, growing to 30 s, 12 tries). Unlinking from the phone is detected and the session is wiped.
+- **Sign-in:** the page uses the console's own login (the gateway checks the console session cookie). Writes must come from the page itself.
 
-### Connect your number
+**Risk:** WhatsApp does not support bots on WhatsApp Web. Use a dedicated number and avoid bulk or spam-like messaging, or the number can be banned.
 
-1. At [developers.facebook.com](https://developers.facebook.com), create an app of type **Business** and add the **WhatsApp** product. Add your business phone number in **WhatsApp → API Setup**, or test with Meta's test number first.
-2. Create a permanent access token. In Business Settings → **System users**, add a system user, give it the app and your WhatsApp account, and generate a token with `whatsapp_business_messaging` and `whatsapp_business_management`. The 24-hour token on the API Setup page expires.
-3. In **lrmcorp/lrmagents → Settings → Secrets and variables → Actions**, add:
-   - Secret `WHATSAPP_ACCESS_TOKEN`: the token from step 2.
-   - Secret `WHATSAPP_APP_SECRET`: from App settings → Basic → App secret.
-   - Secret `WHATSAPP_VERIFY_TOKEN`: any long random string you choose.
-   - Variable `WHATSAPP_PHONE_NUMBER_ID`: the **Phone number ID** from API Setup. This is not the phone number itself.
-   - Variable `WHATSAPP_ALLOWED_NUMBERS`: the numbers that may use the agent, comma-separated with country code, for example `6281234567890,6289876543210`.
-4. Run the deploy workflow. Its summary should say `WhatsApp bridge: true`.
-5. In the Meta app, go to **WhatsApp → Configuration → Webhook**. Set the callback URL to `https://agent.lnint.xyz/whatsapp/webhook` and the verify token to the same value as `WHATSAPP_VERIFY_TOKEN`. Save, then subscribe to the **messages** field.
-6. Message your WhatsApp Business number from an allowlisted phone.
+## Second brain (Obsidian vault, low-token recall)
 
-The webhook needs the public HTTPS domain: the `agent` DNS record must exist first. Meta's rules apply. You can reply freely within 24 hours of a user's message, but messages the business starts outside that window need approved templates; the bridge only replies.
+- The agent's knowledge base (`knowledge/`) is kept as an **Obsidian-compatible vault**: YAML properties on every page, relative Markdown links (which the console's knowledge graph also follows), and a `## Related` section, with `index.md` as the map of content.
+- Skills vendored from [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills) (MIT, `deploy/skills/`):
+  - `obsidian-markdown`: callouts, embeds, properties.
+  - `json-canvas`: visual maps.
+  - `obsidian-bases`: table views.
+
+  `obsidian-cli` needs the desktop app, and `defuddle` and `knap` need extra CLIs, so they are left out.
+- **Recall:** CowAgent's `memory_search` already does hybrid keyword and vector search with a reranker over memory and the vault, returning short snippets. Its default is lowered from 10 to 6 results, OpenClaw's setting. The knowledge-wiki skill now says to search first and read only the page or lines needed.
+- **Khoj is not deployed.** It would duplicate this search, and it needs about 1.2–1.7 GB more RAM (Django, torch and pgvector) on a 4 GB VPS that also runs the `ln` app, plus a sync job to push notes into it. Revisit it if the VPS gets more memory.
+- **Embeddings:** configure a provider (Config → Models → Embedding). Without one, recall falls back to keyword search.
 
 ## Access without the domain
 

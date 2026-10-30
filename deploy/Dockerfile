@@ -3,6 +3,8 @@ ARG BASE_IMAGE=zhayujie/chatgpt-on-wechat:latest
 FROM ${BASE_IMAGE}
 
 COPY deploy/brand /tmp/brand
+# Obsidian skills (kepano/obsidian-skills, MIT), copied into every workspace at startup.
+COPY deploy/skills /app/skills/
 RUN set -eux; \
     python /tmp/brand/apply.py /app /tmp/brand/theme.json; \
     static=/app/channel/web/static; \

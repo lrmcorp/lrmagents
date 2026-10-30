@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp · LRM Agents</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/brand/plus-jakarta-sans.css">
+<style>
+  :root {
+    --brand: #015f44; --brand-strong: #013f2e; --brand-soft: #e2f2eb;
+    --canvas: #f1f2f1; --surface: #fff; --muted-bg: #f8fafc;
+    --text: #101725; --text-2: #4f5967; --text-3: #5a6579;
+    --line: #e0e4e9; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 'Plus Jakarta Sans', Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  header img { height: 28px; }
+  header .crumb { color: var(--text-3); font-size: 13px; }
+  header .crumb b { color: var(--text); font-weight: 600; }
+  header a.back { margin-left: auto; color: var(--brand); font-weight: 600; text-decoration: none; font-size: 13px; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .lede { color: var(--text-2); margin: 0 0 16px; }
+  .notice { background: var(--warn-bg); color: var(--warn); border: 1px solid #fde68a; border-radius: 12px; padding: 10px 14px; font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; gap: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .card-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .card-head h2 { font-size: 16px; margin: 0; }
+  .id { color: var(--text-3); font-size: 12px; font-family: ui-monospace, monospace; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--muted-bg); color: var(--text-2); border: 1px solid var(--line); }
+  .badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.connected { background: var(--brand-soft); color: var(--brand); border-color: #b7dccb; }
+  .badge.qr, .badge.starting, .badge.reconnecting { background: var(--warn-bg); color: var(--warn); border-color: #fde68a; }
+  .badge.logged_out, .badge.error { background: var(--bad-bg); color: var(--bad); border-color: #fecdd3; }
+  .actions { margin-left: auto; display: flex; gap: 8px; }
+  button { font: 700 13px 'Plus Jakarta Sans', system-ui, sans-serif; border-radius: 10px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.primary:hover { background: var(--brand-strong); }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .meta { color: var(--text-2); font-size: 13px; margin-top: 6px; }
+  .error { color: var(--bad); font-size: 13px; margin-top: 6px; }
+  .qr { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 16px; padding: 16px; border-radius: 12px; background: var(--muted-bg); border: 1px dashed var(--line); }
+  .qr img { width: 220px; height: 220px; background: #fff; border-radius: 8px; }
+  .qr ol { margin: 0; padding-left: 18px; color: var(--text-2); }
+  details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
+  .form { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 12px; }
+  .form .full { grid-column: 1 / -1; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+  select, textarea, input { width: 100%; font: 500 13px 'Plus Jakarta Sans', system-ui, sans-serif; color: var(--text); background: var(--muted-bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  textarea { min-height: 64px; resize: vertical; }
+  .hint { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+  .pending { margin-top: 14px; padding: 12px; border-radius: 12px; background: var(--warn-bg); border: 1px solid #fde68a; }
+  .pending h3 { margin: 0 0 8px; font-size: 13px; color: var(--warn); }
+  .pending-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .pending-row code { font-weight: 700; letter-spacing: .08em; }
+  .empty { color: var(--text-2); }
+  @media (max-width: 640px) { .form { grid-template-columns: 1fr; } .actions { margin-left: 0; width: 100%; } .qr img { width: 200px; height: 200px; } }
+</style>
+</head>
+<body>
+<header>
+  <img src="/assets/brand/wordtext.png" alt="Liando Reyfort Management">
+  <span class="crumb">Channels / <b>WhatsApp</b></span>
+  <a class="back" href="/">← Back to console</a>
+</header>
+<main>
+  <h1>WhatsApp</h1>
+  <p class="lede">Link a WhatsApp number to each agent by scanning a QR code, the same way you add WhatsApp Web.</p>
+  <div class="notice"><b>Use a dedicated number.</b> This links through WhatsApp Web, which WhatsApp does not officially support for bots; heavy or spam-like use can get a number banned. Only approved people can talk to an agent.</div>
+  <div id="agents" class="grid"><p class="empty">Loading agents…</p></div>
+</main>
+<script>
+// Inside the console's own frame the page header would repeat the console's.
+if (window.self !== window.top) document.querySelector('header').hidden = true;
+const $ = (sel, root = document) => root.querySelector(sel);
+const STATUS = { unlinked: 'Not linked', starting: 'Starting…', qr: 'Waiting for scan', connected: 'Connected', reconnecting: 'Reconnecting…', logged_out: 'Logged out on phone', error: 'Connection failed' };
+const DM = { pairing: 'Pairing — strangers get a code you approve here', allowlist: 'Allowlist only', open: 'Anyone (not recommended)', disabled: 'Nobody' };
+const GROUP = { off: 'Ignore groups', mention: 'Answer when @mentioned or replied to' };
+const polls = {};
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function api(path, body) {
+  const res = await fetch(`/whatsapp/api/${path}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (res.status === 401) { location.href = '/'; throw new Error('signed out'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function options(map, current) {
+  return Object.entries(map).map(([v, t]) => `<option value="${v}" ${v === current ? 'selected' : ''}>${esc(t)}</option>`).join('');
+}
+
+function card(agent) {
+  const wa = agent.whatsapp;
+  const linked = ['connected', 'reconnecting'].includes(wa.status);
+  const busy = ['qr', 'starting'].includes(wa.status);
+  const pending = wa.pending.length ? `
+    <div class="pending"><h3>Waiting for approval</h3>${wa.pending.map((p) => `
+      <div class="pending-row"><span>+${esc(p.phone)}</span><code>${esc(p.code)}</code>
+      <button class="primary" data-approve="${esc(p.code)}">Approve</button></div>`).join('')}</div>` : '';
+  return `
+  <section class="card" data-agent="${esc(agent.id)}">
+    <div class="card-head">
+      <h2>${esc(agent.name)}</h2><span class="id">${esc(agent.id)}</span>
+      <span class="badge ${esc(wa.status)}">${esc(STATUS[wa.status] || wa.status)}</span>
+      <div class="actions">
+        ${linked ? `<button class="danger" data-unlink>Unlink</button>` : `<button class="primary" data-link ${busy ? 'disabled' : ''}>${busy ? 'Waiting…' : 'Link WhatsApp'}</button>`}
+      </div>
+    </div>
+    ${wa.phone ? `<div class="meta">Linked number: <b>+${esc(wa.phone)}</b>${wa.name ? ` (${esc(wa.name)})` : ''}. Message it, or use “Message yourself” on that phone to talk to this agent.</div>` : ''}
+    ${wa.error ? `<div class="error">${esc(wa.error)}</div>` : ''}
+    <div class="qr" data-qr hidden>
+      <img alt="WhatsApp link QR code">
+      <ol><li>Open WhatsApp on the phone for this agent.</li><li>Settings → <b>Linked devices</b> → <b>Link a device</b>.</li><li>Scan this code. It refreshes automatically and expires after 3 minutes.</li></ol>
+    </div>
+    ${pending}
+    <details>
+      <summary>Who can talk to this agent</summary>
+      <form class="form" data-settings>
+        <div><label>Direct messages</label><select name="dmPolicy">${options(DM, wa.settings.dmPolicy)}</select></div>
+        <div><label>Groups</label><select name="groupPolicy">${options(GROUP, wa.settings.groupPolicy)}</select></div>
+        <div class="full"><label>Approved numbers</label>
+          <textarea name="allowFrom" placeholder="6281234567890, 6289876543210">${esc(wa.settings.allowFrom.join(', '))}</textarea>
+          <div class="hint">With country code, separated by commas. The linked phone itself can always use “Message yourself”.</div></div>
+        <div class="full"><button class="primary" type="submit">Save</button> <span data-saved class="hint"></span></div>
+      </form>
+    </details>
+  </section>`;
+}
+
+async function load() {
+  const root = $('#agents');
+  try {
+    const { agents } = await api('agents');
+    if (!agents.length) { root.innerHTML = '<p class="empty">No agents yet. Create one under Agents first.</p>'; return; }
+    root.innerHTML = agents.map(card).join('');
+    for (const agent of agents) if (['qr', 'starting'].includes(agent.whatsapp.status)) pollQr(agent.id);
+  } catch (e) {
+    root.innerHTML = `<p class="error">Could not load agents: ${esc(e.message)}</p>`;
+  }
+}
+
+function pollQr(agentId) {
+  clearTimeout(polls[agentId]);
+  const tick = async () => {
+    const section = document.querySelector(`[data-agent="${CSS.escape(agentId)}"]`);
+    if (!section) return;
+    try {
+      const data = await api(`agents/${agentId}/qr`);
+      const box = $('[data-qr]', section);
+      if (data.qr) { $('img', box).src = data.qr; box.hidden = false; }
+      if (['qr', 'starting'].includes(data.status)) { polls[agentId] = setTimeout(tick, 2000); return; }
+      load();
+    } catch { polls[agentId] = setTimeout(tick, 4000); }
+  };
+  tick();
+}
+
+document.addEventListener('click', async (event) => {
+  const section = event.target.closest('[data-agent]');
+  if (!section) return;
+  const agentId = section.dataset.agent;
+  const button = event.target.closest('button');
+  try {
+    if (button?.hasAttribute('data-link')) {
+      button.disabled = true; button.textContent = 'Starting…';
+      await api(`agents/${agentId}/link`, {});
+      pollQr(agentId);
+    } else if (button?.hasAttribute('data-unlink')) {
+      if (!confirm('Unlink this WhatsApp number from the agent? You can link it again later.')) return;
+      await api(`agents/${agentId}/unlink`, {});
+      load();
+    } else if (button?.dataset.approve) {
+      await api(`agents/${agentId}/approve`, { code: button.dataset.approve });
+      load();
+    }
+  } catch (e) { alert(e.message); load(); }
+});
+
+document.addEventListener('submit', async (event) => {
+  const form = event.target.closest('[data-settings]');
+  if (!form) return;
+  event.preventDefault();
+  const agentId = form.closest('[data-agent]').dataset.agent;
+  const data = new FormData(form);
+  try {
+    await api(`agents/${agentId}/settings`, {
+      dmPolicy: data.get('dmPolicy'), groupPolicy: data.get('groupPolicy'),
+      allowFrom: String(data.get('allowFrom')).split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean),
+    });
+    $('[data-saved]', form).textContent = 'Saved.';
+  } catch (e) { $('[data-saved]', form).textContent = e.message; }
+});
+
+load();
+setInterval(() => { if (!document.querySelector('.qr:not([hidden])')) load(); }, 30000);
+</script>
+</body>
+</html>

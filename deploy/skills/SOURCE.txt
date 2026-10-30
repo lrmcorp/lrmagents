@@ -1,0 +1,1 @@
+Vendored from https://github.com/kepano/obsidian-skills at 3ccff53 (MIT). obsidian-cli, defuddle and knap are left out: they need the Obsidian desktop app or extra CLIs.

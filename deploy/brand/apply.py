@@ -87,4 +87,51 @@ for rel in ("chat.html", "templates/layout/sidebar.html", "templates/layout/logi
 # The built-in agent's fallback name, used when config.json has not been written
 # yet (upstream then ignores DEFAULT_AGENT_NAME on the Agents page).
 patch("agent/registry.py", 'name=builtin_name or "CowAgent",', f'name=builtin_name or "{NAME}",', root=app)
+
+# ---- WhatsApp: a built-in menu entry after Channels that opens the gateway page
+# (/whatsapp/) inside the console. The sidebar is drawn from a menu document, so
+# the entry is merged into it (and restored if a saved menu lacks it).
+patch("static/js/core/menu.js",
+      "    star: 'fa-star',",
+      "    whatsapp: 'fa-comments', star: 'fa-star',")
+patch("static/js/core/menu.js",
+      "function menuMerge(saved) {",
+      """function menuMerge(saved) {
+    return _lrmEnsureWhatsApp(_menuMergeStock(saved));
+}
+
+function _lrmEnsureWhatsApp(doc) {
+    if (doc.groups.some(g => g.items.some(i => i.id === 'lrm-whatsapp'))) return doc;
+    const group = doc.groups.find(g => g.items.some(i => i.view === 'channels')) || doc.groups[doc.groups.length - 1];
+    const at = group.items.findIndex(i => i.view === 'channels');
+    group.items.splice(at + 1, 0, { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame',
+                                    title: 'WhatsApp', icon: 'whatsapp', hidden: false });
+    return doc;
+}
+
+function _menuMergeStock(saved) {""")
+
+# ---- Memory recall: OpenClaw's tighter default of 6 results (snippets are up to
+# 500 characters each), so a lookup costs ~3k characters instead of ~5k.
+for old, new in (('"description": "Maximum number of results to return (default: 10)",',
+                  '"description": "Maximum number of results to return (default: 6)",'),
+                 ('"default": 10', '"default": 6'),
+                 ('max_results = args.get("max_results", 10)', 'max_results = args.get("max_results", 6)')):
+    patch("agent/tools/memory/memory_search.py", old, new, root=app)
+
+# ---- Second brain: the knowledge wiki is kept as an Obsidian-compatible vault.
+patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conventions (Obsidian-compatible)
+
+`knowledge/` doubles as an Obsidian vault, so keep every page valid Obsidian Markdown:
+- Start each page with YAML properties: `tags`, `aliases`, `created`, `updated`, and `source` for ingested material.
+- Link pages with relative Markdown links, `[Page title](../category/page.md)`, not `[[wikilinks]]`: the console's knowledge graph only follows Markdown links, and Obsidian reads both.
+- End a page with a `## Related` list of links; keep `index.md` as the map of content.
+- For callouts, embeds and properties load the `obsidian-markdown` skill; for visual maps `json-canvas`; for table views `obsidian-bases`.
+
+## Recall with few tokens
+
+- Search before reading: `memory_search` covers memory and this vault and returns short snippets. Then read only the page, or the lines, you need.
+- Never read the whole vault, or long pages end to end, to answer a question.
+
+## Core Operations""", root=app)
 print("LRM brand applied")
