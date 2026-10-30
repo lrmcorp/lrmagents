@@ -16,6 +16,8 @@ jobs:
     timeout-minutes: 15
     env:
       VPS: ubuntu@43.152.240.47
+      # Keep in sync with the AGENT_DOMAIN variable in lrmcorp/ln; first host is the public URL.
+      AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.lnint.xyz' }}
     steps:
       - uses: actions/checkout@v5
       - name: Prepare pinned SSH identity
@@ -44,11 +46,12 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
+          host="${AGENT_DOMAIN%%,*}"; export WEB_PUBLIC_URL="https://${host// /}"
           if [[ ${#WEB_PASSWORD} -lt 12 ]]; then
             echo '::error::Set the COWAGENT_WEB_PASSWORD secret (12+ characters); the console is public and the agent has shell access.'
             exit 1
           fi
-          for name in WEB_PASSWORD MODEL CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
+          for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
             if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
           done | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.cowagent'
       - name: Start and verify CowAgent
@@ -61,11 +64,12 @@ jobs:
       - name: Verify public console
         continue-on-error: true
         run: |
-          addresses="$(getent ahostsv4 agent.lnint.xyz | awk '{print $1}' | sort -u || true)"
-          echo "agent.lnint.xyz A: ${addresses:-none}" >> "$GITHUB_STEP_SUMMARY"
+          host="${AGENT_DOMAIN%%,*}"; host="${host// /}"
+          addresses="$(getent ahostsv4 "$host" | awk '{print $1}' | sort -u || true)"
+          echo "$host A: ${addresses:-none}" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$addresses" != '43.152.240.47' ]]; then
-            echo '::warning::agent.lnint.xyz does not resolve to the VPS yet; console is reachable only via SSH tunnel.'
+            echo "::warning::$host does not resolve to the VPS yet; console is reachable only via SSH tunnel."
             exit 0
           fi
-          curl -fsSL --connect-timeout 5 --max-time 12 --retry 5 --retry-delay 3 --retry-all-errors https://agent.lnint.xyz/ -o /dev/null
-          echo 'https://agent.lnint.xyz is up.' >> "$GITHUB_STEP_SUMMARY"
+          curl -fsSL --connect-timeout 5 --max-time 12 --retry 5 --retry-delay 3 --retry-all-errors "https://$host/" -o /dev/null
+          echo "https://$host is up." >> "$GITHUB_STEP_SUMMARY"

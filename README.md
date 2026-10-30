@@ -2,7 +2,7 @@
 
 Deploys [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899) to the same Tencent Lighthouse VPS as the `ln` demo (`43.152.240.47`, `int.lnint.xyz`).
 
-- Public URL: `https://agent.lnint.xyz`. TLS terminates in the existing `ln` Caddy container, which reaches CowAgent over the shared `lnint-edge` Docker network.
+- Public URL: `https://agent.lnint.xyz` now; `https://lrmcorporation.id` once that domain is switched on (see below). TLS terminates in the existing `ln` Caddy container, which reaches CowAgent over the shared `lnint-edge` Docker network.
 - The CowAgent container is not on the `ln` network, so it cannot reach the `ln` PostgreSQL database.
 - Workspace (skills, memory) and data (`config.json`, logs) live in Docker volumes `cowagent_workspace` and `cowagent_data`. They survive redeploys.
 
@@ -17,6 +17,14 @@ Deploys [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899
    - Optional variable `COWAGENT_MODEL`, for example `claude-sonnet-4-5`.
    - Variable `VPS_DEPLOY_ENABLED=true`.
 4. Run **Actions → Deploy CowAgent to Tencent Lighthouse → Run workflow**. Every push to `main` redeploys.
+
+## Move the console to lrmcorporation.id
+
+1. At the DNS provider for `lrmcorporation.id`, add `A` records for `@` and `www`, both pointing to `43.152.240.47`. Remove any `AAAA` records for those names.
+2. In **both** `lrmcorp/ln` and `lrmcorp/lrmagents`, add the repository variable `AGENT_DOMAIN=lrmcorporation.id,www.lrmcorporation.id`.
+3. Re-run the `ln` deploy workflow, which makes Caddy request certificates for the new hosts. Then re-run this repository's workflow, which updates the console's public URL and checks HTTPS.
+
+`agent.lnint.xyz` stops being served after the switch. Delete the variable to go back to it.
 
 ## Access without the domain
 
