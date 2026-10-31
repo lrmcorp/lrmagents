@@ -83,6 +83,10 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
 
 **Risk:** WhatsApp does not support bots on WhatsApp Web. Use a dedicated number and avoid bulk or spam-like messaging, or the number can be banned.
 
+## Errors in plain language
+
+When an AI model call fails, the chat says what happened and what to do instead of showing the provider's raw error. For example, an empty DeepSeek balance reads: "Your AI provider account (DeepSeek) has run out of credit… Top up the balance… or switch to another model". It covers no credit, bad API key, rate limits, unknown model, refused access, content policy, network problems, provider outages and conversations that are too long. The raw error is still written to Monitor → Logs (`deploy/agent-tools/lrm_errors.py`).
+
 ## Second brain (Obsidian vault, low-token recall)
 
 - The agent's knowledge base (`knowledge/`) is kept as an **Obsidian-compatible vault**: YAML properties on every page, `[[wikilinks]]` between pages, and a `## Related` section, with `index.md` as the map of content. Older relative Markdown links keep working.

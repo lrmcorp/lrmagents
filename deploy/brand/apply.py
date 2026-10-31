@@ -198,6 +198,12 @@ patch("web_channel.py", "\nURLS = (\n",
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n")
+# ---- Plain-language errors: a failed model call showed the provider's raw JSON in
+# the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
+patch("agent/protocol/agent_stream.py",
+      '            self._emit_event("error", {"error": str(e)})\n',
+      '            from agent.lrm_errors import friendly as _lrm_friendly\n'
+      '            self._emit_event("error", {"error": _lrm_friendly(e, getattr(self.model, "model", None))})\n', root=app)
 # ---- Logs: upstream masks settings named *key*/*secret* only, so the console
 # password and the internal API token were written to run.log in clear text.
 patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',

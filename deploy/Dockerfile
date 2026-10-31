@@ -14,6 +14,8 @@ COPY deploy/agent-tools/whatsapp_relay.py /app/channel/lrm_whatsapp_relay.py
 # Usage per agent: recorder, API and page (page is copied with the brand files).
 COPY deploy/agent-tools/lrm_usage.py /app/agent/lrm_usage.py
 COPY deploy/agent-tools/lrm_usage_api.py /app/channel/web/api/lrm_usage.py
+# Errors in chat explained in plain words (hooked in by apply.py).
+COPY deploy/agent-tools/lrm_errors.py /app/agent/lrm_errors.py
 # Vault: Obsidian-style page over each agent's memory and knowledge (page copied with the brand files).
 COPY deploy/agent-tools/lrm_vault_api.py /app/channel/web/api/lrm_vault.py
 # /media/whatsapp: whichever container mounts the WhatsApp media volume first sets its
