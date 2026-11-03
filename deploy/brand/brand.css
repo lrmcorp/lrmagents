@@ -195,3 +195,11 @@ div:has(> #cfg-password),
 div:has(> #cfg-password-save),
 #cfg-listen-row,
 #update-action-item { display: none !important; }
+
+/* Approve / Deny on a tool call that waits for the owner (shell.js). */
+.lrm-approve { display: flex; gap: 8px; align-items: center; margin: 8px 0 4px; font-size: 13px; font-weight: 600; }
+.lrm-approve button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 9px; padding: 6px 12px; cursor: pointer;
+    border: 1px solid var(--lrm-line); background: var(--lrm-surface); color: var(--lrm-text); }
+.lrm-approve button[data-d="approve"] { background: #18181b; border-color: #18181b; color: #fff; }
+.dark .lrm-approve button[data-d="approve"] { background: #f0f0f4; border-color: #f0f0f4; color: #13101b; }
+.lrm-approve button:disabled { opacity: .5; }

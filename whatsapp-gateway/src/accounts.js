@@ -13,9 +13,9 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
 } from 'baileys';
-import { ask } from './cowagent.js';
+import { ask, decideApproval } from './cowagent.js';
 import crypto from 'node:crypto';
-import { GroupHistory, PairingBook, RateLimiter, bareJid, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
+import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 // Shared with the agent container (read-only there) so its vision and
@@ -237,6 +237,21 @@ class Account {
 
   enqueue(sock, msg) {
     const chat = msg.key?.remoteJid || '';
+    // An approval answer must not wait behind the very task that is waiting for it.
+    const reply = msg.message && isSelfChat(msg.key, [sock.user?.id, sock.user?.lid]) && !this.sentIds.has(msg.key.id)
+      ? approvalReply(messageText(msg.message)) : null;
+    if (reply && !this.seen.has(msg.key.id) && !msg.approvalChecked) {
+      // Only a code that is actually waiting is taken as an answer; anything else
+      // ("no clue") goes to the agent as a normal message.
+      decideApproval(reply.code, reply.decision)
+        .then((r) => {
+          if (r?.status !== 'success') return this.enqueue(sock, Object.assign(msg, { approvalChecked: true }));
+          this.seen.add(msg.key.id);
+          return this.send(sock, chat, reply.decision === 'approve' ? `✅ Approved ${reply.code}. It will go ahead now.` : `🚫 Refused ${reply.code}. It will not do that.`);
+        })
+        .catch((e) => { log.error({ err: e.message }, 'approval reply failed'); this.enqueue(sock, Object.assign(msg, { approvalChecked: true })); });
+      return;
+    }
     const previous = this.queues.get(chat) || Promise.resolve();
     const next = previous.then(() => this.handle(sock, msg)).catch((e) => log.error({ err: e.message }, 'handle failed'));
     this.queues.set(chat, next);
@@ -500,6 +515,15 @@ export class Accounts {
   // Only to chats that wrote to this agent, approved numbers, or the owner's own
   // chat, so a misled agent can't use the number to message strangers. The
   // scheduler retries on errors; the key makes sure a retry never sends twice.
+  // A message to the owner (their own "Message yourself" chat), from this agent's
+  // number or, when that one is not linked, from any linked number.
+  async notifyOwner(agentId, text) {
+    const accounts = [this.get(agentId), ...this.byAgent.values()].filter((a) => a && a.status === 'connected' && a.sock?.user);
+    const account = accounts[0];
+    if (!account) throw Object.assign(new Error('no WhatsApp number is linked'), { status: 503 });
+    await this.deliver(account.agentId, `${bareJid(account.sock.user.id)}@s.whatsapp.net`, text);
+  }
+
   async deliver(agentId, chat, text) {
     const account = this.get(agentId);
     if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });

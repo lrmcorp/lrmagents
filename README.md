@@ -107,6 +107,16 @@ The **Teammates** page (console menu) runs coding AIs in their own container (`t
 - **GitHub:** to let them push, open **Terminal** on the page and sign git in (for example `git config --global credential.helper store` and a token, or an SSH key).
 - **Limits:** one task per teammate at a time, two at once overall, 60 minutes per task, 2 GB memory for the container. The weekly update check reports newer CLI versions; they are pinned in `teammates/Dockerfile`.
 
+## Approvals and activity log
+
+- **Activity page** (console menu): every tool call by every agent (commands, file changes, web actions, messages, teammate tasks) from the console, WhatsApp and scheduled tasks, with filters and search. Keys and passwords in commands are masked. Kept 90 days.
+- **Ask me before** (on that page):
+  - **Risky actions** (default): deleting files, force-pushing or rewriting git history, shutting down or stopping services, `sudo`, piping a download into a shell, deleting database data, changing API keys, and buying, paying, posting, submitting or deleting on a website.
+  - **Every change**: also every command, file change and website action.
+  - **Never**: nothing waits; everything is still logged.
+- **Answering:** a waiting action shows **Approve / Deny** in the console chat and on the Activity page. For WhatsApp chats and scheduled tasks, LRMagent also messages your own WhatsApp chat: reply `YES CODE` or `NO CODE`. No answer in 10 minutes counts as no (`LRMAGENT_APPROVAL_TIMEOUT`, in seconds). A refused action is not retried another way.
+- Code: `deploy/agent-tools/lrm_activity.py` (rules, waiting, log), hooked into the agent's tool runner by `apply.py`.
+
 ## Errors in plain language
 
 When an AI model call fails, the chat says what happened and what to do instead of showing the provider's raw error. For example, an empty DeepSeek balance reads: "Your AI provider account (DeepSeek) has run out of credit… Top up the balance… or switch to another model". It covers no credit, bad API key, rate limits, unknown model, refused access, content policy, network problems, provider outages and conversations that are too long. The raw error is still written to Monitor → Logs (`deploy/agent-tools/lrm_errors.py`).

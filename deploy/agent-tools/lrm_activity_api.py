@@ -1,0 +1,61 @@
+"""/api/lrm/activity: the Activity page's API (console login required).
+
+GET  ?days=7&agent=&tool=&status=&q=  -> activity rows, pending and recent approvals, the mode
+POST {op: "decide", code, decision}   -> approve / deny a pending action
+POST {op: "mode", mode}               -> risky | always | off
+The WhatsApp gateway also POSTs decisions here ("YES CODE" in the owner's own chat),
+with the internal API token from inside the Docker network.
+Installed as channel/web/api/lrm_activity.py by the LRMagent image.
+"""
+
+import hmac
+import json
+
+import web
+
+from channel.web.core._common import _require_auth
+
+
+def _internal_caller():
+    from config import conf
+    token = str(conf().get("external_api_token") or "")
+    given = web.ctx.env.get("HTTP_AUTHORIZATION", "").replace("Bearer ", "", 1).strip()
+    return bool(token) and not web.ctx.env.get("HTTP_X_FORWARDED_FOR") and hmac.compare_digest(given, token)
+
+
+class LrmActivityHandler:
+    def GET(self):
+        _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        from agent import lrm_activity as act
+        p = web.input(days="7", agent="", tool="", status="", q="")
+        try:
+            days = int(p.days)
+        except ValueError:
+            days = 7
+        rows, decided = act.query(days, p.agent, p.tool, p.status, p.q.strip())
+        return json.dumps({"status": "success", "mode": act.get_mode(), "pending": act.pending(),
+                           "approvals": decided, "rows": rows, "timeout": act.TIMEOUT}, ensure_ascii=False)
+
+    def POST(self):
+        if not _internal_caller():
+            _require_auth()
+        web.header("Content-Type", "application/json; charset=utf-8")
+        from agent import lrm_activity as act
+        try:
+            body = json.loads(web.data() or b"{}")
+        except ValueError:
+            return json.dumps({"status": "error", "message": "invalid JSON"})
+        if body.get("op") == "decide":
+            via = "whatsapp" if _internal_caller() else "console"
+            done = act.decide(body.get("code"), body.get("decision"), via)
+            if not done:
+                return json.dumps({"status": "error", "message": "No pending approval with that code (it may have expired)."})
+            return json.dumps({"status": "success", "approval": done}, ensure_ascii=False)
+        if body.get("op") == "mode" and not _internal_caller():
+            try:
+                act.set_mode(body.get("mode"))
+            except ValueError as e:
+                return json.dumps({"status": "error", "message": str(e)})
+            return json.dumps({"status": "success", "mode": act.get_mode()})
+        return json.dumps({"status": "error", "message": "unknown op"})

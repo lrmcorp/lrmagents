@@ -87,6 +87,17 @@ async function route(req, res) {
       return send(res, error.status || 503, { error: error.message });
     }
   }
+  if (url.pathname === '/whatsapp/internal/notify-owner') {
+    if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' });
+    if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
+    const body = await readJson(req);
+    try {
+      await accounts.notifyOwner(String(body.agentId || ''), String(body.text || ''));
+      return send(res, 200, { ok: true });
+    } catch (error) {
+      return send(res, error.status || 503, { error: error.message });
+    }
+  }
   // For the teammates tool: only the owner's own chat may use the paid plans.
   if (url.pathname === '/whatsapp/internal/owner') {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });

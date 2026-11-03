@@ -340,3 +340,10 @@ export function extractLocalFiles(text, roots) {
   });
   return { text: out.replace(/\n{3,}/g, '\n\n').trim(), files };
 }
+
+// "YES K7QP" / "no k7qp": the owner answering an approval request.
+export function approvalReply(text) {
+  const m = /^\s*(yes|y|ok|approve|allow|no|n|deny|refuse)\s+([A-Za-z0-9]{4,6})\s*[.!]?\s*$/i.exec(String(text ?? ''));
+  if (!m) return null;
+  return { decision: /^(yes|y|ok|approve|allow)$/i.test(m[1]) ? 'approve' : 'deny', code: m[2].toUpperCase() };
+}

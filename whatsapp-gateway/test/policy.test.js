@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  isOwnChat, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp } from '../src/policy.js';
+  approvalReply, isOwnChat, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp } from '../src/policy.js';
 
 const ME = ['6280000000001:7@s.whatsapp.net', '99999@lid'];
 const dm = (from, text, extra = {}) => ({
@@ -136,4 +136,12 @@ test('isOwnChat: the linked number\'s own chat only', () => {
   assert.equal(isOwnChat('6281111111111@s.whatsapp.net', me), false);
   assert.equal(isOwnChat('99887766@s.whatsapp.net', me), false);
   assert.equal(isOwnChat('', me), false);
+});
+
+test('approvalReply: YES/NO with a code, nothing else', () => {
+  assert.deepEqual(approvalReply('YES k7qp'), { decision: 'approve', code: 'K7QP' });
+  assert.deepEqual(approvalReply(' no K7QP. '), { decision: 'deny', code: 'K7QP' });
+  assert.equal(approvalReply('yes please do it'), null);
+  assert.equal(approvalReply('K7QP'), null);
+  assert.equal(approvalReply(''), null);
 });

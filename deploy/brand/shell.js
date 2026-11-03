@@ -173,10 +173,47 @@
         }, 250);
     }
 
+    // ---- approvals inside the chat ---------------------------------------------
+    // A risky tool call waits with "Waiting for your approval (code K7QP)" in its
+    // card; put Approve / Deny right there.
+    function approvalButtons() {
+        document.querySelectorAll('#chat-messages .tool-live-output').forEach((out) => {
+            const m = /Waiting for your approval \(code ([A-Z0-9]{4,6})\)/.exec(out.textContent || '');
+            const bar = out.nextElementSibling?.classList.contains('lrm-approve') ? out.nextElementSibling : null;
+            if (!m) { bar?.remove(); return; }
+            if (bar && bar.dataset.code === m[1]) return;
+            bar?.remove();
+            const el = document.createElement('div');
+            el.className = 'lrm-approve';
+            el.dataset.code = m[1];
+            el.innerHTML = `<button type="button" data-d="approve"><i class="fas fa-check"></i> Approve</button>
+                <button type="button" data-d="deny"><i class="fas fa-xmark"></i> Deny</button>`;
+            el.addEventListener('click', async (e) => {
+                const b = e.target.closest('button');
+                if (!b) return;
+                el.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+                try {
+                    const r = await fetch('/api/lrm/activity', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ op: 'decide', code: m[1], decision: b.dataset.d }) });
+                    const d = await r.json();
+                    el.innerHTML = d.status === 'success' ? (b.dataset.d === 'approve' ? '✅ Approved' : '🚫 Denied') : esc(d.message || 'Could not record that');
+                } catch (err) { el.textContent = 'Could not record that. Try the Activity page.'; }
+            });
+            out.after(el);
+        });
+    }
+
     function start() {
         buildSidebar();
         buildWelcome();
         document.title = 'LRMagent';
+        const msgs = $('#chat-messages');
+        if (msgs && !msgs.dataset.lrmApprovals) {
+            msgs.dataset.lrmApprovals = '1';
+            let t = null;
+            new MutationObserver(() => { clearTimeout(t); t = setTimeout(approvalButtons, 150); })
+                .observe(msgs, { childList: true, subtree: true, characterData: true });
+        }
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
     window.addEventListener('load', () => { start(); keepPanelOpen(); });

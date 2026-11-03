@@ -58,3 +58,14 @@ export async function listAgents(cookieHeader) {
     .filter((a) => a && a.id)
     .map((a) => ({ id: String(a.id), name: String(a.name || a.id), enabled: a.enabled !== false }));
 }
+
+// The owner's answer to an approval request ("YES CODE" in their own chat).
+export async function decideApproval(code, decision) {
+  const response = await fetch(`${BASE}/api/lrm/activity`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'decide', code, decision }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  return json(response);
+}

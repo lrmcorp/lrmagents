@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Activity · LRMagent</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
+<link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+<style>
+  :root { --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8; --hover: #ededf5; --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c;
+          --line: #dbdbe5; --primary: #18181b; --primary-text: #fff; --ok: #12795b; --ok-bg: #e7f6ef; --warn: #92400e; --warn-bg: #fff7e6;
+          --bad: #b42530; --bad-bg: #fdeeee; --ring: #7480f1; }
+  :root.dark { --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a; --hover: #241f30; --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6;
+          --line: #2b2538; --primary: #f0f0f4; --primary-text: #13101b; --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10;
+          --bad: #f2a1a1; --bad-bg: #3a1a1e; --ring: #8d97ff; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 1080px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 6px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 28px 0 12px; display: flex; align-items: center; gap: 10px; }
+  .lede { color: var(--text-3); margin: 0; max-width: 760px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .pend { display: grid; gap: 10px; }
+  .req { background: var(--warn-bg); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; }
+  .req code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; display: block; white-space: pre-wrap; word-break: break-word; }
+  .req .meta { font-size: 12px; color: var(--text-3); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 9px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+  button.danger { color: var(--bad); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; background: var(--muted-bg); border: 1px solid var(--line); border-radius: 12px; flex-wrap: wrap; }
+  .seg button { border: 0; background: none; color: var(--text-2); }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  .modes { display: grid; gap: 4px; margin-top: 8px; font-size: 13px; color: var(--text-3); }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  input, select { font: 400 13px Inter, system-ui, sans-serif; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; outline: none; }
+  input:focus, select:focus { border-color: var(--ring); }
+  input[type=search] { flex: 1; min-width: 180px; }
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--text-3); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.when { white-space: nowrap; color: var(--text-3); font-size: 12px; }
+  td.what { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; max-width: 520px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: var(--muted-bg); color: var(--text-2); white-space: nowrap; }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); } .tag.bad { background: var(--bad-bg); color: var(--bad); } .tag.warn { background: var(--warn-bg); color: var(--warn); }
+  .empty { color: var(--text-3); padding: 18px; text-align: center; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--canvas); padding: 8px 14px; border-radius: 10px; font-size: 13px; }
+  .toast.err { background: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Activity</h1>
+  <p class="lede">Everything your agents did: every command, file change, web action and message, from the console, WhatsApp and scheduled tasks. Risky actions wait for your OK first.</p>
+
+  <h2 id="pend-h" hidden><i class="fas fa-hand"></i>Waiting for you</h2>
+  <div class="pend" id="pending"></div>
+
+  <h2>Ask me before</h2>
+  <div class="seg" role="group" aria-label="When to ask">
+    <button data-mode="risky">Risky actions</button><button data-mode="always">Every change</button><button data-mode="off">Never</button>
+  </div>
+  <div class="modes" id="mode-help"></div>
+
+  <h2>What agents did</h2>
+  <div class="filters">
+    <select id="days"><option value="1">Today</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="90">90 days</option></select>
+    <select id="agent"><option value="">All agents</option></select>
+    <select id="tool"><option value="">All actions</option></select>
+    <select id="status"><option value="">Any result</option><option value="success">Succeeded</option><option value="error">Failed or refused</option></select>
+    <input type="search" id="q" placeholder="Search commands, files, chats…">
+  </div>
+  <div class="panel scroll"><table id="rows"></table></div>
+
+  <h2>Recent decisions</h2>
+  <div class="panel scroll"><table id="decided"></table></div>
+</main>
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+try { if (window.parent !== window && window.parent.document.documentElement.classList.contains('dark')) document.documentElement.classList.add('dark'); } catch {}
+const MODE_HELP = {
+  risky: 'Asks before deleting files, force-pushing or rewriting git history, shutting down or stopping services, running as administrator, changing API keys, deleting database data, and buying, paying, posting, submitting or deleting on a website. Recommended.',
+  always: 'Also asks before every other command, every file change and every website action. Safest, but you will be asked often.',
+  never: '',
+  off: 'Never asks. Agents act on their own; everything is still logged here.',
+};
+const TOOL = { bash: 'Command', write: 'Write file', edit: 'Edit file', read: 'Read file', ls: 'List files', browser: 'Website', web_search: 'Web search', web_fetch: 'Open page',
+  send: 'Send to you', scheduler: 'Schedule', memory_search: 'Memory search', memory_get: 'Memory', switch_model: 'Switch model', ask_teammate: 'Teammate', env_config: 'Keys & settings', transcribe_audio: 'Voice note', vision: 'Image' };
+const CHANNEL = { web: 'Console', openai_api: 'WhatsApp / API' };
+let data = null;
+
+function toast(m, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
+const when = (ts) => new Date(ts * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const where = (r) => (r.session || '').startsWith('openai:conversation:whatsapp:') ? 'WhatsApp' : (CHANNEL[r.channel] || r.channel || '—');
+
+async function api(body) {
+  const params = new URLSearchParams({ days: $('#days').value, agent: $('#agent').value, tool: $('#tool').value, status: $('#status').value, q: $('#q').value });
+  const r = await fetch(body ? '/api/lrm/activity' : `/api/lrm/activity?${params}`, body
+    ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin' });
+  if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
+  const d = await r.json();
+  if (d.status !== 'success') throw new Error(d.message || 'Request failed');
+  return d;
+}
+
+function render() {
+  document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === data.mode)));
+  $('#mode-help').textContent = MODE_HELP[data.mode] || '';
+  $('#pend-h').hidden = !data.pending.length;
+  $('#pending').innerHTML = data.pending.map((p) => `<div class="req"><div><b>${esc(p.agent)}</b> wants to ${esc(p.reason)} <span class="tag warn">code ${esc(p.code)}</span></div>
+    <code>${esc(TOOL[p.tool] || p.tool)}: ${esc(p.summary)}</code>
+    <div class="meta">${esc(where(p))} · asked ${when(p.ts)} · expires ${new Date((p.ts + data.timeout) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+    <div class="row"><button class="primary" data-decide="approve" data-code="${esc(p.code)}"><i class="fas fa-check"></i>Approve</button><button class="danger" data-decide="deny" data-code="${esc(p.code)}"><i class="fas fa-xmark"></i>Deny</button></div></div>`).join('');
+  const agents = [...new Set(data.rows.map((r) => r.agent))].sort();
+  const tools = [...new Set(data.rows.map((r) => r.tool))].sort();
+  for (const [sel, list, label] of [['#agent', agents, 'All agents'], ['#tool', tools, 'All actions']]) {
+    const el = $(sel); const cur = el.value;
+    el.innerHTML = `<option value="">${label}</option>` + [...new Set([...list, cur].filter(Boolean))].map((v) => `<option value="${esc(v)}">${esc(sel === '#tool' ? (TOOL[v] || v) : v)}</option>`).join('');
+    el.value = cur;
+  }
+  $('#rows').innerHTML = data.rows.length ? `<tr><th>When</th><th>Agent</th><th>Where</th><th>Action</th><th>What</th><th>Result</th></tr>` + data.rows.map((r) => {
+    const ok = r.status === 'success';
+    const appr = r.approval ? ` <span class="tag ${r.approval.startsWith('approved') ? 'ok' : 'bad'}">${esc(r.approval.split(' ')[0])}</span>` : '';
+    return `<tr><td class="when">${when(r.ts)}</td><td>${esc(r.agent)}</td><td>${esc(where(r))}</td><td>${esc(TOOL[r.tool] || r.tool)}</td><td class="what">${esc(r.summary)}</td>
+      <td><span class="tag ${ok ? 'ok' : 'bad'}">${ok ? 'OK' : 'Failed'}</span>${appr}${r.duration > 1 ? ` <small>${r.duration.toFixed(1)}s</small>` : ''}</td></tr>`;
+  }).join('') : '<tr><td class="empty">Nothing in this period yet.</td></tr>';
+  $('#decided').innerHTML = data.approvals.length ? `<tr><th>When</th><th>Agent</th><th>Asked to</th><th>What</th><th>Decision</th></tr>` + data.approvals.map((a) => {
+    const cls = a.status === 'approved' ? 'ok' : a.status === 'expired' ? 'warn' : 'bad';
+    const label = { approved: 'Approved', denied: 'Denied', expired: 'No answer' }[a.status] || a.status;
+    return `<tr><td class="when">${when(a.ts)}</td><td>${esc(a.agent)}</td><td>${esc(a.reason)}</td><td class="what">${esc(a.summary)}</td><td><span class="tag ${cls}">${label}</span>${a.decided_via ? ` <small>via ${esc(a.decided_via)}</small>` : ''}</td></tr>`;
+  }).join('') : '<tr><td class="empty">No approvals asked in this period.</td></tr>';
+}
+
+async function load() { try { data = await api(); render(); } catch (e) { toast(e.message, true); } }
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  try {
+    if (b.dataset.mode) { await api({ op: 'mode', mode: b.dataset.mode }); toast('Saved'); }
+    if (b.dataset.decide) { await api({ op: 'decide', code: b.dataset.code, decision: b.dataset.decide }); toast(b.dataset.decide === 'approve' ? 'Approved' : 'Denied'); }
+    load();
+  } catch (err) { toast(err.message, true); }
+});
+let qt = null;
+$('#q').addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(load, 300); });
+['#days', '#agent', '#tool', '#status'].forEach((s) => $(s).addEventListener('change', load));
+load();
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 5000);
+</script>
+</body>
+</html>

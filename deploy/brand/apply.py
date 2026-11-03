@@ -106,6 +106,7 @@ function _lrmEnsureWhatsApp(doc) {
         { after: 'knowledge', hide: ['memory', 'knowledge'], item: { id: 'lrm-vault', type: 'url', url: '/assets/brand/vault.html', open: 'frame', title: 'Vault', icon: 'vault', hidden: false } },
         { after: 'skills', item: { id: 'lrm-teammates', type: 'url', url: '/teammates/', open: 'frame', title: 'Teammates', icon: 'robot', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
+        { after: 'tasks', item: { id: 'lrm-activity', type: 'url', url: '/assets/brand/activity.html', open: 'frame', title: 'Activity', icon: 'flag', hidden: false } },
         { after: 'logs', item: { id: 'lrm-usage', type: 'url', url: '/assets/brand/usage.html', open: 'frame', title: 'Usage', icon: 'chart', hidden: false } },
     ];
     for (const page of pages) {
@@ -194,16 +195,51 @@ patch("agent/protocol/agent_stream.py",
       "            _lrm_record_usage(self, snapshot)\n", root=app)
 patch("web_channel.py", "\nURLS = (\n",
       "\nfrom channel.web.api.lrm_usage import LrmUsageHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_vault import LrmVaultHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_vault import LrmVaultHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_activity import LrmActivityHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
-      "    '/api/lrm/vault', 'LrmVaultHandler',\n")
+      "    '/api/lrm/vault', 'LrmVaultHandler',\n"
+      "    '/api/lrm/activity', 'LrmActivityHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",
       '            self._emit_event("error", {"error": str(e)})\n',
       '            from agent.lrm_errors import friendly as _lrm_friendly\n'
       '            self._emit_event("error", {"error": _lrm_friendly(e, getattr(self.model, "model", None))})\n', root=app)
+# ---- Approvals and activity log (agent/lrm_activity.py): risky tool calls wait for the
+# owner's OK, and every call is logged for the Activity page.
+patch("agent/protocol/agent_stream.py",
+      """        if not own_cards:
+            self._emit_event("tool_execution_start", start_event)
+
+        try:
+            if not tool:
+""",
+      """        if not own_cards:
+            self._emit_event("tool_execution_start", start_event)
+
+        from agent.lrm_activity import gate as _lrm_gate, record as _lrm_record
+        _lrm_refusal = _lrm_gate(self, tool_name, arguments, tool_id)
+        if _lrm_refusal:
+            refused = {"status": "error", "result": _lrm_refusal, "execution_time": 0}
+            if own_cards:
+                self._emit_event("tool_execution_start", start_event)
+            self._emit_event("tool_execution_end", {"tool_call_id": tool_id, "tool_name": tool_name, **refused})
+            _lrm_record(self, tool_name, arguments, refused)
+            return refused
+
+        try:
+            if not tool:
+""", root=app)
+patch("agent/protocol/agent_stream.py",
+      "            success = result.status == \"success\"\n            self._record_tool_result(tool_name, arguments, success)\n",
+      "            success = result.status == \"success\"\n            self._record_tool_result(tool_name, arguments, success)\n"
+      "            _lrm_record(self, tool_name, arguments, result_dict)\n", root=app)
+patch("agent/protocol/agent_stream.py",
+      "            # Record failure\n            self._record_tool_result(tool_name, arguments, False)\n",
+      "            # Record failure\n            self._record_tool_result(tool_name, arguments, False)\n"
+      "            _lrm_record(self, tool_name, arguments, error_result)\n", root=app)
 # ---- Logs: upstream masks settings named *key*/*secret* only, so the console
 # password and the internal API token were written to run.log in clear text.
 patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',
