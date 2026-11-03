@@ -140,6 +140,13 @@ def risk(tool, args, mode, refs=None):
                 return "acts on a website (submit, buy, post or delete)"
             return "acts on a website" if mode == "always" else ""
         return ""
+    if tool == "google":
+        action = str(args.get("action", ""))
+        if action == "gmail_send":
+            return "sends an email"
+        if action == "calendar_create" and args.get("attendees"):
+            return "sends calendar invitations"
+        return "changes your Gmail or calendar" if mode == "always" and action in ("gmail_draft", "calendar_create") else ""
     if mode == "always" and tool in ("write", "edit", "evolution_undo"):
         return "changes a file"
     return ""

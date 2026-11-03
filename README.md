@@ -117,6 +117,12 @@ The **Teammates** page (console menu) runs coding AIs in their own container (`t
 - **Answering:** a waiting action shows **Approve / Deny** in the console chat and on the Activity page. For WhatsApp chats and scheduled tasks, LRMagent also messages your own WhatsApp chat: reply `YES CODE` or `NO CODE`. No answer in 10 minutes counts as no (`LRMAGENT_APPROVAL_TIMEOUT`, in seconds). A refused action is not retried another way.
 - Code: `deploy/agent-tools/lrm_activity.py` (rules, waiting, log), hooked into the agent's tool runner by `apply.py`.
 
+## Gmail, Google Calendar and the morning brief
+
+- **Connections page** (console menu): a one-time setup walks you through making your own Google OAuth client (Google Cloud project, Gmail and Calendar APIs, publish the app so the sign-in doesn't expire weekly, redirect URI `https://<your domain>/api/lrm/google/callback`). Paste its ID and secret, press **Connect Google**. Tokens are kept on the server in `lrm_google.json` (mode 600), never in GitHub.
+- **Agents** get a `google` tool: search and read mail, save drafts, send (after your approval), list today's or upcoming events, add events (inviting people needs your approval). Only the owner can use it: the console, your WhatsApp "Message yourself" chat and the brief. Other contacts are refused.
+- **Morning brief:** turn it on with a time and the agent that prepares it. Each day it gathers today's meetings, important unread mail (no promotions or social) and today's reminders, and sends a short brief to your own WhatsApp chat. **Send one now** tests it.
+
 ## Errors in plain language
 
 When an AI model call fails, the chat says what happened and what to do instead of showing the provider's raw error. For example, an empty DeepSeek balance reads: "Your AI provider account (DeepSeek) has run out of credit… Top up the balance… or switch to another model". It covers no credit, bad API key, rate limits, unknown model, refused access, content policy, network problems, provider outages and conversations that are too long. The raw error is still written to Monitor → Logs (`deploy/agent-tools/lrm_errors.py`).

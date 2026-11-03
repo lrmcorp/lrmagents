@@ -107,6 +107,7 @@ function _lrmEnsureWhatsApp(doc) {
         { after: 'skills', item: { id: 'lrm-teammates', type: 'url', url: '/teammates/', open: 'frame', title: 'Teammates', icon: 'robot', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
         { after: 'tasks', item: { id: 'lrm-activity', type: 'url', url: '/assets/brand/activity.html', open: 'frame', title: 'Activity', icon: 'flag', hidden: false } },
+        { after: 'channels', item: { id: 'lrm-connections', type: 'url', url: '/assets/brand/connections.html', open: 'frame', title: 'Connections', icon: 'link', hidden: false } },
         { after: 'logs', item: { id: 'lrm-usage', type: 'url', url: '/assets/brand/usage.html', open: 'frame', title: 'Usage', icon: 'chart', hidden: false } },
     ];
     for (const page of pages) {
@@ -154,8 +155,9 @@ patch("agent/tools/__init__.py",
       "from agent.tools.subagent.subagent import SubagentTool\n"
       "from agent.tools.model_switch.model_switch import ModelSwitch\n"
       "from agent.tools.transcribe.transcribe import TranscribeAudio\n"
-      "from agent.tools.teammates.teammate import AskTeammate\n", root=app)
-patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n", root=app)
+      "from agent.tools.teammates.teammate import AskTeammate\n"
+      "from agent.tools.google_tool.google_tool import GoogleTool\n", root=app)
+patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n", root=app)
 # ---- Scheduled messages from WhatsApp chats go back to WhatsApp through the
 # gateway (deploy/agent-tools/whatsapp_relay.py, installed as channel/lrm_whatsapp_relay.py).
 patch("agent/tools/scheduler/integration.py",
@@ -196,11 +198,14 @@ patch("agent/protocol/agent_stream.py",
 patch("web_channel.py", "\nURLS = (\n",
       "\nfrom channel.web.api.lrm_usage import LrmUsageHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_vault import LrmVaultHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_activity import LrmActivityHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_activity import LrmActivityHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_google import LrmGoogleCallbackHandler, LrmGoogleHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
-      "    '/api/lrm/activity', 'LrmActivityHandler',\n")
+      "    '/api/lrm/activity', 'LrmActivityHandler',\n"
+      "    '/api/lrm/google/callback', 'LrmGoogleCallbackHandler',\n"
+      "    '/api/lrm/google', 'LrmGoogleHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",

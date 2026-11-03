@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connections · LRMagent</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
+<link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+<style>
+  :root { --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8; --hover: #ededf5; --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c;
+          --line: #dbdbe5; --primary: #18181b; --primary-text: #fff; --ok: #12795b; --ok-bg: #e7f6ef; --warn: #92400e; --warn-bg: #fff7e6;
+          --bad: #b42530; --ring: #7480f1; --link: #4f5bd5; }
+  :root.dark { --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a; --hover: #241f30; --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6;
+          --line: #2b2538; --primary: #f0f0f4; --primary-text: #13101b; --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10;
+          --bad: #f2a1a1; --ring: #8d97ff; --link: #8d97ff; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.55 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 860px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 6px; }
+  .lede { color: var(--text-3); margin: 0 0 24px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px; margin-bottom: 16px; display: grid; gap: 14px; }
+  .head { display: flex; gap: 14px; align-items: center; }
+  .icon { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; background: var(--muted-bg); font-size: 18px; flex: none; }
+  .head b { font-size: 16px; font-weight: 600; display: block; }
+  .head small { color: var(--text-3); }
+  .head .grow { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 10px; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.no { background: var(--warn-bg); color: var(--warn); }
+  ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; color: var(--text-2); }
+  a { color: var(--link); }
+  code, .copy { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--muted-bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; word-break: break-all; }
+  .copy { cursor: pointer; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  label.f { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-3); flex: 1; min-width: 220px; }
+  input, select { font: 400 14px Inter, system-ui, sans-serif; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; outline: none; }
+  input:focus, select:focus { border-color: var(--ring); }
+  button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 9px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+  button.danger { color: var(--bad); }
+  details summary { cursor: pointer; font-weight: 600; }
+  details[open] summary { margin-bottom: 10px; }
+  .note { font-size: 12px; color: var(--text-3); }
+  .switch { display: inline-flex; gap: 8px; align-items: center; font-weight: 600; }
+  .switch input { width: auto; accent-color: var(--primary); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--canvas); padding: 8px 14px; border-radius: 10px; font-size: 13px; max-width: 90vw; }
+  .toast.err { background: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Connections</h1>
+  <p class="lede">Connect your own accounts so agents can work with them. Everything stays on your server; only you can use these, from the console or your own WhatsApp chat.</p>
+
+  <section class="card" id="google">
+    <div class="head"><span class="icon"><i class="fab fa-google"></i></span><span class="grow"><b>Gmail and Google Calendar</b><small>Read and search mail, draft replies, send (after your OK), see and add events.</small></span><span id="g-pill"></span></div>
+    <div id="g-connected" hidden class="row"><span id="g-who"></span><button id="g-reconnect"><i class="fas fa-rotate"></i>Connect again</button><button class="danger" id="g-disconnect"><i class="fas fa-link-slash"></i>Disconnect</button></div>
+    <details id="g-setup">
+      <summary>One-time setup (about 10 minutes)</summary>
+      <ol>
+        <li>Open <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">Google Cloud → New project</a>, name it e.g. <b>LRMagent</b>, and create it.</li>
+        <li>Turn on the two APIs: <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" target="_blank" rel="noopener">Gmail API</a> and <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener">Google Calendar API</a> → <b>Enable</b> on each.</li>
+        <li>Open <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener">Google Auth Platform</a> → <b>Get started</b>: app name LRMagent, your email, audience <b>External</b>. Under <b>Audience</b>, add your own Gmail address as a test user, then press <b>Publish app</b> (otherwise Google signs you out every 7 days). Google will show "unverified app" when you connect; that is expected for a private app: choose <i>Advanced → Go to LRMagent</i>.</li>
+        <li>Under <b>Clients</b> → <b>Create client</b>: type <b>Web application</b>, and under <b>Authorized redirect URIs</b> add exactly:<br><span class="copy" id="g-redirect" title="Click to copy"></span></li>
+        <li>Copy the <b>Client ID</b> and <b>Client secret</b> it shows into the boxes below, save, then press <b>Connect Google</b>.</li>
+      </ol>
+    </details>
+    <div class="row">
+      <label class="f">Client ID<input id="g-id" placeholder="….apps.googleusercontent.com" spellcheck="false" autocomplete="off"></label>
+      <label class="f">Client secret<input id="g-secret" type="password" placeholder="GOCSPX-…" spellcheck="false" autocomplete="off"></label>
+    </div>
+    <div class="row"><button id="g-save"><i class="fas fa-floppy-disk"></i>Save client</button><button class="primary" id="g-connect"><i class="fab fa-google"></i>Connect Google</button></div>
+  </section>
+
+  <section class="card" id="brief">
+    <div class="head"><span class="icon"><i class="fas fa-sun"></i></span><span class="grow"><b>Morning brief</b><small>Every day on your WhatsApp: today's meetings, important unread mail and today's reminders.</small></span><span id="b-pill"></span></div>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="b-on"> Send it every day</label>
+      <label class="f" style="max-width:140px">Time (Jakarta)<input id="b-time" type="time" value="07:00"></label>
+      <label class="f">Prepared by<select id="b-agent"></select></label>
+    </div>
+    <div class="row"><button class="primary" id="b-save"><i class="fas fa-floppy-disk"></i>Save</button><button id="b-test"><i class="fas fa-paper-plane"></i>Send one now</button></div>
+    <p class="note" id="b-last"></p>
+    <p class="note">Needs a linked WhatsApp number (WhatsApp page) and a model with credit. Without Google connected, the brief covers reminders only.</p>
+  </section>
+</main>
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+try { if (window.parent !== window && window.parent.document.documentElement.classList.contains('dark')) document.documentElement.classList.add('dark'); } catch {}
+let state = null;
+function toast(m, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 6000 : 3000); }
+async function api(body) {
+  const r = await fetch('/api/lrm/google', body ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin' });
+  if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
+  const d = await r.json();
+  if (d.status !== 'success') throw new Error(d.message || 'Request failed');
+  return d;
+}
+function render() {
+  const s = state;
+  $('#g-pill').innerHTML = s.connected ? '<span class="pill ok"><i class="fas fa-check"></i>Connected</span>' : '<span class="pill no">Not connected</span>';
+  $('#g-connected').hidden = !s.connected;
+  $('#g-who').innerHTML = s.connected ? `Signed in as <b>${esc(s.email || 'your Google account')}</b>` : '';
+  $('#g-setup').open = !s.client_set;
+  $('#g-redirect').textContent = s.redirect_uri;
+  if (s.client_id && !$('#g-id').value) $('#g-id').value = s.client_id;
+  $('#g-secret').placeholder = s.client_set ? 'saved (enter a new one to replace)' : 'GOCSPX-…';
+  $('#g-connect').innerHTML = `<i class="fab fa-google"></i>${s.connected ? 'Connect again' : 'Connect Google'}`;
+  $('#g-connect').hidden = s.connected;
+  const b = s.brief;
+  $('#b-on').checked = b.enabled; $('#b-time').value = b.time || '07:00';
+  $('#b-pill').innerHTML = b.enabled ? `<span class="pill ok">Daily at ${esc(b.time)}</span>` : '<span class="pill no">Off</span>';
+  $('#b-last').textContent = b.last_run ? `Last sent ${b.last_run.replace('T', ' ')}${b.last_error ? ` — failed: ${b.last_error}` : ''}` : '';
+}
+async function load() {
+  try {
+    state = await api();
+    render();
+    const agents = await fetch('/api/agents', { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({}));
+    const list = (agents.agents || []).filter((a) => a.enabled !== false);
+    $('#b-agent').innerHTML = list.map((a) => `<option value="${esc(a.id)}">${esc(a.name || a.id)}</option>`).join('') || '<option value="">Main agent</option>';
+    $('#b-agent').value = state.brief.agent || agents.default_agent_id || '';
+  } catch (e) { toast(e.message, true); }
+}
+async function connect() {
+  try {
+    const { url } = await api({ op: 'connect' });
+    const w = window.open(url, '_blank', 'noopener=no,width=560,height=720');
+    if (!w) location.href = url;
+  } catch (e) { toast(e.message, true); }
+}
+window.addEventListener('message', (e) => { if (e.data === 'lrm-google-done') { toast('Google connected'); load(); } });
+window.addEventListener('focus', () => { if (state && !state.connected) load(); });
+$('#g-redirect').onclick = () => navigator.clipboard?.writeText(state.redirect_uri).then(() => toast('Copied'));
+$('#g-save').onclick = async () => {
+  const secret = $('#g-secret').value.trim();
+  if (!secret && state.client_set && $('#g-id').value.trim() === state.client_id) return toast('Already saved');
+  try { state = { ...state, ...(await api({ op: 'client', client_id: $('#g-id').value.trim(), client_secret: secret })) }; $('#g-secret').value = ''; render(); toast('Saved. Now press Connect Google.'); } catch (e) { toast(e.message, true); }
+};
+$('#g-connect').onclick = connect;
+$('#g-reconnect').onclick = connect;
+$('#g-disconnect').onclick = async () => { if (!confirm('Disconnect Google? Agents will no longer see your mail or calendar.')) return; try { state = { ...state, ...(await api({ op: 'disconnect' })) }; render(); } catch (e) { toast(e.message, true); } };
+$('#b-save').onclick = async () => { try { state = { ...state, ...(await api({ op: 'brief', enabled: $('#b-on').checked, time: $('#b-time').value, agent: $('#b-agent').value })) }; render(); toast('Saved'); } catch (e) { toast(e.message, true); } };
+$('#b-test').onclick = async () => { try { const d = await api({ op: 'brief_test' }); toast(d.message); setTimeout(load, 90000); } catch (e) { toast(e.message, true); } };
+load();
+</script>
+</body>
+</html>
