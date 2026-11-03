@@ -201,14 +201,16 @@ patch("web_channel.py", "\nURLS = (\n",
       "from channel.web.api.lrm_vault import LrmVaultHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_activity import LrmActivityHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_google import LrmGoogleCallbackHandler, LrmGoogleHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_browser import LrmBrowserHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_browser import LrmBrowserHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_tts import LrmTtsHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
       "    '/api/lrm/activity', 'LrmActivityHandler',\n"
       "    '/api/lrm/google/callback', 'LrmGoogleCallbackHandler',\n"
       "    '/api/lrm/google', 'LrmGoogleHandler',\n"
-      "    '/api/lrm/browser', 'LrmBrowserHandler',\n")
+      "    '/api/lrm/browser', 'LrmBrowserHandler',\n"
+      "    '/api/lrm/tts', 'LrmTtsHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",
@@ -254,6 +256,29 @@ patch("agent/tools/browser/browser_tool.py",
       '"For login/CAPTCHA/authorization etc., screenshot and ask the user for help. "',
       '"For login/CAPTCHA/2FA/authorization etc., ask the user to do that step themselves on the console\'s Browser page "'
       '"(they can watch the page live and take over), and continue when they say it is done. "', root=app)
+# ---- Sandbox (agent/lrm_sandbox.py): WhatsApp and API chats run shell commands in the
+# sandbox container, away from LRMagent's secrets; background jobs stay console-only.
+patch("agent/tools/bash/bash.py",
+      "            if run_in_background:\n                # Ownership of temp_script_path passes to the registry",
+      "            if run_in_background:\n"
+      "                from agent.lrm_sandbox import sandboxed as _lrm_sandboxed\n"
+      "                if _lrm_sandboxed(self):\n"
+      "                    return ToolResult.fail(\"Background commands are not available in WhatsApp and API chats; \"\n"
+      "                                           \"run it normally instead (it can take up to the timeout).\")\n"
+      "                # Ownership of temp_script_path passes to the registry", root=app)
+patch("agent/tools/bash/bash.py",
+      """                result = self._run_streaming(
+                    command,
+                    timeout,
+                    env,
+                    dotenv_vars,
+                )
+""",
+      """                from agent.lrm_sandbox import run as _lrm_sandbox_run
+                result = _lrm_sandbox_run(self, command, timeout, env, dotenv_vars)
+                if result is None:
+                    result = self._run_streaming(command, timeout, env, dotenv_vars)
+""", root=app)
 # ---- Logs: upstream masks settings named *key*/*secret* only, so the console
 # password and the internal API token were written to run.log in clear text.
 patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',

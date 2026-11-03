@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  approvalReply, isOwnChat, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp } from '../src/policy.js';
+  approvalReply, batchable, isOwnChat, mediaKind, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp } from '../src/policy.js';
 
 const ME = ['6280000000001:7@s.whatsapp.net', '99999@lid'];
 const dm = (from, text, extra = {}) => ({
@@ -12,7 +12,7 @@ const settings = (raw) => normalizeSettings(raw);
 
 test('settings fall back to safe defaults', () => {
   assert.deepEqual(normalizeSettings({ dmPolicy: 'weird', allowFrom: ['+62 812-0000-0000', 'x'] }), {
-    dmPolicy: 'pairing', allowFrom: ['6281200000000'], groupPolicy: 'off',
+    dmPolicy: 'pairing', allowFrom: ['6281200000000'], groupPolicy: 'off', batchMs: 2500, voiceReplies: false,
   });
 });
 
@@ -144,4 +144,22 @@ test('approvalReply: YES/NO with a code, nothing else', () => {
   assert.equal(approvalReply('yes please do it'), null);
   assert.equal(approvalReply('K7QP'), null);
   assert.equal(approvalReply(''), null);
+});
+
+test('settings: batching and voice replies have safe defaults', () => {
+  assert.equal(normalizeSettings({}).batchMs, 2500);
+  assert.equal(normalizeSettings({ batchMs: 0 }).batchMs, 0);
+  assert.equal(normalizeSettings({ batchMs: 99999 }).batchMs, 2500);
+  assert.equal(normalizeSettings({}).voiceReplies, false);
+  assert.equal(normalizeSettings({ voiceReplies: 'yes' }).voiceReplies, false);
+  assert.equal(normalizeSettings({ voiceReplies: true }).voiceReplies, true);
+});
+
+test('batchable and documents', () => {
+  assert.equal(batchable({ conversation: 'hi' }), true);
+  assert.equal(batchable({ extendedTextMessage: { text: 'hi' } }), true);
+  assert.equal(batchable({ imageMessage: { caption: 'x' } }), false);
+  const doc = { documentWithCaptionMessage: { message: { documentMessage: { fileName: 'a.pdf', caption: 'read this' } } } };
+  assert.equal(mediaKind(doc), 'document');
+  assert.equal(decide({ key: { remoteJid: '6280000000001@s.whatsapp.net', id: 'd', fromMe: true }, message: doc, settings: settings({}), myJids: ME, selfChat: true }).media, 'document');
 });

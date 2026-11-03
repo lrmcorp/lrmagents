@@ -13,9 +13,9 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
 } from 'baileys';
-import { ask, decideApproval } from './cowagent.js';
+import { ask, decideApproval, speak } from './cowagent.js';
 import crypto from 'node:crypto';
-import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
+import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 // Shared with the agent container (read-only there) so its vision and
@@ -23,8 +23,12 @@ const DATA_DIR = process.env.DATA_DIR || '/data';
 const MEDIA_DIR = process.env.MEDIA_DIR || '/media/whatsapp';
 const MEDIA_MAX_BYTES = 20 * 1024 * 1024;
 const MEDIA_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
-const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/wav': 'wav' };
-const UNSUPPORTED_REPLY = 'I can only read text messages for now. Please type your question.';
+const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/aac': 'aac', 'audio/wav': 'wav',
+  'application/pdf': 'pdf', 'text/plain': 'txt', 'text/csv': 'csv', 'application/msword': 'doc', 'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx' };
+const UNSUPPORTED_REPLY = 'I can read text, photos, voice notes and documents, but not this kind of message. Please type your question.';
 const ERROR_REPLY = 'Sorry, something went wrong on my side. Please try again in a moment.';
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
 const quiet = pino({ level: 'silent' });
@@ -65,6 +69,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 class Account {
   constructor(agentId) {
     this.agentId = agentId;
+    this.batches = new Map();
     this.dir = path.join(DATA_DIR, agentId);
     this.authDir = path.join(this.dir, 'auth');
     this.status = 'unlinked'; // unlinked | starting | qr | connected | reconnecting | logged_out
@@ -235,8 +240,33 @@ class Account {
     this.scheduleRetry(error.message);
   }
 
+  flushBatch(sock, chat) {
+    const pending = this.batches.get(chat);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this.batches.delete(chat);
+    const last = pending.msgs[pending.msgs.length - 1];
+    if (pending.msgs.length === 1) return this.enqueue(sock, { ...last, batched: true });
+    for (const m of pending.msgs.slice(0, -1)) this.seen.add(m.key.id);
+    // The newest message carries the joined text; the reply quotes it.
+    const text = pending.msgs.map((m) => messageText(m.message)).join('\n');
+    this.enqueue(sock, { ...last, message: { conversation: text }, batched: true });
+  }
+
   enqueue(sock, msg) {
     const chat = msg.key?.remoteJid || '';
+    // Several quick texts in a row become one request, so the agent answers the whole thought.
+    if (this.settings.batchMs && !msg.batched && !msg.approvalChecked && msg.message && !this.sentIds.has(msg.key?.id) && batchable(msg.message)
+        && !approvalReply(messageText(msg.message)) && !chat.endsWith('@g.us')) {
+      const pending = this.batches.get(chat) || { msgs: [] };
+      clearTimeout(pending.timer);
+      pending.msgs.push(msg);
+      pending.timer = setTimeout(() => this.flushBatch(sock, chat), this.settings.batchMs);
+      this.batches.set(chat, pending);
+      return;
+    }
+    // Media or anything else first sends the waiting texts, in order.
+    if (!msg.batched && this.batches.has(chat)) this.flushBatch(sock, chat);
     // An approval answer must not wait behind the very task that is waiting for it.
     const reply = msg.message && isSelfChat(msg.key, [sock.user?.id, sock.user?.lid]) && !this.sentIds.has(msg.key.id)
       ? approvalReply(messageText(msg.message)) : null;
@@ -300,15 +330,21 @@ class Account {
       return;
     }
 
+    // 👀 while working on it, like OpenClaw; cleared when the answer is sent.
+    await sock.sendMessage(chat, { react: { text: '👀', key: msg.key } }).catch(() => {});
+    const unreact = () => sock.sendMessage(chat, { react: { text: '', key: msg.key } }).catch(() => {});
     await sock.sendPresenceUpdate('composing', chat).catch(() => {});
     const typing = setInterval(() => sock.sendPresenceUpdate('composing', chat).catch(() => {}), 10_000);
     try {
       let prompt = verdict.text;
       if (verdict.media) {
         const file = await this.saveMedia(sock, msg);
+        const name = documentName(msg.message);
         const note = verdict.media === 'image'
           ? `[The user sent a photo, saved at ${file}. Look at it with the vision tool before answering.]`
-          : `[The user sent a voice note, saved at ${file}. Transcribe it with transcribe_audio, then reply to what they said.]`;
+          : verdict.media === 'document'
+            ? `[The user sent a document${name ? ` "${name}"` : ''}, saved at ${file}. Read it before answering: the read tool opens PDFs and text files; for Word, Excel or PowerPoint use a short Python script.]`
+            : `[The user sent a voice note, saved at ${file}. Transcribe it with transcribe_audio, then reply to what they said.]`;
         prompt = verdict.text ? `${note}\n${verdict.text}` : note;
       }
       if (chat.endsWith('@g.us')) {
@@ -319,8 +355,11 @@ class Account {
       const reply = await ask({ agentId: this.agentId, conversationId: `whatsapp:${this.agentId}:${chat}`, text: prompt });
       clearInterval(typing);
       await this.send(sock, chat, reply, msg);
+      unreact();
+      if (verdict.media === 'audio' && this.settings.voiceReplies) await this.sendVoice(sock, chat, reply);
     } catch (error) {
       clearInterval(typing);
+      unreact();
       log.error({ agent: this.agentId, err: error.message }, 'agent call failed');
       await this.send(sock, chat, ERROR_REPLY, msg);
     } finally {
@@ -328,18 +367,31 @@ class Account {
     }
   }
 
+  // The answer as a voice note too. Best effort: without text-to-speech the text reply stands alone.
+  async sendVoice(sock, chat, text) {
+    try {
+      const audio = await speak(stripMarkdown(text).slice(0, 1500));
+      if (!audio) return;
+      const sent = await sock.sendMessage(chat, { audio, ptt: true, mimetype: 'audio/ogg; codecs=opus' });
+      if (sent?.key?.id) this.sentIds.add(sent.key.id);
+    } catch (error) {
+      log.warn({ agent: this.agentId, err: error.message }, 'voice reply skipped');
+    }
+  }
+
   async saveMedia(sock, msg) {
     const kind = mediaKind(msg.message);
     const unwrapped = msg.message?.ephemeralMessage?.message ?? msg.message?.viewOnceMessage?.message
       ?? msg.message?.viewOnceMessageV2?.message ?? msg.message;
-    const part = unwrapped?.[`${kind}Message`] ?? {};
+    const part = (unwrapped?.documentWithCaptionMessage?.message ?? unwrapped)?.[`${kind}Message`] ?? {};
     if (Number(part.fileLength || 0) > MEDIA_MAX_BYTES) throw new Error('media too large');
     const buffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: quiet, reuploadRequest: sock.updateMediaMessage });
     if (buffer.length > MEDIA_MAX_BYTES) throw new Error('media too large');
     const dir = path.join(MEDIA_DIR, this.agentId);
     await fs.mkdir(dir, { recursive: true });
     await this.pruneMedia(dir);
-    const ext = EXT[String(part.mimetype || '').split(';')[0]] || (kind === 'image' ? 'jpg' : 'ogg');
+    const fromName = /\.([A-Za-z0-9]{1,5})$/.exec(String(part.fileName || ''))?.[1]?.toLowerCase();
+    const ext = EXT[String(part.mimetype || '').split(';')[0]] || fromName || (kind === 'image' ? 'jpg' : kind === 'document' ? 'bin' : 'ogg');
     const file = path.join(dir, `${new Date().toISOString().slice(0, 10)}-${String(msg.key.id).replace(/[^A-Za-z0-9]/g, '')}.${ext}`);
     await fs.writeFile(file, buffer, { mode: 0o644 });
     return file;
@@ -551,4 +603,13 @@ export class Accounts {
   async shutdown() {
     await Promise.all([...this.byAgent.values()].map((a) => a.stop()));
   }
+}
+
+function documentName(message) {
+  const m = message?.documentWithCaptionMessage?.message ?? message ?? {};
+  return String(m.documentMessage?.fileName || '').slice(0, 120);
+}
+
+function stripMarkdown(text) {
+  return String(text || '').replace(/```[\s\S]*?```/g, ' ').replace(/[*_~`#>]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[ \t]+\n/g, '\n').trim();
 }

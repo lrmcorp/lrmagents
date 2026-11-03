@@ -28,6 +28,11 @@ COPY deploy/agent-tools/google_tool /app/agent/tools/google_tool/
 COPY deploy/agent-tools/lrm_google_api.py /app/channel/web/api/lrm_google.py
 # Watchable browser: live view and take-over API (page copied with the brand files).
 COPY deploy/agent-tools/lrm_browser_api.py /app/channel/web/api/lrm_browser.py
+# Sandbox for WhatsApp/API chats' commands (client, and the server the sandbox service runs).
+COPY deploy/agent-tools/lrm_sandbox.py /app/agent/lrm_sandbox.py
+COPY deploy/agent-tools/lrm_sandbox_server.py /app/agent/lrm_sandbox_server.py
+# Voice replies on WhatsApp: text-to-speech as an Opus voice note.
+COPY deploy/agent-tools/lrm_tts_api.py /app/channel/web/api/lrm_tts.py
 # Vault: Obsidian-style page over each agent's memory and knowledge (page copied with the brand files).
 COPY deploy/agent-tools/lrm_vault_api.py /app/channel/web/api/lrm_vault.py
 # /media/whatsapp: whichever container mounts the WhatsApp media volume first sets its

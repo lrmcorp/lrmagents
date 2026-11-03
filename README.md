@@ -79,7 +79,7 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
 - **Groups:** when the agent is @mentioned, it also sees up to the last 20 messages from **approved** members that it wasn't asked about (within 6 hours), so it can follow the conversation.
 - **Rate limit:** at most 8 messages per minute per chat and 40 per number. A sender who goes over is told once, then ignored until the minute passes. "Message yourself" is never limited.
 - **Permissions:** WhatsApp chats run with **workspace-write** permission, because WhatsApp senders are less trusted than you in the console. In fact every conversation over the chat API is held to that level and can't be raised to full access. A WhatsApp chat can switch its own model, but not the default. Console chats keep your default.
-- **Remaining risk:** the agent's shell commands run as the same user as LRMagent itself, so a chat that can run commands could in principle read the console password. LRMagent's permission checks are not an operating-system sandbox. Approve only people you trust, and keep "Who can talk" on pairing or allowlist.
+- **Sandbox:** shell commands from WhatsApp (and any API chat) run in a separate `sandbox` container that has the agents' workspace but none of LRMagent's settings, keys or console password, and those chats cannot open LRMagent's own settings files with the file tools either. Console chats are yours and run as before. Still approve only people you trust, and keep "Who can talk" on pairing or allowlist: an agent can still read and change the workspace for them.
 
 **Risk:** WhatsApp does not support bots on WhatsApp Web. Use a dedicated number and avoid bulk or spam-like messaging, or the number can be banned.
 
@@ -129,6 +129,13 @@ The **Teammates** page (console menu) runs coding AIs in their own container (`t
 - **Take over:** click, type, paste and scroll on the picture to use the real page, or open any site from the address bar, e.g. to sign in once. While you drive, agents' browser actions wait (the chat shows why). Press **Hand back** when done; after 10 idle minutes it goes back by itself. Logins stay in the browser profile, so agents can use those sites afterwards.
 - **Agents ask for help:** the browser tool now tells agents to ask you to do logins, CAPTCHAs and 2FA codes yourself on the Browser page, then carry on.
 - **Approvals still apply:** clicking things like "Place order", "Pay", "Post", "Delete" or "Submit" waits for your OK (the click is matched to the element's label from the agent's last page snapshot).
+
+## WhatsApp extras
+
+- **👀** on your message while the agent works on it, cleared when it answers.
+- **Documents:** PDFs, Word, Excel, PowerPoint and text files sent on WhatsApp are saved and read by the agent (PDF and text directly, Office files with a short Python script).
+- **Quick messages in a row** are answered together after 2 seconds of quiet (per agent: off, 2 s or 5 s, under "Who can talk to this agent, and how it answers").
+- **Voice replies:** optionally answer a voice note with a voice note as well as text. Needs text-to-speech set up in Config (voice provider and its key); without it, replies stay text.
 
 ## Errors in plain language
 

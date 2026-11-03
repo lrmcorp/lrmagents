@@ -279,6 +279,10 @@ def _expire():
 def gate(executor, tool_name, arguments, tool_call_id):
     """None to let the call run; otherwise the refusal the model reads. Never raises."""
     try:
+        from agent.lrm_sandbox import private_path_refusal
+        private = private_path_refusal(executor, tool_name, arguments)
+        if private:
+            return private
         if tool_name == "browser":
             waited = _wait_for_browser(executor, tool_call_id)
             if waited:

@@ -69,3 +69,15 @@ export async function decideApproval(code, decision) {
   });
   return json(response);
 }
+
+// Text to an Ogg/Opus voice note, through LRMagent's text-to-speech. null when it is not set up.
+export async function speak(text) {
+  const response = await fetch(`${BASE}/api/lrm/tts`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+    signal: AbortSignal.timeout(90_000),
+  });
+  if (response.status !== 200 || !String(response.headers.get('content-type') || '').startsWith('audio/')) return null;
+  return Buffer.from(await response.arrayBuffer());
+}

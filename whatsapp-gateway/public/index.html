@@ -122,10 +122,12 @@ function card(agent) {
     </div>
     ${pending}
     <details>
-      <summary>Who can talk to this agent</summary>
+      <summary>Who can talk to this agent, and how it answers</summary>
       <form class="form" data-settings>
         <div><label>Direct messages</label><select name="dmPolicy">${options(DM, wa.settings.dmPolicy)}</select></div>
         <div><label>Groups</label><select name="groupPolicy">${options(GROUP, wa.settings.groupPolicy)}</select></div>
+        <div><label>Quick messages in a row</label><select name="batchMs">${options({ 0: 'Answer each one', 2500: 'Wait 2 seconds, answer together', 5000: 'Wait 5 seconds, answer together' }, String(wa.settings.batchMs ?? 2500))}</select></div>
+        <div><label>Voice notes</label><select name="voiceReplies">${options({ false: 'Reply in text', true: 'Reply in text and voice' }, String(Boolean(wa.settings.voiceReplies)))}</select></div>
         <div class="full"><label>Approved numbers</label>
           <textarea name="allowFrom" placeholder="6281234567890, 6289876543210">${esc(wa.settings.allowFrom.join(', '))}</textarea>
           <div class="hint">With country code, separated by commas. The linked phone itself can always use “Message yourself”.</div></div>
@@ -193,6 +195,7 @@ document.addEventListener('submit', async (event) => {
   try {
     await api(`agents/${agentId}/settings`, {
       dmPolicy: data.get('dmPolicy'), groupPolicy: data.get('groupPolicy'),
+      batchMs: Number(data.get('batchMs')), voiceReplies: data.get('voiceReplies') === 'true',
       allowFrom: String(data.get('allowFrom')).split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean),
     });
     $('[data-saved]', form).textContent = 'Saved.';

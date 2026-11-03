@@ -50,6 +50,10 @@ export function normalizeSettings(raw = {}) {
     dmPolicy: pick(raw.dmPolicy, ['pairing', 'allowlist', 'open', 'disabled'], DEFAULT_SETTINGS.dmPolicy),
     allowFrom: [...new Set((raw.allowFrom ?? []).map(digits).filter((n) => n.length >= 6))],
     groupPolicy: pick(raw.groupPolicy, ['mention', 'off'], DEFAULT_SETTINGS.groupPolicy),
+    // Quick messages in a row are answered together, after this much quiet (0: each on its own).
+    batchMs: [0, 2500, 5000].includes(Number(raw.batchMs)) ? Number(raw.batchMs) : 2500,
+    // Answer a voice note with a voice note too (needs text-to-speech set up in the console).
+    voiceReplies: raw.voiceReplies === true,
   };
 }
 
@@ -75,7 +79,8 @@ export function senderPhone(key) {
 
 export function messageText(message) {
   const m = message ?? {};
-  const inner = m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message;
+  const inner = m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message
+    ?? m.documentWithCaptionMessage?.message;
   if (inner) return messageText(inner);
   return (
     m.conversation ??
@@ -97,7 +102,8 @@ export function contextInfo(message) {
 
 function unwrap(message) {
   const m = message ?? {};
-  const inner = m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message;
+  const inner = m.ephemeralMessage?.message ?? m.viewOnceMessage?.message ?? m.viewOnceMessageV2?.message
+    ?? m.documentWithCaptionMessage?.message;
   return inner ? unwrap(inner) : m;
 }
 
@@ -116,9 +122,9 @@ export function hasMedia(message) {
   return Boolean(mediaKind(message));
 }
 
-// Photos go to the vision tool and voice notes to transcribe_audio; other media
-// is only answered through its caption.
-const READABLE_MEDIA = new Set(['image', 'audio']);
+// Photos go to the vision tool, voice notes to transcribe_audio and documents
+// (PDF, Word, Excel, text) to the read tool; other media only through its caption.
+const READABLE_MEDIA = new Set(['image', 'audio', 'document']);
 
 function answer(text, message) {
   const kind = mediaKind(message);
@@ -346,4 +352,11 @@ export function approvalReply(text) {
   const m = /^\s*(yes|y|ok|approve|allow|no|n|deny|refuse)\s+([A-Za-z0-9]{4,6})\s*[.!]?\s*$/i.exec(String(text ?? ''));
   if (!m) return null;
   return { decision: /^(yes|y|ok|approve|allow)$/i.test(m[1]) ? 'approve' : 'deny', code: m[2].toUpperCase() };
+}
+
+// Plain text only (no media): messages that may be joined with the next few when
+// someone sends their request in pieces.
+export function batchable(message) {
+  const m = unwrap(message);
+  return Boolean((m.conversation || m.extendedTextMessage?.text) && !mediaKind(message));
 }

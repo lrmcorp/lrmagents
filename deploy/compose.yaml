@@ -17,7 +17,11 @@ services:
     env_file:
       - path: ../.env.cowagent
         format: raw
+      - path: ../.env.sandbox
+        format: raw
     environment:
+      # WhatsApp and API chats run their shell commands in the sandbox service below.
+      LRMAGENT_SANDBOX_URL: http://sandbox:8099
       CHANNEL_TYPE: web
       # Reachable by the ln Caddy proxy over the lnint-edge network; the host port below stays on loopback.
       WEB_HOST: 0.0.0.0
@@ -65,6 +69,32 @@ services:
       default:
       edge:
         aliases: [whatsapp-gateway]
+
+  # Shell commands from WhatsApp and API chats: the workspace, but none of LRMagent's
+  # settings or keys (no data volume, no env file but its own token).
+  sandbox:
+    image: lrm-agents
+    pull_policy: never
+    restart: unless-stopped
+    entrypoint: ["python", "/app/agent/lrm_sandbox_server.py"]
+    user: "999:999"
+    env_file:
+      - path: ../.env.sandbox
+        format: raw
+    environment:
+      TZ: Asia/Jakarta
+      HOME: /home/agent
+      SANDBOX_ROOT: /home/agent/cow
+    volumes:
+      - workspace:/home/agent/cow
+      - whatsapp_media:/media/whatsapp:ro
+    mem_limit: 1g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      - cowagent
 
   # Coding teammates (Codex, Claude Code, Gemini, Grok, DeepSeek) on the owner's plans.
   teammates:
