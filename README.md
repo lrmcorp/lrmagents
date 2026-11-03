@@ -123,6 +123,13 @@ The **Teammates** page (console menu) runs coding AIs in their own container (`t
 - **Agents** get a `google` tool: search and read mail, save drafts, send (after your approval), list today's or upcoming events, add events (inviting people needs your approval). Only the owner can use it: the console, your WhatsApp "Message yourself" chat and the brief. Other contacts are refused.
 - **Morning brief:** turn it on with a time and the agent that prepares it. Each day it gathers today's meetings, important unread mail (no promotions or social) and today's reminders, and sends a short brief to your own WhatsApp chat. **Send one now** tests it.
 
+## Watchable browser
+
+- **Browser page** (console menu): the agents' web browser, live (a fresh picture about twice a second), with the page title and address.
+- **Take over:** click, type, paste and scroll on the picture to use the real page, or open any site from the address bar, e.g. to sign in once. While you drive, agents' browser actions wait (the chat shows why). Press **Hand back** when done; after 10 idle minutes it goes back by itself. Logins stay in the browser profile, so agents can use those sites afterwards.
+- **Agents ask for help:** the browser tool now tells agents to ask you to do logins, CAPTCHAs and 2FA codes yourself on the Browser page, then carry on.
+- **Approvals still apply:** clicking things like "Place order", "Pay", "Post", "Delete" or "Submit" waits for your OK (the click is matched to the element's label from the agent's last page snapshot).
+
 ## Errors in plain language
 
 When an AI model call fails, the chat says what happened and what to do instead of showing the provider's raw error. For example, an empty DeepSeek balance reads: "Your AI provider account (DeepSeek) has run out of credit… Top up the balance… or switch to another model". It covers no credit, bad API key, rate limits, unknown model, refused access, content policy, network problems, provider outages and conversations that are too long. The raw error is still written to Monitor → Logs (`deploy/agent-tools/lrm_errors.py`).

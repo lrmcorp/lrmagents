@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser · LRMagent</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
+<link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+<style>
+  :root { --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8; --hover: #ededf5; --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c;
+          --line: #dbdbe5; --primary: #18181b; --primary-text: #fff; --ok: #12795b; --ok-bg: #e7f6ef; --warn: #92400e; --warn-bg: #fff7e6; --bad: #b42530; --ring: #7480f1; }
+  :root.dark { --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a; --hover: #241f30; --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6;
+          --line: #2b2538; --primary: #f0f0f4; --primary-text: #13101b; --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10; --bad: #f2a1a1; --ring: #8d97ff; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; display: flex; flex-direction: column; }
+  .bar { display: flex; gap: 6px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface); flex-wrap: wrap; }
+  .bar form { flex: 1; display: flex; gap: 6px; min-width: 220px; }
+  input { font: 400 14px Inter, system-ui, sans-serif; color: var(--text); background: var(--muted-bg); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; width: 100%; outline: none; }
+  input:focus { border-color: var(--ring); background: var(--surface); }
+  button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 9px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); display: inline-flex; gap: 6px; align-items: center; white-space: nowrap; }
+  button:hover { background: var(--hover); }
+  button.icon { padding: 7px 10px; }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+  .pill.agent { background: var(--muted-bg); color: var(--text-2); } .pill.owner { background: var(--warn-bg); color: var(--warn); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .stage { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: start center; padding: 14px; }
+  .screen { position: relative; max-width: 100%; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 0 6px 24px rgb(16 16 32 / .08); }
+  .screen img { display: block; max-width: 100%; height: auto; cursor: crosshair; outline: none; user-select: none; -webkit-user-drag: none; }
+  .screen.owner { outline: 3px solid color-mix(in srgb, var(--warn) 60%, transparent); }
+  .title { font-size: 12px; color: var(--text-3); padding: 6px 14px; border-bottom: 1px solid var(--line); background: var(--surface); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { margin: 12vh auto 0; text-align: center; max-width: 460px; color: var(--text-3); }
+  .empty h2 { color: var(--text); font-size: 18px; margin: 12px 0 6px; }
+  .hint { font-size: 12px; color: var(--text-3); padding: 0 14px 12px; text-align: center; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--canvas); padding: 8px 14px; border-radius: 10px; font-size: 13px; }
+  .toast.err { background: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <button class="icon" data-k="back" title="Back"><i class="fas fa-arrow-left"></i></button>
+    <button class="icon" data-k="forward" title="Forward"><i class="fas fa-arrow-right"></i></button>
+    <button class="icon" data-k="reload" title="Reload"><i class="fas fa-rotate-right"></i></button>
+    <form id="go"><input id="url" placeholder="Open a site, e.g. tokopedia.com or mail.google.com" spellcheck="false" autocomplete="off"><button class="primary" type="submit">Go</button></form>
+    <span id="who"></span>
+    <button id="control"></button>
+  </div>
+  <div class="title" id="title" hidden></div>
+  <div class="stage">
+    <div class="empty" id="empty"><i class="fas fa-window-maximize" style="font-size:32px"></i><h2>No browser open yet</h2>
+      <p>When an agent browses the web, you can watch it here live and take over at any moment. You can also open a site yourself, for example to sign in once, and agents can then use that login.</p></div>
+    <div class="screen" id="screen" hidden><img id="img" alt="The agents' browser" tabindex="0"></div>
+  </div>
+  <p class="hint">Click, type and scroll on the picture to use the page. While you drive, agents wait; press <b>Hand back</b> when done (after 10 idle minutes it goes back by itself). Logins you make here are kept for the agents.</p>
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+try { if (window.parent !== window && window.parent.document.documentElement.classList.contains('dark')) document.documentElement.classList.add('dark'); } catch {}
+let state = { open: false, control: { who: 'agent' } };
+let busy = false;
+function toast(m, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
+async function post(body) {
+  const r = await fetch('/api/lrm/browser', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
+  const d = await r.json();
+  if (d.status !== 'success') throw new Error(d.message || 'Failed');
+  return d;
+}
+function renderState() {
+  const owner = state.control?.who === 'owner';
+  $('#who').innerHTML = !state.open ? '' : owner ? '<span class="pill owner"><span class="dot"></span>You are driving</span>' : '<span class="pill agent"><span class="dot"></span>Agents are driving</span>';
+  $('#control').innerHTML = owner ? '<i class="fas fa-hand-point-left"></i>Hand back' : '<i class="fas fa-hand"></i>Take over';
+  $('#control').hidden = !state.open;
+  $('#screen').classList.toggle('owner', owner);
+  $('#empty').hidden = state.open; $('#screen').hidden = !state.open;
+  $('#title').hidden = !state.open;
+  $('#title').textContent = state.open ? `${state.title || ''} — ${state.url || ''}` : '';
+  if (state.url && document.activeElement !== $('#url')) $('#url').value = state.url;
+}
+async function refreshState() {
+  try { const r = await fetch('/api/lrm/browser?op=state', { credentials: 'same-origin' }); if (r.status === 401) return (window.top || window).location.href = '/'; state = await r.json(); renderState(); } catch {}
+}
+// Live picture: fetch the next frame as soon as the last one is shown.
+let lastUrl = null;
+async function frame() {
+  if (document.visibilityState === 'visible' && state.open) {
+    try {
+      const r = await fetch(`/api/lrm/browser?op=shot&t=${Date.now()}`, { credentials: 'same-origin', cache: 'no-store' });
+      if (r.status === 200) {
+        const url = URL.createObjectURL(await r.blob());
+        $('#img').src = url;
+        if (lastUrl) URL.revokeObjectURL(lastUrl);
+        lastUrl = url;
+      }
+    } catch {}
+  }
+  setTimeout(frame, state.open ? 450 : 1500);
+}
+async function input(body) {
+  if (busy && body.kind !== 'type') return;
+  busy = true;
+  try { await post({ op: 'input', ...body }); if (state.control?.who !== 'owner') refreshState(); } catch (e) { toast(e.message, true); }
+  busy = false;
+}
+$('#img').addEventListener('click', (e) => {
+  const img = e.currentTarget; img.focus();
+  const vw = state.viewport?.width || img.naturalWidth; const vh = state.viewport?.height || img.naturalHeight;
+  input({ kind: 'click', x: Math.round(e.offsetX * vw / img.clientWidth), y: Math.round(e.offsetY * vh / img.clientHeight) });
+});
+$('#img').addEventListener('wheel', (e) => { e.preventDefault(); input({ kind: 'scroll', dy: Math.round(e.deltaY * 2) }); }, { passive: false });
+let typed = ''; let typeTimer = null;
+const flushType = () => { if (typed) { const t = typed; typed = ''; input({ kind: 'type', text: t }); } };
+$('#img').addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') return; // paste event below
+  const special = { Enter: 1, Tab: 1, Escape: 1, Backspace: 1, Delete: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1, Home: 1, End: 1, PageUp: 1, PageDown: 1 };
+  if (special[e.key]) { e.preventDefault(); flushType(); input({ kind: 'key', key: e.key }); return; }
+  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); typed += e.key; clearTimeout(typeTimer); typeTimer = setTimeout(flushType, 120); }
+});
+$('#img').addEventListener('paste', (e) => { const t = e.clipboardData?.getData('text'); if (t) { e.preventDefault(); flushType(); input({ kind: 'type', text: t }); } });
+document.querySelectorAll('[data-k]').forEach((b) => b.addEventListener('click', () => input({ kind: b.dataset.k })));
+$('#go').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = $('#url').value.trim(); if (!url) return;
+  try {
+    if (state.open) await input({ kind: 'navigate', url }); else { toast('Opening the browser…'); await post({ op: 'open', url }); }
+    await refreshState(); $('#img').focus();
+  } catch (err) { toast(err.message, true); }
+});
+$('#control').addEventListener('click', async () => {
+  try { const d = await post({ op: 'control', take: state.control?.who !== 'owner' }); state.control = d.control; renderState(); toast(state.control.who === 'owner' ? 'You are driving; agents wait' : 'Handed back to the agents'); } catch (e) { toast(e.message, true); }
+});
+refreshState(); frame();
+setInterval(() => { if (document.visibilityState === 'visible') refreshState(); }, 2000);
+</script>
+</body>
+</html>

@@ -26,6 +26,8 @@ COPY deploy/agent-tools/lrm_google.py /app/agent/lrm_google.py
 COPY deploy/agent-tools/lrm_owner.py /app/agent/lrm_owner.py
 COPY deploy/agent-tools/google_tool /app/agent/tools/google_tool/
 COPY deploy/agent-tools/lrm_google_api.py /app/channel/web/api/lrm_google.py
+# Watchable browser: live view and take-over API (page copied with the brand files).
+COPY deploy/agent-tools/lrm_browser_api.py /app/channel/web/api/lrm_browser.py
 # Vault: Obsidian-style page over each agent's memory and knowledge (page copied with the brand files).
 COPY deploy/agent-tools/lrm_vault_api.py /app/channel/web/api/lrm_vault.py
 # /media/whatsapp: whichever container mounts the WhatsApp media volume first sets its
@@ -34,7 +36,7 @@ RUN set -eux; \
     python /tmp/brand/apply.py /app /tmp/brand/theme.json; \
     static=/app/channel/web/static; \
     mkdir -p "$static/brand"; \
-    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html "$static/brand/"; \
+    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html "$static/brand/"; \
     cp /tmp/brand/img/logo.jpg "$static/logo.jpg"; \
     cp /tmp/brand/img/favicon.ico "$static/favicon.ico"; \
     chmod -R a+rX "$static"; \

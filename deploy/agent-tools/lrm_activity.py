@@ -170,6 +170,46 @@ def set_mode(mode):
         conn.execute("INSERT INTO settings (key, value) VALUES ('mode', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (mode,))
 
 
+# ---- the owner driving the browser ---------------------------------------------------------
+
+BROWSER_IDLE_RELEASE = 600
+_browser = {"who": "agent", "since": 0.0, "last": 0.0}
+
+
+def browser_control():
+    if _browser["who"] == "owner" and time.time() - _browser["last"] > BROWSER_IDLE_RELEASE:
+        _browser.update(who="agent", since=time.time())
+    return dict(_browser)
+
+
+def set_browser_control(take):
+    now = time.time()
+    _browser.update(who="owner" if take else "agent", since=now, last=now)
+
+
+def touch_browser_control():
+    _browser["last"] = time.time()
+
+
+def _wait_for_browser(executor, tool_call_id):
+    """While the owner drives the browser, agent browser calls wait. Returns a refusal or None."""
+    if browser_control()["who"] != "owner":
+        return None
+    executor._emit_event("tool_execution_progress", {
+        "tool_call_id": tool_call_id, "tool_name": "browser",
+        "message": "⏸ You are using the browser (Browser page). I'll continue when you press Hand back.",
+    })
+    deadline = time.time() + TIMEOUT
+    cancel = getattr(executor, "cancel_event", None)
+    while time.time() < deadline:
+        if browser_control()["who"] != "owner":
+            return None
+        if cancel is not None and getattr(cancel, "is_set", lambda: False)():
+            return "The conversation was stopped while the owner was using the browser."
+        time.sleep(1)
+    return "The owner is still using the browser, so this browser action did not run. Ask them to press Hand back on the Browser page."
+
+
 # ---- approvals ------------------------------------------------------------------------
 
 def _where(executor):
@@ -239,6 +279,10 @@ def _expire():
 def gate(executor, tool_name, arguments, tool_call_id):
     """None to let the call run; otherwise the refusal the model reads. Never raises."""
     try:
+        if tool_name == "browser":
+            waited = _wait_for_browser(executor, tool_call_id)
+            if waited:
+                return waited
         why = risk(tool_name, arguments, get_mode(), getattr(executor, "_lrm_refs", None))
         if not why:
             return None

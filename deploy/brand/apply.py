@@ -106,6 +106,7 @@ function _lrmEnsureWhatsApp(doc) {
         { after: 'knowledge', hide: ['memory', 'knowledge'], item: { id: 'lrm-vault', type: 'url', url: '/assets/brand/vault.html', open: 'frame', title: 'Vault', icon: 'vault', hidden: false } },
         { after: 'skills', item: { id: 'lrm-teammates', type: 'url', url: '/teammates/', open: 'frame', title: 'Teammates', icon: 'robot', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
+        { after: 'tasks', item: { id: 'lrm-browser', type: 'url', url: '/assets/brand/browser.html', open: 'frame', title: 'Browser', icon: 'globe', hidden: false } },
         { after: 'tasks', item: { id: 'lrm-activity', type: 'url', url: '/assets/brand/activity.html', open: 'frame', title: 'Activity', icon: 'flag', hidden: false } },
         { after: 'channels', item: { id: 'lrm-connections', type: 'url', url: '/assets/brand/connections.html', open: 'frame', title: 'Connections', icon: 'link', hidden: false } },
         { after: 'logs', item: { id: 'lrm-usage', type: 'url', url: '/assets/brand/usage.html', open: 'frame', title: 'Usage', icon: 'chart', hidden: false } },
@@ -199,13 +200,15 @@ patch("web_channel.py", "\nURLS = (\n",
       "\nfrom channel.web.api.lrm_usage import LrmUsageHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_vault import LrmVaultHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_activity import LrmActivityHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_google import LrmGoogleCallbackHandler, LrmGoogleHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_google import LrmGoogleCallbackHandler, LrmGoogleHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_browser import LrmBrowserHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
       "    '/api/lrm/activity', 'LrmActivityHandler',\n"
       "    '/api/lrm/google/callback', 'LrmGoogleCallbackHandler',\n"
-      "    '/api/lrm/google', 'LrmGoogleHandler',\n")
+      "    '/api/lrm/google', 'LrmGoogleHandler',\n"
+      "    '/api/lrm/browser', 'LrmBrowserHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",
@@ -245,6 +248,12 @@ patch("agent/protocol/agent_stream.py",
       "            # Record failure\n            self._record_tool_result(tool_name, arguments, False)\n",
       "            # Record failure\n            self._record_tool_result(tool_name, arguments, False)\n"
       "            _lrm_record(self, tool_name, arguments, error_result)\n", root=app)
+# ---- Watchable browser: agents hand logins, CAPTCHAs and 2FA to the owner, who can watch
+# and drive on the console's Browser page (channel/web/api/lrm_browser.py).
+patch("agent/tools/browser/browser_tool.py",
+      '"For login/CAPTCHA/authorization etc., screenshot and ask the user for help. "',
+      '"For login/CAPTCHA/2FA/authorization etc., ask the user to do that step themselves on the console\'s Browser page "'
+      '"(they can watch the page live and take over), and continue when they say it is done. "', root=app)
 # ---- Logs: upstream masks settings named *key*/*secret* only, so the console
 # password and the internal API token were written to run.log in clear text.
 patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',
