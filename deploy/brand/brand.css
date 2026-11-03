@@ -1,45 +1,178 @@
-/* LRM look (after LRMsmm) on top of the LRM color theme. Loaded last so it wins
-   over the stock sheets. */
+/* LRMagent console in the OpenBot layout: a quiet sidebar holding the brand,
+   search, conversations and the menu, and the page as one rounded card beside it.
+   Only the logo is LRM's; colours and type follow OpenBot (Inter, neutral greys).
+   Loaded last so it wins over the stock sheets. shell.js moves the pieces. */
 
-/* ---- Light sidebar ----
-   The stock console keeps the sidebar dark in both appearances; LRMsmm uses a
-   white rail with an emerald active item. Dark mode keeps the dark sidebar. */
-html:not(.dark) #sidebar {
-    background: #f9faf9 !important;
+:root {
+    --lrm-sidebar: #ededf5;
+    --lrm-sidebar-hover: rgba(24, 24, 27, 0.05);
+    --lrm-sidebar-active: #dfdfe8;
+    --lrm-card: #f9f9fb;
+    --lrm-surface: #ffffff;
+    --lrm-line: #dbdbe5;
+    --lrm-text: #0a0a0f;
+    --lrm-text-2: #3f3f46;
+    --lrm-muted: #64646c;
+    --lrm-ring: #7480f1;
+}
+.dark {
+    --lrm-sidebar: #0d0b13;
+    --lrm-sidebar-hover: rgba(255, 255, 255, 0.05);
+    --lrm-sidebar-active: rgba(190, 194, 255, 0.12);
+    --lrm-card: #13101b;
+    --lrm-surface: #1a1624;
+    --lrm-line: #2b2538;
+    --lrm-text: #f0f0f4;
+    --lrm-text-2: #c9c9d2;
+    --lrm-muted: #9a9aa6;
+    --lrm-ring: #8d97ff;
+}
+
+body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: -0.005em; }
+[hidden] { display: none !important; }
+
+/* ---- Frame: sidebar on the canvas, the page as a card ---- */
+#app { background: var(--lrm-sidebar); }
+@media (min-width: 1024px) {
+    #main-content {
+        height: calc(100vh - 16px) !important;
+        margin: 8px 8px 8px 0;
+        border: 1px solid var(--lrm-line);
+        border-radius: 14px;
+        overflow: hidden;
+        background: var(--lrm-card);
+    }
+}
+#main-content > header {
+    background: transparent !important;
+    border-bottom-color: transparent !important;
+    height: 48px;
+}
+#session-toggle-btn, #theme-toggle, #logout-btn-header { display: none !important; }
+
+/* ---- Sidebar ---- */
+#sidebar {
+    width: 288px !important;
+    background: var(--lrm-sidebar) !important;
     backdrop-filter: none !important;
-    color: #4f5967;
-    border-right: 1px solid #e0e4e9;
+    color: var(--lrm-text-2);
+    border-right: 0 !important;
 }
-html:not(.dark) #sidebar .border-white\/10 { border-color: #e0e4e9; }
-html:not(.dark) #sidebar .text-white { color: #101725; }
-html:not(.dark) #sidebar .text-neutral-500,
-html:not(.dark) #sidebar .text-neutral-600 { color: #7a8597; }
-html:not(.dark) #sidebar .menu-group-head { color: #5a6579; font-size: 11px; }
-html:not(.dark) #sidebar .menu-group-head:hover { color: #101725; }
-html:not(.dark) #sidebar .sidebar-item { color: #2d3949; font-weight: 500; }
-html:not(.dark) #sidebar .sidebar-item:hover { background: #f1f5f9; color: #101725; }
-html:not(.dark) #sidebar .sidebar-item .item-icon { color: #4f5967; }
-html:not(.dark) .sidebar-item.active,
-html:not(.dark) #sidebar .sidebar-item.active {
-    background: #e2f2eb;
-    color: #015f44;
-    font-weight: 700;
-}
-html:not(.dark) #sidebar .sidebar-item.active .item-icon { color: #015f44; }
-html:not(.dark) #sidebar-nav:hover { scrollbar-color: rgba(15, 23, 42, 0.18) transparent; }
-html:not(.dark) #sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
-html:not(.dark) .sidebar-footer { background: rgba(248, 250, 252, 0.8); }
-html:not(.dark) .sidebar-collapse-btn:hover { color: #101725; background: #f1f5f9; }
-
-/* ---- Brand marks ----
-   Black artwork on light surfaces, white on dark ones. */
+#sidebar .border-white\/10 { border-color: transparent !important; }
+#sidebar .sidebar-brand { height: 56px; padding: 0 12px 0 16px; gap: 10px; border-bottom: 0 !important; }
+#sidebar-home { width: 30px !important; height: 30px !important; border-radius: 8px; border: 1px solid var(--lrm-line); }
+.lrm-wordtext { height: 26px; width: auto; max-width: 100%; }
+.lrm-wordmark { height: 56px; width: auto; max-width: 80vw; }
 .lrm-on-dark { display: none; }
 .dark .lrm-on-light { display: none; }
 .dark .lrm-on-dark { display: block; }
-.lrm-wordtext { height: 30px; width: auto; max-width: 100%; }
-.lrm-wordmark { height: 56px; width: auto; max-width: 80vw; }
-/* The mark doubles as the home button; give it the hairline LRMsmm puts on white tiles. */
-#sidebar-home { border: 1px solid #e0e4e9; }
+.lrm-icon-btn {
+    width: 30px; height: 30px; border-radius: 8px; border: 0; background: none; cursor: pointer;
+    color: var(--lrm-text); display: inline-grid; place-items: center; flex: none;
+}
+.lrm-icon-btn:hover { background: var(--lrm-sidebar-hover); }
+.lrm-new-chat { margin-left: auto; }
+
+.lrm-search { position: relative; margin: 2px 12px 10px; }
+.lrm-search i { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--lrm-muted); }
+.lrm-search input {
+    width: 100%; height: 36px; border-radius: 10px; border: 1px solid var(--lrm-line);
+    background: var(--lrm-surface); padding: 0 10px 0 32px; font-size: 14px; color: var(--lrm-text); outline: none;
+}
+.lrm-search input:focus { border-color: var(--lrm-ring); box-shadow: 0 0 0 3px rgba(116, 128, 241, 0.18); }
+
+/* Conversations: the session panel, living in the sidebar for good. */
+#sidebar #session-panel {
+    display: flex !important; flex: 1 1 auto; min-height: 120px; width: auto; height: auto;
+    background: transparent; border: 0; margin: 0 12px; overflow: hidden;
+}
+#sidebar #session-panel .session-panel-header { display: none; }
+#sidebar #session-panel .session-panel-new-wrap { height: 0; padding: 0; margin: 0; overflow: visible; }
+#sidebar #session-panel .session-panel-new { display: none; }
+#sidebar #session-panel .new-chat-menu { top: -6px; }
+#sidebar #session-list { padding: 0; }
+#sidebar .session-item { border-radius: 8px; color: var(--lrm-text-2); }
+#sidebar .session-item:hover { background: var(--lrm-sidebar-hover); }
+#sidebar .session-item.active { background: var(--lrm-sidebar-active); color: var(--lrm-text); }
+.lrm-empty-list {
+    flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; max-height: 360px;
+    margin: 4px 0; padding: 36px 18px; border: 1px dashed var(--lrm-line); border-radius: 12px;
+    text-align: center; font-size: 14px; color: var(--lrm-muted); line-height: 1.5;
+}
+.lrm-empty-list b { display: block; color: var(--lrm-text); font-weight: 600; margin-bottom: 6px; }
+
+/* Menu: one quiet list at the bottom, no group headings. */
+#sidebar #sidebar-nav { flex: 0 0 auto !important; max-height: 46vh; padding: 8px 12px 4px !important; }
+#sidebar .menu-group-head { display: none !important; }
+#sidebar .menu-group-items { padding-left: 0 !important; display: block !important; }
+#sidebar .menu-group { margin: 0 !important; }
+#sidebar .sidebar-item {
+    color: var(--lrm-text) !important; font-weight: 450; font-size: 14px !important;
+    padding: 8px 10px !important; border-radius: 9px !important;
+}
+#sidebar .sidebar-item .item-icon { color: var(--lrm-text) !important; opacity: 0.8; }
+#sidebar .sidebar-item:hover { background: var(--lrm-sidebar-hover) !important; }
+#sidebar .sidebar-item.active { background: var(--lrm-sidebar-active) !important; color: var(--lrm-text) !important; font-weight: 550; }
+#sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
+/* Short menu like OpenBot's: new chats come from +, and the admin pages fold under More
+   (the page you are on always stays visible). */
+#sidebar .sidebar-item[data-view="chat"] { display: none !important; }
+#sidebar:not(.lrm-more-open) .sidebar-item:is([data-view="config"], [data-view="channels"], [data-view="logs"],
+    [data-view="memory"], [data-view="knowledge"], [data-menu-id="lrm-usage"]):not(.active) { display: none !important; }
+.lrm-more { display: flex; align-items: center; gap: 12px; width: calc(100% - 24px); margin: 0 12px 4px; padding: 8px 10px;
+    border: 0; background: none; border-radius: 9px; cursor: pointer; font: inherit; font-size: 14px; color: var(--lrm-muted); text-align: left; }
+.lrm-more:hover { background: var(--lrm-sidebar-hover); color: var(--lrm-text); }
+.lrm-more i { width: 20px; text-align: center; font-size: 12px; }
+#session-list .session-empty { display: none; }
+
+.lrm-account { display: flex; align-items: center; gap: 8px; padding: 6px 12px 10px 22px; }
+.lrm-avatar {
+    width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; flex: none;
+    background: var(--lrm-sidebar-active); color: var(--lrm-text-2); font-size: 12px; font-weight: 600;
+}
+.lrm-account .lrm-name { font-size: 14px; color: var(--lrm-text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#sidebar .sidebar-footer { background: transparent !important; border-top: 0 !important; }
+
+/* ---- New chat: greeting, the composer in the middle, agents to start with ---- */
+#chat-main { display: flex; flex-direction: column; }
+#chat-main.lrm-empty { justify-content: center; }
+#chat-main.lrm-empty #chat-messages { flex: 0 0 auto; overflow: visible; }
+#chat-main.lrm-empty #welcome-screen { height: auto !important; padding: 0 24px 22px !important; }
+#chat-main.lrm-empty #chat-composer { border-top: 0 !important; background: transparent !important; }
+#chat-composer { background: transparent !important; border-top-color: transparent !important; }
+.lrm-greeting { font-size: 24px; font-weight: 650; letter-spacing: -0.02em; color: var(--lrm-text); text-align: center; margin: 0; }
+.lrm-hint { text-align: center; font-size: 12px; color: var(--lrm-muted); margin: 8px 0 0; }
+#lrm-explore { display: none; width: 100%; max-width: 48rem; margin: 26px auto 0; padding: 0 16px 24px; }
+#chat-main.lrm-empty #lrm-explore { display: block; }
+#lrm-explore h2 { font-size: 15px; font-weight: 600; color: var(--lrm-text); margin: 0 0 14px; }
+.lrm-bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.lrm-bot {
+    display: flex; align-items: center; gap: 12px; text-align: left; width: 100%;
+    padding: 14px 14px; border-radius: 12px; border: 1px solid var(--lrm-line);
+    background: var(--lrm-surface); cursor: pointer; color: inherit; font: inherit;
+    transition: border-color .15s, box-shadow .15s;
+}
+.lrm-bot:hover { border-color: #c8c8d4; box-shadow: 0 2px 10px rgba(16, 16, 32, 0.06); }
+.dark .lrm-bot:hover { border-color: #3a334a; }
+.lrm-bot .lrm-orb { width: 32px; height: 32px; border-radius: 50%; flex: none; overflow: hidden; display: grid; place-items: center; }
+.lrm-bot .lrm-orb img { width: 100%; height: 100%; object-fit: cover; }
+.lrm-bot b { display: block; font-size: 14px; font-weight: 550; color: var(--lrm-text); }
+.lrm-bot small { display: block; font-size: 12px; color: var(--lrm-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 210px; }
+.lrm-bot.lrm-bot-new .lrm-orb { background: var(--lrm-sidebar); color: var(--lrm-text-2); }
+
+/* Composer: OpenBot's rounded white box. */
+#composer-card { border-radius: 16px !important; border: 1px solid var(--lrm-line) !important; background: var(--lrm-surface) !important; box-shadow: none !important; }
+#composer-card:focus-within { border-color: #c8c8d4 !important; box-shadow: 0 0 0 3px rgba(116, 128, 241, 0.12) !important; }
+
+/* ---- Small screens: the stock off-canvas sidebar, full-width page ---- */
+@media (max-width: 1023px) {
+    #sidebar { width: min(300px, 86vw) !important; }
+    #sidebar #session-panel {
+        position: static !important; inset: auto !important; transform: none !important; z-index: auto !important;
+        width: auto !important; height: auto !important; box-shadow: none !important; animation: none !important;
+    }
+    .lrm-greeting { font-size: 21px; }
+}
 
 /* One language only, so no switcher in the header or in Settings → System. */
 #lang-selector,
@@ -50,16 +183,11 @@ div:has(> #cfg-lang-select) { display: none !important; }
 a[href="https://cowagent.ai"],
 a[href^="https://github.com/zhayujie/"] { display: none !important; }
 
-/* ---- Shape and focus, after LRMsmm ---- */
+/* ---- Shape and focus ---- */
 .rounded-lg { border-radius: 10px; }
 .rounded-xl { border-radius: 12px; }
 .rounded-2xl { border-radius: 16px; }
-button[class*="bg-primary-"] { font-weight: 700; }
-:where(a, button, [role="button"]):focus-visible {
-    outline: 2px solid #015f44;
-    outline-offset: 2px;
-}
-.dark :where(a, button, [role="button"]):focus-visible { outline-color: #34b38a; }
+:where(a, button, [role="button"]):focus-visible { outline: 2px solid var(--lrm-ring); outline-offset: 2px; }
 
 /* Settings the deployment owns (the server refuses them too): the console
    password, the listen address and the in-place updater. */

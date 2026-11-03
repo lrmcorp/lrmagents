@@ -83,6 +83,10 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
 
 **Risk:** WhatsApp does not support bots on WhatsApp Web. Use a dedicated number and avoid bulk or spam-like messaging, or the number can be banned.
 
+## Console layout (after OpenBot)
+
+The console follows [OpenBot](https://github.com/CopilotKit/openbot)'s layout, with the LRM logo: a sidebar with new chat (+), search and your conversations, a short menu (Agents, Capabilities, Vault, WhatsApp, Tasks; **More** opens Config, Channels, Logs and Usage) and your account row with light/dark and sign out; the page sits in a rounded card. A new chat opens on a greeting with the message box in the middle and **Explore agents** below. Colours and type (Inter) follow OpenBot. Everything still runs on this server: OpenBot itself keeps chats in CopilotKit's cloud, so it is not installed. The layout lives in `deploy/brand/brand.css` and `deploy/brand/shell.js`.
+
 ## Errors in plain language
 
 When an AI model call fails, the chat says what happened and what to do instead of showing the provider's raw error. For example, an empty DeepSeek balance reads: "Your AI provider account (DeepSeek) has run out of credit… Top up the balance… or switch to another model". It covers no credit, bad API key, rate limits, unknown model, refused access, content policy, network problems, provider outages and conversations that are too long. The raw error is still written to Monitor → Logs (`deploy/agent-tools/lrm_errors.py`).

@@ -5,26 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vault · LRMagent</title>
 <link rel="icon" href="/assets/favicon.ico">
-<link rel="stylesheet" href="/assets/brand/plus-jakarta-sans.css">
+<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
 <link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
 <link rel="stylesheet" id="hl-light" href="/assets/vendor/highlightjs/styles/github.min.css">
 <link rel="stylesheet" id="hl-dark" href="/assets/vendor/highlightjs/styles/github-dark.min.css" disabled>
 <style>
   :root {
-    --brand: #015f44; --brand-2: #0b7a5a; --brand-soft: #e2f2eb; --canvas: #f1f2f1; --surface: #fff; --surface-2: #f8faf9;
-    --hover: #eef2f0; --active: #e2f2eb; --text: #101725; --text-2: #4f5967; --text-3: #6b7585; --line: #e0e4e9;
-    --link: #0b7a5a; --unresolved: #b4581b; --mark: #fff1a8; --code-bg: #f3f5f4; --danger: #c0392b; --shadow: 0 10px 30px rgb(16 23 37 / .14);
+    --brand: #18181b; --brand-2: #3f3f46; --brand-soft: #ebebf9; --canvas: #f9f9fb; --surface: #fff; --surface-2: #f3f3f8;
+    --hover: #ededf5; --active: #e4e4f2; --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c; --line: #dbdbe5;
+    --link: #4f5bd5; --unresolved: #b4581b; --mark: #fff1a8; --code-bg: #f0f0f4; --danger: #c0392b; --shadow: 0 10px 30px rgb(16 23 37 / .14);
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   :root.dark {
-    --brand: #3fbf8f; --brand-2: #5fd3a6; --brand-soft: #123528; --canvas: #0f1412; --surface: #161c1a; --surface-2: #1b2320;
-    --hover: #212b27; --active: #1d3a2f; --text: #e6ebe9; --text-2: #b3bdb9; --text-3: #8a9591; --line: #2a3430;
-    --link: #5fd3a6; --unresolved: #e39a62; --mark: #6b5b12; --code-bg: #1f2724; --shadow: 0 10px 30px rgb(0 0 0 / .5);
+    --brand: #f0f0f4; --brand-2: #c9c9d2; --brand-soft: #241f30; --canvas: #13101b; --surface: #1a1624; --surface-2: #1f1a2a;
+    --hover: #241f30; --active: #2b2539; --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6; --line: #2b2538;
+    --link: #8d97ff; --unresolved: #e39a62; --mark: #6b5b12; --code-bg: #241f30; --shadow: 0 10px 30px rgb(0 0 0 / .5);
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   html, body { height: 100%; }
-  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 'Plus Jakarta Sans', Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden; }
   button { font: inherit; color: inherit; }
   input, select, textarea { font: inherit; color: inherit; }
   .icon-btn { border: 0; background: none; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; color: var(--text-2); display: inline-grid; place-items: center; flex: none; }
@@ -114,7 +114,7 @@
   .banner.info { background: var(--brand-soft); color: var(--text); border: 1px solid var(--line); }
   :root.dark .banner.warn { background: #3a2a10; color: #f5d29c; border-color: #6b4d1a; }
   .banner button { border: 1px solid currentColor; background: none; border-radius: 7px; padding: 2px 10px; cursor: pointer; font-weight: 600; }
-  .editor { width: 100%; min-height: 60vh; border: 0; outline: none; resize: none; background: none; font: 400 15px/1.7 'Plus Jakarta Sans', Inter, system-ui, sans-serif; color: var(--text); tab-size: 4; padding: 0; overflow: hidden; }
+  .editor { width: 100%; min-height: 60vh; border: 0; outline: none; resize: none; background: none; font: 400 15px/1.7 Inter, system-ui, sans-serif; color: var(--text); tab-size: 4; padding: 0; overflow: hidden; }
 
   /* ---- reading view (Obsidian-like) ---- */
   .md { font-size: 15px; line-height: 1.7; overflow-wrap: anywhere; }
@@ -145,7 +145,7 @@
   .md .tag { color: var(--brand); background: var(--brand-soft); border-radius: 999px; padding: 1px 8px; font-size: .85em; font-weight: 600; cursor: pointer; text-decoration: none; }
   .md .embed { border-left: 3px solid var(--line); padding: 4px 0 4px 14px; margin: .8em 0; }
   .md .embed-title { font-size: 12px; color: var(--text-3); margin-bottom: 4px; cursor: pointer; }
-  .md .callout { --c: 2 95 68; border-left: 0; border-radius: 10px; background: rgb(var(--c) / .08); border: 1px solid rgb(var(--c) / .25); padding: 10px 14px; color: var(--text); }
+  .md .callout { --c: 79 91 213; border-left: 0; border-radius: 10px; background: rgb(var(--c) / .08); border: 1px solid rgb(var(--c) / .25); padding: 10px 14px; color: var(--text); }
   .md .callout-title { font-weight: 700; color: rgb(var(--c)); display: flex; gap: 8px; align-items: center; cursor: default; }
   .md .callout.foldable .callout-title { cursor: pointer; }
   .md .callout.folded > :not(.callout-title) { display: none; }
@@ -155,7 +155,7 @@
   .md .callout[data-callout="info"], .md .callout[data-callout="todo"], .md .callout[data-callout="abstract"], .md .callout[data-callout="summary"] { --c: 30 110 210; }
   .md .callout[data-callout="question"], .md .callout[data-callout="faq"], .md .callout[data-callout="help"] { --c: 190 120 20; }
   .md .callout[data-callout="quote"], .md .callout[data-callout="cite"], .md .callout[data-callout="example"] { --c: 120 90 200; }
-  :root.dark .md .callout { --c: 95 211 166; }
+  :root.dark .md .callout { --c: 141 151 255; }
   .props { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 0 0 18px; font-size: 13px; background: var(--surface-2); }
   .props .prow { display: grid; grid-template-columns: 120px 1fr; gap: 8px; padding: 3px 0; }
   .props .pkey { color: var(--text-3); display: flex; gap: 6px; align-items: center; }
@@ -200,7 +200,7 @@
   .modal .btns { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
   .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-weight: 600; }
   .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
-  :root.dark .btn.primary { color: #06140f; }
+  :root.dark .btn.primary { color: #13101b; }
   .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
   .suggest { position: fixed; z-index: 45; width: 300px; max-height: 260px; overflow: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); padding: 4px; }
   .suggest .opt { padding: 5px 9px; border-radius: 7px; cursor: pointer; font-size: 13px; }

@@ -1,22 +1,22 @@
 {
   "id": "lrm",
   "name": "LRM",
-  "preview": { "accent": "#015f44", "bg": "#f1f2f1", "surface": "#ffffff" },
+  "preview": { "accent": "#18181b", "bg": "#ededf5", "surface": "#ffffff" },
   "light": { "colors": {
-    "accent": "#015f44", "accentHover": "#014f39", "accentActive": "#013f2e", "accentSoft": "rgba(1, 95, 68, 0.08)",
-    "accentContrast": "#ffffff", "bubbleUserBg": "#e2f2eb", "bubbleUserText": "#013f2e",
-    "bgBase": "#f1f2f1", "bgSurface": "#ffffff", "bgSurface2": "#f8fafc", "bgElevated": "#ffffff",
-    "bgInset": "#f8fafc", "bgInset2": "#f1f5f9", "textPrimary": "#101725", "textSecondary": "#4f5967",
-    "textTertiary": "#5a6579", "textDisabled": "#b7bbc3", "borderDefault": "#e0e4e9", "borderStrong": "#cbd5e1",
-    "borderSubtle": "#f1f5f9"
+    "accent": "#18181b", "accentHover": "#27272a", "accentActive": "#000000", "accentSoft": "rgba(190, 194, 255, 0.30)",
+    "accentContrast": "#ffffff", "bubbleUserBg": "#f0f0f4", "bubbleUserText": "#0a0a0f",
+    "bgBase": "#f9f9fb", "bgSurface": "#ffffff", "bgSurface2": "#f6f6f9", "bgElevated": "#ffffff",
+    "bgInset": "#f6f6f9", "bgInset2": "#f0f0f4", "textPrimary": "#0a0a0f", "textSecondary": "#3f3f46",
+    "textTertiary": "#64646c", "textDisabled": "#b4b4bd", "borderDefault": "#dbdbe5", "borderStrong": "#c8c8d4",
+    "borderSubtle": "#f0f0f4"
   } },
   "dark": { "colors": {
-    "accent": "#34b38a", "accentHover": "#4cc29b", "accentActive": "#2a9a76", "accentSoft": "rgba(52, 179, 138, 0.16)",
-    "accentContrast": "#04140e", "bubbleUserBg": "rgba(52, 179, 138, 0.20)", "bubbleUserText": "#d6f5ea",
-    "bgBase": "#0f1412", "bgSurface": "#151b19", "bgSurface2": "#1b2320", "bgElevated": "#1d2522",
-    "bgInset": "#151b19", "bgInset2": "#18201d", "textPrimary": "#eef2f0", "textSecondary": "#c2cbc7",
-    "textTertiary": "#8b9893", "textDisabled": "#56625d",
-    "borderDefault": "rgba(255, 255, 255, 0.08)", "borderStrong": "rgba(255, 255, 255, 0.14)", "borderSubtle": "rgba(255, 255, 255, 0.04)",
-    "sidebarBg": "#0b100e"
+    "accent": "#f0f0f4", "accentHover": "#ffffff", "accentActive": "#d4d4dc", "accentSoft": "rgba(190, 194, 255, 0.12)",
+    "accentContrast": "#13101b", "bubbleUserBg": "#241f30", "bubbleUserText": "#f0f0f4",
+    "bgBase": "#13101b", "bgSurface": "#1a1624", "bgSurface2": "#241f30", "bgElevated": "#1a1624",
+    "bgInset": "#1a1624", "bgInset2": "#241f30", "textPrimary": "#f0f0f4", "textSecondary": "#c9c9d2",
+    "textTertiary": "#9a9aa6", "textDisabled": "#5c5a66",
+    "borderDefault": "#2b2538", "borderStrong": "#3a334a", "borderSubtle": "#1f1a2a",
+    "sidebarBg": "#0d0b13"
   } }
 }

@@ -41,12 +41,10 @@ patch("static/js/core/themes.js",
 patch("chat.html", "localStorage.getItem('cow_theme') || 'dark';", "localStorage.getItem('cow_theme') || 'light';")
 patch("static/js/core/theme.js", "|| window.__COW_DEFAULT_THEME__ || 'dark';", "|| window.__COW_DEFAULT_THEME__ || 'light';")
 
-# ---- Font and stylesheet: Plus Jakarta Sans first, brand sheet after themes.css.
-patch("chat.html", "sans: ['Inter',", "sans: ['\"Plus Jakarta Sans\"', 'Inter',")
-patch("chat.html",
-      '<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">',
-      '<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">\n'
-      '    <link rel="stylesheet" href="/assets/brand/plus-jakarta-sans.css">')
+# ---- Stylesheet and layout script: the OpenBot-style shell (Inter, the stock font)
+# loads after themes.css and after the console's own scripts.
+patch("chat.html", '<script defer src="/assets/js/workspace.js"></script>',
+      '<script defer src="/assets/js/workspace.js"></script>\n    <script defer src="/assets/brand/shell.js"></script>')
 patch("chat.html",
       '<link rel="stylesheet" href="/assets/css/themes.css">',
       '<link rel="stylesheet" href="/assets/css/themes.css">\n'
