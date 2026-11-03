@@ -31,6 +31,15 @@ jobs:
           echo "image: pinned $pinned_image, latest ${latest_image:-unknown}" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "baileys: pinned $pinned_wa, latest ${latest_wa:-unknown}" | tee -a "$GITHUB_STEP_SUMMARY"
           : > updates.md
+          # Teammate CLIs pinned in teammates/Dockerfile.
+          for pair in CODEX_VERSION:@openai/codex CLAUDE_CODE_VERSION:@anthropic-ai/claude-code GEMINI_CLI_VERSION:@google/gemini-cli OPENCODE_VERSION:opencode-ai; do
+            arg="${pair%%:*}"; pkg="${pair#*:}"
+            pinned="$(sed -n "s/^ARG $arg=//p" teammates/Dockerfile)"; latest="$(npm view "$pkg" version 2>/dev/null || true)"
+            echo "$pkg: pinned $pinned, latest ${latest:-unknown}" | tee -a "$GITHUB_STEP_SUMMARY"
+            if [[ -n "$latest" && "$latest" != "$pinned" ]]; then
+              echo "- **Teammate $pkg:** $latest is out (pinned $pinned). Bump \`$arg\` in \`teammates/Dockerfile\`; sign-in and run flags are checked by \`teammates\` tests." >> updates.md
+            fi
+          done
           if [[ -n "$latest_image" && "$latest_image" != "$pinned_image" ]]; then
             echo "- **Agent base image:** a newer \`zhayujie/chatgpt-on-wechat:latest\` is out (\`$latest_image\`, pinned \`$pinned_image\`). Update the digest in \`deploy/Dockerfile\` and \`deploy/compose.yaml\`; the deploy's build step checks every brand patch still applies." >> updates.md
           fi

@@ -104,6 +104,7 @@ function _lrmEnsureWhatsApp(doc) {
     // showing them again from the menu editor sticks.
     const pages = [
         { after: 'knowledge', hide: ['memory', 'knowledge'], item: { id: 'lrm-vault', type: 'url', url: '/assets/brand/vault.html', open: 'frame', title: 'Vault', icon: 'vault', hidden: false } },
+        { after: 'skills', item: { id: 'lrm-teammates', type: 'url', url: '/teammates/', open: 'frame', title: 'Teammates', icon: 'robot', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
         { after: 'logs', item: { id: 'lrm-usage', type: 'url', url: '/assets/brand/usage.html', open: 'frame', title: 'Usage', icon: 'chart', hidden: false } },
     ];
@@ -151,8 +152,9 @@ patch("agent/tools/__init__.py",
       "from agent.tools.subagent.subagent import SubagentTool\n",
       "from agent.tools.subagent.subagent import SubagentTool\n"
       "from agent.tools.model_switch.model_switch import ModelSwitch\n"
-      "from agent.tools.transcribe.transcribe import TranscribeAudio\n", root=app)
-patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n", root=app)
+      "from agent.tools.transcribe.transcribe import TranscribeAudio\n"
+      "from agent.tools.teammates.teammate import AskTeammate\n", root=app)
+patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n", root=app)
 # ---- Scheduled messages from WhatsApp chats go back to WhatsApp through the
 # gateway (deploy/agent-tools/whatsapp_relay.py, installed as channel/lrm_whatsapp_relay.py).
 patch("agent/tools/scheduler/integration.py",

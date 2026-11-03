@@ -30,7 +30,13 @@ export function bareJid(jid) {
 // send, Baileys fills it with the sender's number (mine), not the chat's.
 export function isSelfChat(key, myJids) {
   if (!key?.fromMe) return false;
-  const chat = String(key.remoteJid ?? '');
+  return isOwnChat(key.remoteJid, myJids);
+}
+
+// The account's own "Message yourself" chat: only the number's owner writes there.
+export function isOwnChat(chat, myJids) {
+  chat = String(chat ?? '');
+  if (!chat) return false;
   return myJids.filter(Boolean).some((jid) => bareJid(jid) === bareJid(chat) && String(jid).endsWith('@lid') === chat.endsWith('@lid'));
 }
 

@@ -7,7 +7,7 @@ set -euo pipefail
 DEST="${BACKUP_DIR:-$HOME/backups/lrmagent}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-7}"
 STAMP="$(date -u +%Y%m%d-%H%M)"
-VOLUMES=(cowagent_workspace cowagent_data cowagent_whatsapp)
+VOLUMES=(cowagent_workspace cowagent_data cowagent_whatsapp cowagent_teammates_work cowagent_teammates_data)
 
 umask 077
 mkdir -p "$DEST"

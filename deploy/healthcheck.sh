@@ -8,7 +8,7 @@ compose() { sudo -n docker compose -f deploy/compose.yaml "$@"; }
 if ! curl -fsS --max-time 10 -o /dev/null http://127.0.0.1:9899/; then
   echo "LRMagent console is not answering on the server."
 fi
-for service in cowagent whatsapp-gateway; do
+for service in cowagent whatsapp-gateway teammates; do
   state="$(compose ps --format '{{.State}}' "$service" 2>/dev/null | head -1)"
   [[ "$state" == "running" ]] || echo "Container $service is ${state:-missing}."
 done

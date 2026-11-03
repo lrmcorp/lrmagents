@@ -15,7 +15,7 @@ import makeWASocket, {
 } from 'baileys';
 import { ask } from './cowagent.js';
 import crypto from 'node:crypto';
-import { GroupHistory, PairingBook, RateLimiter, bareJid, chunks, decide, extractLocalFiles, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
+import { GroupHistory, PairingBook, RateLimiter, bareJid, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 // Shared with the agent container (read-only there) so its vision and
@@ -421,6 +421,12 @@ export class Accounts {
   constructor() {
     this.byAgent = new Map();
     this.deliveries = new Map(); // idempotency key -> time, so a retried reminder is not sent twice
+  }
+
+  // Whether `chat` is the linked number's own chat ("Message yourself"), i.e. its owner.
+  isOwnerChat(agentId, chat) {
+    const sock = this.byAgent.get(agentId)?.sock;
+    return Boolean(sock?.user) && isOwnChat(chat, [sock.user.id, sock.user.lid]);
   }
 
   get(agentId, create = false) {

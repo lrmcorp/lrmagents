@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp } from '../src/policy.js';
+import {
+  isOwnChat, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp } from '../src/policy.js';
 
 const ME = ['6280000000001:7@s.whatsapp.net', '99999@lid'];
 const dm = (from, text, extra = {}) => ({
@@ -126,4 +127,13 @@ test('local file links become attachments; web links and outside paths stay text
     { path: '/home/agent/cow/out/report v2.pdf', name: 'report v2.pdf', caption: 'report.pdf', image: false },
   ]);
   assert.deepEqual(extractLocalFiles('plain', roots), { text: 'plain', files: [] });
+});
+
+test('isOwnChat: the linked number\'s own chat only', () => {
+  const me = ['6281234567890:12@s.whatsapp.net', '99887766@lid'];
+  assert.equal(isOwnChat('6281234567890@s.whatsapp.net', me), true);
+  assert.equal(isOwnChat('99887766@lid', me), true);
+  assert.equal(isOwnChat('6281111111111@s.whatsapp.net', me), false);
+  assert.equal(isOwnChat('99887766@s.whatsapp.net', me), false);
+  assert.equal(isOwnChat('', me), false);
 });

@@ -22,6 +22,9 @@ jobs:
       - name: WhatsApp gateway tests
         working-directory: whatsapp-gateway
         run: npm ci --no-audit --no-fund && npm test
+      - name: Teammates tests
+        working-directory: teammates
+        run: npm ci --no-audit --no-fund && npm test
       - name: Script and code syntax
         run: |
           for f in deploy/*.sh; do bash -n "$f"; done
@@ -31,7 +34,7 @@ jobs:
       - name: Compose file
         run: |
           docker network create lnint-edge
-          touch .env.cowagent .env.whatsapp
+          touch .env.cowagent .env.whatsapp .env.teammates
           docker compose -f deploy/compose.yaml config --quiet
       # Builds both images exactly as the VPS will; apply.py fails the build if any
       # brand patch no longer matches the pinned upstream image.
@@ -102,7 +105,10 @@ jobs:
           $SSH "$VPS" 'umask 077 && cd ~/cowagent && { test -s .env.api-token || openssl rand -hex 32 > .env.api-token; } \
             && token="$(cat .env.api-token)" \
             && printf "EXTERNAL_API_ENABLED=True\nEXTERNAL_API_TOKEN=%s\n" "$token" >> .env.cowagent \
-            && printf "COWAGENT_API_TOKEN=%s\n" "$token" > .env.whatsapp'
+            && printf "COWAGENT_API_TOKEN=%s\n" "$token" > .env.whatsapp \
+            && cp .env.whatsapp .env.teammates'
+          # The DeepSeek teammate uses the same DeepSeek key as the agents.
+          if [[ -n "$DEEPSEEK_API_KEY" ]]; then printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY" | $SSH "$VPS" 'umask 077 && cat >> ~/cowagent/.env.teammates'; fi
       - name: Start and verify LRMagent
         run: |
           $SSH "$VPS" "cd ~/cowagent && test \"\$(cat .deploy-revision)\" = '$GITHUB_SHA' \

@@ -87,6 +87,11 @@ async function route(req, res) {
       return send(res, error.status || 503, { error: error.message });
     }
   }
+  // For the teammates tool: only the owner's own chat may use the paid plans.
+  if (url.pathname === '/whatsapp/internal/owner') {
+    if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
+    return send(res, 200, { owner: accounts.isOwnerChat(String(url.searchParams.get('agent') || ''), String(url.searchParams.get('chat') || '')) });
+  }
   if (url.pathname === '/whatsapp') {
     res.writeHead(308, { Location: '/whatsapp/' });
     return res.end();

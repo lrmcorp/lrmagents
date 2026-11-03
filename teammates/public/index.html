@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teammates · LRMagent</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
+<link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+<link rel="stylesheet" href="/teammates/assets/xterm.css">
+<style>
+  :root { --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8; --hover: #ededf5; --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c;
+          --line: #dbdbe5; --primary: #18181b; --primary-text: #fff; --ok: #12795b; --ok-bg: #e7f6ef; --warn: #92400e; --warn-bg: #fff7e6;
+          --bad: #b42530; --bad-bg: #fdeeee; --ring: #7480f1; }
+  :root.dark { --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a; --hover: #241f30; --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6;
+          --line: #2b2538; --primary: #f0f0f4; --primary-text: #13101b; --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10;
+          --bad: #f2a1a1; --bad-bg: #3a1a1e; --ring: #8d97ff; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 6px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 30px 0 12px; display: flex; align-items: center; gap: 10px; }
+  .lede { color: var(--text-3); margin: 0; max-width: 720px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .who { display: flex; gap: 12px; align-items: center; }
+  .orb { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 14px; }
+  .who b { display: block; font-size: 15px; font-weight: 600; }
+  .who small { color: var(--text-3); font-size: 12px; }
+  .blurb { color: var(--text-2); font-size: 13px; margin: 0; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 10px; width: fit-content; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.no { background: var(--warn-bg); color: var(--warn); } .pill.off { background: var(--muted-bg); color: var(--text-3); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button, .btn { font: 600 13px Inter, system-ui, sans-serif; border-radius: 9px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); display: inline-flex; gap: 6px; align-items: center; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+  button.primary:hover { opacity: .9; background: var(--primary); }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select, textarea { font: 400 14px Inter, system-ui, sans-serif; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%; outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--ring); box-shadow: 0 0 0 3px rgb(116 128 241 / .15); }
+  textarea { min-height: 96px; resize: vertical; }
+  label.f { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-3); }
+  .composer { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; display: grid; gap: 10px; }
+  .composer .opts { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+  .check { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-2); font-weight: 500; white-space: nowrap; }
+  .check input { width: auto; accent-color: var(--primary); }
+  .model { display: flex; gap: 6px; }
+  .model input { font-size: 12px; padding: 5px 8px; }
+  .jobs { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .job { display: grid; grid-template-columns: 110px 1fr auto; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: center; }
+  .job:last-child { border-bottom: 0; }
+  .job:hover { background: var(--muted-bg); }
+  .job .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job small { color: var(--text-3); font-size: 12px; }
+  .st { font-size: 12px; font-weight: 600; } .st.running, .st.queued { color: var(--warn); } .st.done { color: var(--ok); } .st.failed, .st.stopped { color: var(--bad); }
+  .empty { color: var(--text-3); padding: 18px; text-align: center; }
+  .note { font-size: 12px; color: var(--text-3); margin-top: 10px; }
+  .overlay { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 16px; }
+  .modal { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; width: min(920px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgb(0 0 0 / .25); }
+  .modal header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+  .modal header b { flex: 1; }
+  .modal .help { padding: 10px 16px; font-size: 13px; color: var(--text-2); background: var(--muted-bg); border-bottom: 1px solid var(--line); }
+  .term { height: 60vh; background: #0d0b13; padding: 8px; }
+  pre.log { margin: 0; padding: 14px 16px; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; flex: 1; background: var(--muted-bg); }
+  .result { padding: 14px 16px; border-bottom: 1px solid var(--line); white-space: pre-wrap; max-height: 34vh; overflow: auto; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--canvas); padding: 8px 14px; border-radius: 10px; font-size: 13px; z-index: 30; }
+  .toast.err { background: var(--bad); color: #fff; }
+  @media (max-width: 640px) { .composer .opts { grid-template-columns: 1fr; } .job { grid-template-columns: 1fr auto; } .job .who-col { display: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Teammates</h1>
+  <p class="lede">Coding and research AIs that work for you on the plans you already pay for. Sign each one in once. Then give them tasks here, or just ask any agent, in the console or on your own WhatsApp: <i>"ask Codex to fix the login bug in the ln repo"</i>. Each teammate keeps its own folders and remembers its previous session there.</p>
+
+  <h2>Your teammates <button id="refresh" title="Check sign-in again"><i class="fas fa-rotate"></i> Refresh</button></h2>
+  <div class="grid" id="cards"><div class="empty">Loading…</div></div>
+
+  <h2>Give a task</h2>
+  <div class="composer">
+    <textarea id="task" placeholder="What should it do? e.g. Clone https://github.com/lrmcorp/ln and summarise how deployment works."></textarea>
+    <div class="opts">
+      <label class="f">Teammate<select id="who"></select></label>
+      <label class="f">Folder<input id="folder" value="main" spellcheck="false" title="Its own workspace folder; a new name starts a new project"></label>
+      <div class="row"><label class="check"><input type="checkbox" id="fresh"> Start fresh</label><button class="primary" id="go"><i class="fas fa-arrow-up"></i> Start</button></div>
+    </div>
+  </div>
+  <p class="note">Only you can use these: from this console or your own WhatsApp chat ("Message yourself"), never other WhatsApp contacts. Teammates run inside their own container on your server, without LRMagent's passwords or keys.</p>
+
+  <h2>Tasks</h2>
+  <div class="jobs" id="jobs"><div class="empty">No tasks yet.</div></div>
+</main>
+
+<script src="/teammates/assets/xterm.js"></script>
+<script src="/teammates/assets/addon-fit.js"></script>
+<script>
+'use strict';
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const COLORS = { codex: '#10a37f', claude: '#d97757', gemini: '#4285f4', grok: '#18181b', deepseek: '#4d6bfe' };
+const STATUS = { queued: 'Waiting', running: 'Working', done: 'Done', failed: 'Failed', stopped: 'Stopped' };
+let state = { teammates: [], jobs: [] };
+
+try { if (window.parent !== window && window.parent.document.documentElement.classList.contains('dark')) document.documentElement.classList.add('dark'); } catch {}
+
+function toast(msg, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 5000 : 2500); }
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin' });
+  if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
+  return data;
+}
+const ago = (t) => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
+
+function renderCards() {
+  $('#cards').innerHTML = state.teammates.map((t) => {
+    const pill = !t.installed ? '<span class="pill off">Not installed</span>' : t.signedIn ? `<span class="pill ok"><i class="fas fa-check"></i>Signed in${t.detail ? ` · ${esc(t.detail)}` : ''}</span>` : '<span class="pill no">Not signed in</span>';
+    const model = ['grok', 'deepseek'].includes(t.id) || t.modelSet ? `<div class="model"><input data-model="${t.id}" value="${esc(t.model)}" placeholder="${t.id === 'grok' ? 'xai/…' : t.id === 'deepseek' ? 'deepseek/…' : 'default model'}" title="Model; blank picks one" spellcheck="false"><button data-save="${t.id}">Save</button></div>` : '';
+    return `<div class="card"><div class="who"><span class="orb" style="background:${COLORS[t.id]}">${esc(t.name[0])}</span><span><b>${esc(t.name)}</b><small>${esc(t.maker)} · ${esc(t.plan)}${t.version ? ` · ${esc(t.version)}` : ''}</small></span></div>
+      <p class="blurb">${esc(t.blurb)}</p>${pill}${model}
+      <div class="row"><button class="${t.signedIn ? '' : 'primary'}" data-login="${t.id}"><i class="fas fa-right-to-bracket"></i>${t.signedIn ? 'Sign in again' : 'Sign in'}</button>
+      <button data-task="${t.id}" ${t.signedIn ? '' : 'disabled'}><i class="fas fa-list-check"></i>Give a task</button></div></div>`;
+  }).join('') + `<div class="card"><div class="who"><span class="orb" style="background:#64646c"><i class="fas fa-terminal"></i></span><span><b>Terminal</b><small>Advanced</small></span></div>
+      <p class="blurb">A shell in the teammates' container, e.g. to run <code>gh auth login</code> so they can push to GitHub, or to set <code>git config</code>.</p>
+      <div class="row"><button data-shell="1"><i class="fas fa-terminal"></i>Open terminal</button></div></div>`;
+  const who = $('#who'); const cur = who.value;
+  who.innerHTML = state.teammates.map((t) => `<option value="${t.id}" ${t.signedIn ? '' : 'disabled'}>${esc(t.name)}${t.signedIn ? '' : ' (sign in first)'}</option>`).join('');
+  const first = state.teammates.find((t) => t.signedIn);
+  who.value = state.teammates.some((t) => t.id === cur && t.signedIn) ? cur : (first?.id || '');
+}
+
+function renderJobs() {
+  $('#jobs').innerHTML = state.jobs.length ? state.jobs.map((j) => {
+    const t = state.teammates.find((x) => x.id === j.teammate);
+    return `<div class="job" data-job="${j.id}"><span class="who-col"><b>${esc(t?.name || j.teammate)}</b><br><small>${esc(j.folder)}</small></span>
+      <span class="t">${esc(j.task)}<br><small>${ago(j.createdAt)}${j.fromWhatsApp ? ' · from WhatsApp' : j.source === 'agent' ? ' · from an agent' : ''}</small></span>
+      <span class="st ${j.status}">${STATUS[j.status] || j.status}</span></div>`;
+  }).join('') : '<div class="empty">No tasks yet.</div>';
+}
+
+async function load(refresh = false) {
+  try {
+    state = await api(`/teammates/api/state${refresh ? '?refresh=1' : ''}`);
+    renderCards(); renderJobs();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---- terminal (sign-in) ----
+function terminal(teammate, shell) {
+  const t = state.teammates.find((x) => x.id === teammate);
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = `<div class="modal"><header><b>${shell ? 'Terminal' : `Sign in to ${esc(t.name)}`}</b><button data-close><i class="fas fa-xmark"></i> Close</button></header>
+    ${shell ? '' : `<div class="help">${esc(t.loginHelp)} Links open in a new tab; to paste, use Ctrl/⌘ V.</div>`}<div class="term"></div></div>`;
+  document.body.appendChild(overlay);
+  const term = new Terminal({ fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', cursorBlink: true, theme: { background: '#0d0b13' }, convertEol: false });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open($('.term', overlay));
+  fit.fit();
+  const q = new URLSearchParams({ cols: term.cols, rows: term.rows, ...(shell ? { mode: 'shell' } : { teammate }) });
+  const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/teammates/api/terminal?${q}`);
+  ws.onmessage = (e) => term.write(e.data);
+  ws.onclose = () => term.write('\r\n\x1b[2m[closed]\x1b[0m\r\n');
+  term.onData((d) => { if (ws.readyState === 1) ws.send(d); });
+  // Links in the output open in a new tab.
+  term.registerLinkProvider?.({ provideLinks(y, cb) {
+    const line = term.buffer.active.getLine(y - 1)?.translateToString() || '';
+    const links = []; const re = /https?:\/\/[^\s'"<>]+/g; let m;
+    while ((m = re.exec(line))) links.push({ range: { start: { x: m.index + 1, y }, end: { x: m.index + m[0].length, y } }, text: m[0], activate: (_, u) => window.open(u, '_blank', 'noopener') });
+    cb(links);
+  } });
+  const onResize = () => { fit.fit(); if (ws.readyState === 1) ws.send(`\x00resize:${term.cols}x${term.rows}`); };
+  window.addEventListener('resize', onResize);
+  term.focus();
+  const close = () => { window.removeEventListener('resize', onResize); ws.close(); term.dispose(); overlay.remove(); load(true); };
+  $('[data-close]', overlay).onclick = close;
+}
+
+// ---- task detail ----
+async function showJob(id) {
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML = '<div class="modal"><header><b>Task</b><button data-stop class="danger" hidden><i class="fas fa-stop"></i> Stop</button><button data-close><i class="fas fa-xmark"></i> Close</button></header><div class="result" hidden></div><pre class="log">Loading…</pre></div>';
+  document.body.appendChild(overlay);
+  let timer;
+  const close = () => { clearTimeout(timer); overlay.remove(); load(); };
+  $('[data-close]', overlay).onclick = close;
+  overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+  $('[data-stop]', overlay).onclick = async () => { try { await api(`/teammates/api/jobs/${id}/stop`, {}); toast('Stopping…'); } catch (e) { toast(e.message, true); } };
+  const tick = async () => {
+    try {
+      const { job } = await api(`/teammates/api/jobs/${id}`);
+      const t = state.teammates.find((x) => x.id === job.teammate);
+      $('header b', overlay).textContent = `${t?.name || job.teammate} · ${STATUS[job.status] || job.status}`;
+      $('[data-stop]', overlay).hidden = !['queued', 'running'].includes(job.status);
+      const res = $('.result', overlay);
+      const finished = !['queued', 'running'].includes(job.status);
+      res.hidden = !finished;
+      if (finished) res.textContent = (job.error ? `${job.error}\n\n` : '') + (job.result || '');
+      const log = $('.log', overlay);
+      const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+      log.textContent = job.log || '(no output yet)';
+      if (atEnd) log.scrollTop = log.scrollHeight;
+      if (!finished) timer = setTimeout(tick, 2000);
+    } catch (e) { $('.log', overlay).textContent = e.message; }
+  };
+  tick();
+}
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button, .job');
+  if (!b) return;
+  if (b.dataset.login) return terminal(b.dataset.login, false);
+  if (b.dataset.shell) return terminal(null, true);
+  if (b.dataset.task) { $('#who').value = b.dataset.task; $('#task').focus(); return; }
+  if (b.dataset.save) {
+    try { await api('/teammates/api/settings', { teammate: b.dataset.save, model: $(`[data-model="${b.dataset.save}"]`).value }); toast('Saved'); load(true); } catch (err) { toast(err.message, true); }
+    return;
+  }
+  if (b.dataset.job) return showJob(b.dataset.job);
+  if (b.id === 'refresh') return load(true);
+  if (b.id === 'go') {
+    const task = $('#task').value.trim();
+    if (!task) return toast('Write the task first', true);
+    if (!$('#who').value) return toast('Sign a teammate in first', true);
+    b.disabled = true;
+    try {
+      const { job } = await api('/teammates/api/jobs', { teammate: $('#who').value, task, folder: $('#folder').value.trim() || 'main', fresh: $('#fresh').checked });
+      $('#task').value = '';
+      await load();
+      showJob(job.id);
+    } catch (err) { toast(err.message, true); }
+    b.disabled = false;
+  }
+});
+
+load();
+setInterval(() => { if (document.visibilityState === 'visible' && !document.querySelector('.overlay')) load(); }, 10000);
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "lrm-teammates",
+  "private": true,
+  "version": "1.0.0",
+  "description": "LRMagent coding teammates: Codex, Claude Code, Gemini CLI and OpenCode (Grok, DeepSeek) on the plans you pay for.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.10.0",
+    "@xterm/xterm": "5.5.0",
+    "node-pty": "1.0.0",
+    "ws": "8.18.3"
+  }
+}

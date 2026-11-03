@@ -87,6 +87,26 @@ Every agent has a `switch_model` tool (`deploy/agent-tools/model_switch/`), so y
 
 The console follows [OpenBot](https://github.com/CopilotKit/openbot)'s layout, with the LRM logo: a sidebar with new chat (+), search and your conversations, a short menu (Agents, Capabilities, Vault, WhatsApp, Tasks; **More** opens Config, Channels, Logs and Usage) and your account row with light/dark and sign out; the page sits in a rounded card. A new chat opens on a greeting with the message box in the middle and **Explore agents** below. Colours and type (Inter) follow OpenBot. Everything still runs on this server: OpenBot itself keeps chats in CopilotKit's cloud, so it is not installed. The layout lives in `deploy/brand/brand.css` and `deploy/brand/shell.js`.
 
+## Coding teammates (your own plans)
+
+The **Teammates** page (console menu) runs coding AIs in their own container (`teammates/`) on the plans you already pay for:
+
+| Teammate | Runs | Sign-in |
+| --- | --- | --- |
+| Codex | OpenAI Codex CLI | your ChatGPT plan (device code; turn on "device code authorization for Codex" in ChatGPT → Settings → Security if asked) |
+| Claude Code | Anthropic Claude Code | your Claude plan |
+| Gemini | Google Gemini CLI | your Google account |
+| Grok | OpenCode with xAI | your xAI account (or an xAI key) |
+| DeepSeek | OpenCode with DeepSeek | the `DEEPSEEK_API_KEY` secret (or paste a key) |
+
+- **Sign in once** from the page: it opens a terminal in your browser with the tool's own sign-in (link and code). Sign-ins stay in the `teammates_home` volume.
+- **Give tasks** on the page, or ask any agent: "ask Codex to fix the login bug in the ln repo", "let Claude write the README". Agents use the `ask_teammate` tool: it waits up to 2 minutes for the answer; longer tasks report back to your WhatsApp chat when they finish, and every task's log is on the page (with Stop).
+- **Memory:** each teammate has its own project folders (`/work/<teammate>/<folder>`) and continues its previous session there unless you tick **Start fresh**. A notes file (AGENTS.md, CLAUDE.md or GEMINI.md) in each folder carries what it learned.
+- **Only you:** these are personal plans, so they work from the console and from the WhatsApp number's own chat ("Message yourself") only; other contacts and API callers are refused.
+- **Isolation:** the teammates run as an unprivileged user with a clean environment, without LRMagent's passwords or keys (the service itself runs as root so they cannot read its environment). They can run any command inside their container, which has no access to LRMagent's files.
+- **GitHub:** to let them push, open **Terminal** on the page and sign git in (for example `git config --global credential.helper store` and a token, or an SSH key).
+- **Limits:** one task per teammate at a time, two at once overall, 60 minutes per task, 2 GB memory for the container. The weekly update check reports newer CLI versions; they are pinned in `teammates/Dockerfile`.
+
 ## Errors in plain language
 
 When an AI model call fails, the chat says what happened and what to do instead of showing the provider's raw error. For example, an empty DeepSeek balance reads: "Your AI provider account (DeepSeek) has run out of credit… Top up the balance… or switch to another model". It covers no credit, bad API key, rate limits, unknown model, refused access, content policy, network problems, provider outages and conversations that are too long. The raw error is still written to Monitor → Logs (`deploy/agent-tools/lrm_errors.py`).

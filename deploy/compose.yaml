@@ -66,6 +66,34 @@ services:
       edge:
         aliases: [whatsapp-gateway]
 
+  # Coding teammates (Codex, Claude Code, Gemini, Grok, DeepSeek) on the owner's plans.
+  teammates:
+    image: lrm-teammates
+    build:
+      context: ../teammates
+    restart: unless-stopped
+    env_file:
+      - path: ../.env.teammates
+        format: raw
+    environment:
+      COWAGENT_URL: http://cowagent:9899
+      WHATSAPP_GATEWAY_URL: http://whatsapp-gateway:8080
+      TZ: Asia/Jakarta
+    volumes:
+      # Sign-ins (Codex, Claude, Gemini, OpenCode): losing this means signing in again.
+      - teammates_home:/home/node
+      # Their project folders.
+      - teammates_work:/work
+      # Task records and logs.
+      - teammates_data:/data
+    mem_limit: 2g
+    depends_on:
+      - cowagent
+    networks:
+      default:
+      edge:
+        aliases: [teammates]
+
 networks:
   # Shared only with the ln Caddy container, so the agent cannot reach the ln database.
   edge:
@@ -79,3 +107,6 @@ volumes:
   whatsapp:
   # Received WhatsApp media; the gateway deletes files older than 7 days.
   whatsapp_media:
+  teammates_home:
+  teammates_work:
+  teammates_data:

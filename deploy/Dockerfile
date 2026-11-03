@@ -7,6 +7,8 @@ COPY deploy/brand /tmp/brand
 COPY deploy/skills /app/skills/
 # switch_model tool: change model by asking in chat (registered by apply.py).
 COPY deploy/agent-tools/model_switch /app/agent/tools/model_switch/
+# ask_teammate tool: hand tasks to Codex, Claude Code, Gemini, Grok or DeepSeek (teammates container).
+COPY deploy/agent-tools/teammates /app/agent/tools/teammates/
 # transcribe_audio tool: voice notes from WhatsApp.
 COPY deploy/agent-tools/transcribe /app/agent/tools/transcribe/
 # Scheduled messages from WhatsApp chats are delivered back through the gateway.
