@@ -91,8 +91,14 @@ class WhatsAppTool(BaseTool):
                 return ToolResult.fail("No WhatsApp number is connected. Link one on the console's WhatsApp page.")
             if to.lower() in ("me", "owner", "myself", "self"):
                 _call("/whatsapp/internal/notify-owner", {"agentId": account["agent"], "text": text})
-                where = ", ".join("+" + n for n in account.get("ownerNumbers") or []) or f"+{account.get('phone')} (Message yourself)"
-                return ToolResult.success(f"Sent to the owner on WhatsApp ({where.split(',')[0]}).")
+                owners = account.get("ownerNumbers") or []
+                if owners:
+                    return ToolResult.success(f"Sent to the owner on WhatsApp at +{owners[0]}.")
+                return ToolResult.success(
+                    f"Sent to the 'Message yourself' chat of the linked phone (+{account.get('phone')}), because no personal "
+                    "number is set. Tell the owner exactly that: it is on the linked phone, without a notification. To get "
+                    "messages on their own phone they add its number under 'Your own numbers' on the console's WhatsApp page "
+                    "(or you can send to a number directly with 'to').")
             number = re.sub(r"\D", "", to)
             if len(number) < 6:
                 return ToolResult.fail("Give the phone number with country code, e.g. 6281234567890, or 'me'.")
