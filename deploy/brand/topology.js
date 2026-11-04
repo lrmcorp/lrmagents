@@ -32,7 +32,7 @@
   .topo .hud-title .mode { font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
   .topo .hud-title .mode b { color: var(--hud); font-weight: 500; }
   .topo .hud-title .mode i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--hud); margin-right: 6px; }
-  .topo .bar { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; background: var(--panel);
+  .topo .bar { position: absolute; left: 12px; right: 12px; margin: 0 auto; width: fit-content; bottom: 22px; display: flex; gap: 6px; align-items: center; background: var(--panel);
     border: 1px solid var(--line); border-radius: 14px; padding: 6px; backdrop-filter: blur(8px); flex-wrap: wrap; justify-content: center; max-width: calc(100% - 24px); }
   .topo .bar button { border: 0; background: transparent; color: var(--hud); font: 500 12.5px Inter, system-ui, sans-serif; padding: 7px 11px; border-radius: 9px; cursor: pointer; display: inline-flex; gap: 7px; align-items: center; }
   .topo .bar button:hover { background: rgba(var(--fg), .07); }
@@ -45,6 +45,18 @@
   .topo .help b { color: var(--hud); font-weight: 500; }
   .topo .help .st { margin-top: 8px; color: var(--hud); }
   .topo .count { position: absolute; top: 30px; left: 76px; font: 12px ui-monospace, monospace; color: var(--muted); pointer-events: none; }
+  .topo.embedded { position: absolute; z-index: 1; border-radius: 10px; }
+  .topo.embedded .hud-title { top: 12px; right: 14px; width: 190px; }
+  .topo.embedded .hud-title h2 { font-size: 16px; margin-bottom: 6px; }
+  .topo.embedded .hud-title canvas { width: 46px; height: 46px; margin: 0 0 4px 18px; }
+  .topo.embedded .hud-title .mode { font-size: 10.5px; }
+  .topo.embedded .close { top: 10px; left: 10px; width: 30px; height: 30px; font-size: 13px; }
+  .topo.embedded .count { top: 18px; left: 50px; font-size: 10.5px; }
+  .topo.embedded .bar { bottom: 10px; padding: 4px; gap: 2px; border-radius: 11px; }
+  .topo.embedded .bar button { padding: 5px 7px; font-size: 11.5px; }
+  .topo.embedded .bar kbd, .topo.embedded .bar .lbl { display: none; }
+  .topo.embedded .help { left: 10px; bottom: 56px; width: min(250px, calc(100% - 20px)); font-size: 11px; }
+  .topo:focus { outline: none; }
   @media (max-width: 720px) { .topo .hud-title { right: 16px; top: 76px; width: 200px; } .topo .hud-title h2 { font-size: 20px; } .topo .help { display: none; } }
   `;
 
@@ -54,16 +66,19 @@
     }
     const d3 = window.d3;
     const el = document.createElement('div');
-    el.className = `topo${opts.dark ? ' dark' : ''}`;
+    const embedded = Boolean(opts.embedded);
+    el.className = `topo${opts.dark ? ' dark' : ''}${embedded ? ' embedded' : ''}`;
+    el.tabIndex = 0;
     el.innerHTML = `<video playsinline muted></video><canvas class="field"></canvas>
-      <button class="close" title="Close (Esc)" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+      ${embedded ? '<button class="close" title="Full screen" aria-label="Full screen"><i class="fa-solid fa-expand"></i></button>'
+    : '<button class="close" title="Close (Esc)" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>'}
       <div class="count"></div>
       <div class="hud-title"><h2>Topologies of<br>Thoughts</h2><canvas class="glyph" width="176" height="176"></canvas><div class="mode"></div></div>
       <div class="help" hidden></div>
       <div class="bar">${ORDER.map((m) => `<button data-mode="${m}">${esc(MODES[m].name)} <kbd>${MODES[m].key}</kbd></button>`).join('')}
-        <span class="sep"></span><button data-act="cam" title="Steer with your hand through the camera"><i class="fa-solid fa-hand"></i>Hand gestures</button>
+        <span class="sep"></span><button data-act="cam" title="Steer with your hand through the camera"><i class="fa-solid fa-hand"></i><span class="lbl">Hand gestures</span></button>
         <button data-act="theme" title="Light / dark"><i class="fa-solid fa-circle-half-stroke"></i></button>
-        <button data-act="fit" title="Fit to screen (F)"><i class="fa-solid fa-expand"></i></button></div>`;
+        <button data-act="fit" title="Fit to screen (F)"><i class="fa-solid fa-compress"></i></button></div>`;
     host.appendChild(el);
     const canvas = el.querySelector('canvas.field');
     const ctx = canvas.getContext('2d');
@@ -84,10 +99,14 @@
     // ---- view -------------------------------------------------------------------------
     let W = 0; let H = 0; const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const view = { x: 0, y: 0, k: 1 };
+    let userMoved = false; let fitTimer = 0;
     function resize() {
       W = el.clientWidth; H = el.clientHeight;
       canvas.width = W * dpr; canvas.height = H * dpr;
+      if (!userMoved && nodes.length && Number.isFinite(nodes[0].x)) fit();
     }
+    // after a layout change the field settles for a moment; frame it then, unless you moved it yourself
+    const fitSoon = () => { clearTimeout(fitTimer); fitTimer = setTimeout(() => { if (!userMoved) fit(); }, 700); };
     resize();
     const toWorld = (sx, sy) => ({ x: (sx - W / 2 - view.x) / view.k, y: (sy - H / 2 - view.y) / view.k });
     const toScreen = (n) => ({ x: W / 2 + view.x + n.x * view.k, y: H / 2 + view.y + n.y * view.k });
@@ -118,9 +137,16 @@
         const max = Math.max(1, ...depth.values());
         const ring = (n) => (n === focus ? 0 : depth.has(n) ? (depth.get(n) / (max + 1)) * R * 1.15 + R * 0.18 : R * 1.35);
         if (focus) { focus.fx = 0; focus.fy = 0; }
+        // spread each ring evenly around the centre, then let the forces settle it
+        const rings = new Map();
+        for (const n of nodes) { const r = ring(n); if (!rings.has(r)) rings.set(r, []); rings.get(r).push(n); }
+        for (const [r, list] of rings) {
+          list.sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label));
+          list.forEach((n, i) => { const a = (i / list.length) * Math.PI * 2 + r * 0.01; n.x = Math.cos(a) * r; n.y = Math.sin(a) * r; n.vx = 0; n.vy = 0; });
+        }
+        // rings only: links would drag every ring towards the busiest note
         sim.force('r', d3.forceRadial(ring, 0, 0).strength(0.9))
-          .force('link', d3.forceLink(links).distance(30).strength(0.04))
-          .force('charge', d3.forceManyBody().strength(-14)).force('collide', collide);
+          .force('charge', d3.forceManyBody().strength(-24).distanceMax(R)).force('collide', collide);
       } else if (mode === 'clusters') {
         const at = new Map(groups.map((g, i) => {
           const a = (i / Math.max(1, groups.length)) * Math.PI * 2;
@@ -145,6 +171,7 @@
         sim.force('x', d3.forceX((n) => n.tx).strength(0.5)).force('y', d3.forceY((n) => n.ty).strength(0.5)).force('collide', collide);
       }
       sim.alpha(1).restart();
+      fitSoon();
       el.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
       el.querySelector('.hud-title .mode').innerHTML = `<i></i>mode: <b>${esc(MODES[mode].name)}</b><br>${esc(MODES[mode].text)}${focus && mode === 'centralized' ? `<br>centre: <b>${esc(focus.label)}</b>` : ''}`;
       drawGlyph();
@@ -243,9 +270,10 @@
     function fit() {
       if (!nodes.length) return;
       const xs = nodes.map((n) => n.x); const ys = nodes.map((n) => n.y);
-      const w = Math.max(...xs) - Math.min(...xs) + 80; const h = Math.max(...ys) - Math.min(...ys) + 80;
-      view.k = Math.max(0.15, Math.min(4, Math.min(W / w, (H - 120) / h)));
-      view.x = -((Math.max(...xs) + Math.min(...xs)) / 2) * view.k; view.y = -((Math.max(...ys) + Math.min(...ys)) / 2) * view.k;
+      const w = Math.max(...xs) - Math.min(...xs) + 170; const h = Math.max(...ys) - Math.min(...ys) + 60;
+      const top = embedded ? 150 : 120;
+      view.k = Math.max(0.15, Math.min(3, Math.min(W / w, (H - top) / h)));
+      view.x = -((Math.max(...xs) + Math.min(...xs)) / 2 + 45) * view.k; view.y = -((Math.max(...ys) + Math.min(...ys)) / 2) * view.k + (embedded ? 40 : 10);
     }
     function zoomAt(sx, sy, factor) {
       const before = toWorld(sx, sy);
@@ -271,7 +299,7 @@
       if (dragFrom && pointers.size === 1) {
         const dx = e.offsetX - dragFrom.x; const dy = e.offsetY - dragFrom.y;
         if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
-        view.x = dragFrom.vx + dx; view.y = dragFrom.vy + dy;
+        view.x = dragFrom.vx + dx; view.y = dragFrom.vy + dy; if (moved) userMoved = true;
       } else if (!camOn) hover = nodeAt(e.offsetX, e.offsetY);
     });
     const up = (e) => {
@@ -281,18 +309,22 @@
     };
     canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
     canvas.addEventListener('dblclick', (e) => { const n = nodeAt(e.offsetX, e.offsetY); if (n) opts.onOpen?.(n.id); });
-    canvas.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
+    canvas.addEventListener('wheel', (e) => { e.preventDefault(); userMoved = true; zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
     const onKey = (e) => {
-      if (e.key === 'Escape') { destroy(); return; }
+      if (e.target.closest?.('input, textarea, [contenteditable]')) return;
+      if (e.key === 'Escape') { if (!embedded) destroy(); return; }
       const m = ORDER.find((k) => MODES[k].key === e.key); if (m) layout(m);
       if (e.key === 'f' || e.key === 'F') fit();
       if (e.key === 'Enter' && (hover || focus)) opts.onOpen?.((hover || focus).id);
     };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('resize', resize);
-    el.querySelector('.close').onclick = () => destroy();
+    // Full screen listens to the whole page; beside notes only while you are in the field.
+    const keyTarget = embedded ? el : window;
+    keyTarget.addEventListener('keydown', onKey);
+    const ro = new ResizeObserver(() => resize()); ro.observe(el);
+    canvas.addEventListener('pointerdown', () => { if (embedded) el.focus({ preventScroll: true }); });
+    el.querySelector('.close').onclick = () => (embedded ? opts.onExpand?.(focus?.id || null) : destroy());
     el.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => layout(b.dataset.mode); });
-    el.querySelector('[data-act="fit"]').onclick = fit;
+    el.querySelector('[data-act="fit"]').onclick = () => { userMoved = false; fit(); };
     el.querySelector('[data-act="theme"]').onclick = () => { el.classList.toggle('dark'); drawGlyph(); };
     el.querySelector('[data-act="cam"]').onclick = () => (camOn ? stopCam() : startCam());
 
@@ -399,15 +431,24 @@
 
     // ---- life -----------------------------------------------------------------------
     function destroy() {
-      stopCam(); cancelAnimationFrame(raf); sim.stop();
-      window.removeEventListener('keydown', onKey); window.removeEventListener('resize', resize);
+      stopCam(); cancelAnimationFrame(raf); sim.stop(); clearTimeout(fitTimer);
+      keyTarget.removeEventListener('keydown', onKey); ro.disconnect();
       el.remove(); opts.onClose?.();
+    }
+    // Beside notes: the open note becomes the centre without rebuilding the field.
+    function focusOn(id) {
+      const n = byId.get(id);
+      if (!n || n === focus) return;
+      focus = n; userMoved = false;
+      if (mode === 'centralized') layout(mode);
+      else el.querySelector('.hud-title .mode').innerHTML = `<i></i>mode: <b>${esc(MODES[mode].name)}</b><br>${esc(MODES[mode].text)}`;
+      hover = null;
     }
     layout(mode);
     for (let i = 0; i < 120; i++) sim.tick();
     fit();
     frame();
-    return { destroy };
+    return { destroy, focusOn };
   }
 
   window.LrmTopology = { open };

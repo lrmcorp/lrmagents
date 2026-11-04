@@ -1646,30 +1646,69 @@ function renderTags() {
 $('#tag-list').addEventListener('click', (e) => { const t = e.target.closest('[data-tag]'); if (t) searchFor(`tag:#${t.dataset.tag}`); });
 
 // ---- graph view -----------------------------------------------------------------------------------
-// Docked on the right (the default layout): the open note's neighbourhood, or the whole vault.
-const dock = { sim: null, key: '' };
-function stopDock() { if (dock.sim) { dock.sim.stop(); dock.sim = null; } dock.key = ''; }
+// Docked on the right (the default layout): Topologies of Thoughts around the open note,
+// or the classic graph (this note's neighbourhood or the whole vault).
+const dock = { sim: null, key: '', topo: null, topoKey: '' };
+function stopDock() {
+  if (dock.sim) { dock.sim.stop(); dock.sim = null; }
+  dock.topo?.destroy(); dock.topo = null; dock.topoKey = '';
+  dock.key = '';
+}
+function topoData() {
+  const { nodes, links } = graphData({ center: null }, { ...S.graph, filter: '', orphans: true, tags: false, unresolved: false });
+  return {
+    nodes: nodes.map((n) => ({ id: n.id, label: n.label, group: n.group, deg: n.deg, mtime: S.notes.get(n.id)?.mtime || 0 })),
+    links: links.map((l) => ({ source: l.source, target: l.target })),
+  };
+}
 function renderDockGraph(el, tab) {
-  const center = !ui.dockWhole && tab?.kind === 'note' ? tab.path : null;
+  const view = ui.dockView === 'graph' ? 'graph' : 'topo';
+  const note = tab?.kind === 'note' ? tab.path : null;
   let linkCount = 0;
   for (const set of S.out.values()) linkCount += set.size;
-  const key = `${center}|${S.notes.size}|${linkCount}|${ui.dockWhole ? 1 : 0}`;
+  const dataKey = `${S.agent}|${S.notes.size}|${linkCount}`;
+  const head = `<div class="dock-graph-head">
+      <div class="seg"><button class="seg-btn" data-dock="topo" aria-pressed="${view === 'topo'}">Topologies</button><button class="seg-btn" data-dock="graph" aria-pressed="${view === 'graph'}">Graph</button></div>
+      ${view === 'graph' ? `<div class="seg"><button class="seg-btn" data-dock="note" aria-pressed="${!ui.dockWhole}">This note</button><button class="seg-btn" data-dock="whole" aria-pressed="${Boolean(ui.dockWhole)}">Whole vault</button></div>` : ''}
+      <span class="spacer"></span>
+      ${view === 'graph' ? '<button class="icon-btn" data-dock="open" title="Open as a tab"><i class="fa-solid fa-up-right-from-square"></i></button>' : ''}
+      <button class="icon-btn" data-dock="full" title="Topologies of Thoughts, full screen"><i class="fa-solid fa-expand"></i></button>
+    </div>`;
+  const wire = () => el.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => {
+    const what = b.dataset.dock;
+    if (what === 'full') return openTopology(note);
+    if (what === 'open') return openGraph(ui.dockWhole ? null : note);
+    if (what === 'topo' || what === 'graph') ui.dockView = what; else ui.dockWhole = what === 'whole';
+    saveState(); stopDock(); renderRight();
+  }));
+  if (view === 'topo') {
+    // Same notes as last time: keep the field and move its centre to the open note.
+    if (dock.topo && dock.topoKey === dataKey && el.querySelector('.dock-topo')) { if (note) dock.topo.focusOn(note); return; }
+    stopDock();
+    el.innerHTML = `${head}<div class="dock-topo"></div>`;
+    wire();
+    if (!window.LrmTopology || !window.d3) { el.querySelector('.dock-topo').innerHTML = '<div class="hint">Topologies did not load.</div>'; return; }
+    dock.topoKey = dataKey;
+    const host = el.querySelector('.dock-topo');
+    requestAnimationFrame(() => {
+      if (!host.isConnected) return;
+      dock.topo = window.LrmTopology.open(host, {
+        ...topoData(), embedded: true, focus: note, mode: ui.topoMode || 'centralized',
+        dark: document.documentElement.classList.contains('dark'),
+        onMode: (m) => { ui.topoMode = m; saveState(); },
+        onOpen: (id) => openPath(id),
+        onExpand: (id) => openTopology(id),
+      });
+    });
+    return;
+  }
+  const center = !ui.dockWhole && note ? note : null;
+  const key = `${center}|${dataKey}|${ui.dockWhole ? 1 : 0}`;
   if (dock.key === key && el.querySelector('.dock-graph-wrap')) return;
   stopDock();
   dock.key = key;
-  el.innerHTML = `<div class="dock-graph-head">
-      <div class="seg"><button class="seg-btn" data-dock="note" aria-pressed="${!ui.dockWhole}">This note</button><button class="seg-btn" data-dock="whole" aria-pressed="${Boolean(ui.dockWhole)}">Whole vault</button></div>
-      <span class="spacer"></span>
-      <button class="icon-btn" data-dock="topo" title="Topologies of Thoughts (full screen)"><i class="fa-solid fa-circle-nodes"></i></button>
-      <button class="icon-btn" data-dock="open" title="Open as a tab"><i class="fa-solid fa-up-right-from-square"></i></button>
-    </div><div class="graph-wrap dock-graph-wrap"><svg role="img" aria-label="Graph"></svg><div class="graph-legend"></div></div>
-    ${center ? '' : tab?.kind === 'note' || ui.dockWhole ? '' : '<div class="hint">Open a note to see its neighbourhood; this is the whole vault.</div>'}`;
-  el.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => {
-    const what = b.dataset.dock;
-    if (what === 'topo') return openTopology(center);
-    if (what === 'open') return openGraph(center);
-    ui.dockWhole = what === 'whole'; saveState(); dock.key = ''; renderRight();
-  }));
+  el.innerHTML = `${head}<div class="graph-wrap dock-graph-wrap"><svg role="img" aria-label="Graph"></svg><div class="graph-legend"></div></div>`;
+  wire();
   requestAnimationFrame(() => drawGraph({ center }, el.querySelector('.dock-graph-wrap'),
     { settings: { ...S.graph, depth: 2, filter: '', orphans: true }, keep: (sim) => { dock.sim = sim; }, sameTab: true }));
 }
@@ -1718,16 +1757,14 @@ async function setupVault() {
 let topo = null;
 function openTopology(center = null) {
   if (!window.LrmTopology) return toast('The Topologies view did not load.');
-  const { nodes, links } = graphData({ center: null }, { ...S.graph, filter: '', orphans: true, tags: false, unresolved: false });
   const focus = center || (activeTab()?.kind === 'note' ? activeTab().path : null);
   topo?.destroy();
   topo = window.LrmTopology.open(document.body, {
-    nodes: nodes.map((n) => ({ id: n.id, label: n.label, group: n.group, deg: n.deg, mtime: S.notes.get(n.id)?.mtime || 0 })),
-    links: links.map((l) => ({ source: l.source, target: l.target })),
+    ...topoData(),
     focus, dark: document.documentElement.classList.contains('dark'), mode: ui.topoMode || 'centralized',
     onMode: (m) => { ui.topoMode = m; saveState(); },
     onOpen: (id) => { topo?.destroy(); topo = null; openPath(id); },
-    onClose: () => { topo = null; },
+    onClose: () => { topo = null; dock.topo?.destroy(); dock.topo = null; dock.topoKey = ''; renderRight(); },
   });
 }
 const PALETTE = ['#0b7a5a', '#2f6fd6', '#c2410c', '#7c3aed', '#0e7490', '#b91c1c', '#a16207', '#be185d', '#4d7c0f', '#475569'];
