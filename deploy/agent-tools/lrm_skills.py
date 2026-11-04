@@ -49,3 +49,52 @@ def github_spec(value: str) -> str:
     if source.startswith(("https://github.com/", "http://github.com/")) or _REPO.match(source.removesuffix(".git")):
         return source.removesuffix(".git")
     raise ValueError("only skills hosted on GitHub can be installed from an npx command")
+
+
+def share_with_all(names, agent_id=None):
+    """Make skills just installed for one agent available to every agent.
+
+    Skills live in one shared folder (the default agent's workspace ``skills/``),
+    but an agent can have its own folder or a "only these skills" list. Copy
+    the new skills into every own folder and add them to every list.
+    """
+    import os
+    import shutil
+    from pathlib import Path
+
+    from agent.admin import get_agent_admin_service
+    from agent.registry import get_agent_registry
+    from common import state_dir
+    from common.log import logger
+
+    names = [n for n in (names or []) if n]
+    if not names:
+        return
+    registry = get_agent_registry()
+    source = state_dir.skills_dir(base=registry.get(agent_id, require_enabled=False).workspace if agent_id
+                                  else registry.get(require_enabled=False).workspace)
+    targets = {Path(state_dir.shared_root()) / "skills"}
+    for profile in registry.list():
+        own = Path(profile.workspace) / "skills"
+        if own.is_dir():
+            targets.add(own)
+    for target in targets:
+        if os.path.realpath(target) == os.path.realpath(source):
+            continue
+        for name in names:
+            src = Path(source) / name
+            if src.is_dir():
+                try:
+                    shutil.copytree(src, target / name, dirs_exist_ok=True)
+                except OSError as e:
+                    logger.warning(f"[Skills] could not copy {name} to {target}: {e}")
+    admin = get_agent_admin_service()
+    for profile in registry.list():
+        if profile.skills is None:
+            continue  # uses every skill already
+        missing = [n for n in names if n not in profile.skills]
+        if missing:
+            try:
+                admin.update_agent(profile.id, skills=list(profile.skills) + missing)
+            except Exception as e:
+                logger.warning(f"[Skills] could not add {missing} to {profile.id}: {e}")

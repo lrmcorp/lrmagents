@@ -84,6 +84,9 @@ def private_path_refusal(executor, tool_name, arguments):
             continue
         path = raw[7:] if raw.startswith("file://") else raw
         full = os.path.realpath(os.path.join(workspace or "/", os.path.expanduser(path)))
+        from agent.lrm_memory import hidden_from
+        if hidden_from(getattr(getattr(executor, "model", None), "session_id", ""), full):
+            return "Chat notes are private to the owner, so they can't be opened from this chat."
         inside_private = any(full == r or full.startswith(r + os.sep) for r in roots)
         in_workspace = bool(workspace) and (full == workspace or full.startswith(workspace + os.sep))
         # Secret-looking files anywhere outside the workspace; a project's own config.json is fine.

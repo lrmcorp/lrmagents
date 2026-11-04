@@ -340,4 +340,29 @@ patch("static/js/core/i18n.js", "skill_value_github: 'Repository or folder URL'"
 patch("static/js/core/i18n.js", "skill_hint_github: 'A repository URL, a folder URL (/tree/branch/path), or owner/repo'",
       "skill_hint_github: 'A repository URL, a folder URL (/tree/branch/path), owner/repo, a skills.sh link, or an npx skills add command'")
 patch("static/js/views/skills.js", "https://github.com/owner/repo/tree/main/skills/my-skill", "https://github.com/owner/repo  ·  npx skills add owner/repo")
+# ---- Skills installed from the console go to every agent (agent/lrm_skills.py).
+patch("api/skills.py",
+      '                    _record_staged_fields(staged["dir"], installed, service)\n',
+      '                    _record_staged_fields(staged["dir"], installed, service)\n'
+      '                    from agent.lrm_skills import share_with_all as _lrm_share\n'
+      '                    _lrm_share(installed, staged["agent_id"])\n')
+patch("api/skills.py",
+      '                service.manager.refresh_skills()\n                # What the caller knows',
+      '                service.manager.refresh_skills()\n'
+      '                from agent.lrm_skills import share_with_all as _lrm_share\n'
+      '                _lrm_share(result.installed, agent_id)\n                # What the caller knows')
+# ---- Chat notes (agent/lrm_memory.py) are the owner's: WhatsApp contacts and API
+# callers neither find them in memory_search nor open them with memory_get.
+patch("agent/tools/memory/memory_search.py",
+      '            if not results:\n',
+      '            from agent.lrm_memory import hidden_from as _lrm_hidden\n'
+      '            _lrm_session = getattr(getattr(self, "model", None), "session_id", "")\n'
+      '            results = [r for r in (results or []) if not _lrm_hidden(_lrm_session, r.path)]\n'
+      '            if not results:\n', root=app)
+patch("agent/tools/memory/memory_get.py",
+      '        if not path:\n',
+      '        from agent.lrm_memory import hidden_from as _lrm_hidden\n'
+      '        if path and _lrm_hidden(getattr(getattr(self, "model", None), "session_id", ""), path):\n'
+      '            return ToolResult.fail("Chat notes are private to the owner, so they can\'t be opened from this chat.")\n'
+      '        if not path:\n', root=app)
 print("LRM brand applied")

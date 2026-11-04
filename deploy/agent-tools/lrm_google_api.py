@@ -115,3 +115,9 @@ try:
     _g.start_scheduler()
 except Exception as _e:  # never stop the console from starting
     logger.warning(f"[MorningBrief] scheduler not started: {_e}")
+
+try:
+    from agent import lrm_memory as _m
+    _m.start()
+except Exception as _e:  # never stop the console from starting
+    logger.warning(f"[ChatMemory] not started: {_e}")
