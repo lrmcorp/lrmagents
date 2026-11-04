@@ -89,6 +89,14 @@
   const store = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private */ } } };
   const S = { state: 'idle', level: 0, out: 0, rec: null, chunks: [], stream: null, ctx: null, analyser: null, speaking: null, muted: store.get('lrm_p_muted', false),
     handsFree: false, busy: false, queue: [], agent: null, detector: null, camOn: false, lastSeen: [] };
+  // Safari says only "the string did not match the expected pattern" when a reply is not JSON.
+  async function readJson(r) {
+    const text = await r.text();
+    try { return JSON.parse(text); } catch {
+      const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
+      throw new Error(r.status === 401 ? 'Your sign-in expired: open the console and sign in again.' : `the server answered ${r.status}${plain ? `: ${plain}` : ''}`);
+    }
+  }
   function toast(t) { const el = $('#toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => { el.style.display = 'none'; }, 6000); }
   function setState(s, label) { S.state = s; $('#state').textContent = label || ({ idle: 'tap to talk', listening: 'listening', thinking: 'thinking', speaking: 'speaking' }[s] || s); }
 
@@ -187,7 +195,7 @@
     try {
       const lang = $('#lang').value;
       const r = await fetch('/api/lrm/voice?op=stt', { method: 'POST', body: blob, headers: lang ? { 'X-Lang': lang } : {}, credentials: 'same-origin' });
-      const data = await r.json();
+      const data = await readJson(r);
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       if (!data.text) { S.busy = false; setState('idle', "didn't catch that"); return; }
       await ask(data.text, { lang: data.language });
@@ -200,7 +208,7 @@
     try {
       const r = await fetch('/api/lrm/voice?op=chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, lang: lang || $('#lang').value || '', image }) });
-      const data = await r.json();
+      const data = await readJson(r);
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       showHud(data.hud || []);
       $('#it').textContent = data.text || '';
@@ -348,7 +356,7 @@
   muteIcon();
   $('#lang').value = store.get('lrm_p_lang', ''); $('#lang').onchange = () => store.set('lrm_p_lang', $('#lang').value);
 
-  fetch('/api/lrm/voice', { credentials: 'same-origin' }).then((r) => r.json()).then((d) => {
+  fetch('/api/lrm/voice', { credentials: 'same-origin' }).then(readJson).then((d) => {
     S.agent = d.agent;
     const name = d.agent?.name || 'Personal';
     $('#name').textContent = name.toUpperCase().slice(0, 10); $('#who').textContent = `${name} · personal assistant`; document.title = `${name} · LRMagent`;
