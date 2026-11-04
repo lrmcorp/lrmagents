@@ -24,7 +24,7 @@ jobs:
           chmod 600 "$HOME/.ssh/ln_vps" "$HOME/.ssh/known_hosts"
       - name: Collect and encrypt
         run: |
-          ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes "$VPS" 'bash -s' < deploy/diagnose.sh > report.txt 2>&1 || true
+          ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes "$VPS" 'bash -s' < deploy/diagnose.sh 2>&1 | tr '\r' '\n' | cut -c1-400 | tail -n 400 > report.txt || true
           openssl rand -out key.bin 32
           echo "KEY:$(openssl pkeyutl -encrypt -pubin -inkey deploy/diagnose.pub.pem -pkeyopt rsa_padding_mode:oaep -in key.bin | base64 -w0)"
           gzip -9c report.txt | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:key.bin | base64 -w 0 | fold -w 4000 | sed 's/^/DATA:/'
