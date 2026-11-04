@@ -230,6 +230,65 @@
   .git .btn { display: inline-flex; gap: 6px; align-items: center; text-decoration: none; color: var(--text); }
   .git .btn.primary { color: #fff; } :root.dark .git .btn.primary { color: #13101b; }
   .git .x { margin-left: auto; }
+  /* Canvas */
+  .cv { position: relative; flex: 1; min-height: 0; overflow: hidden; background-color: var(--surface-2); outline: none; cursor: grab;
+        background-image: radial-gradient(circle, var(--line) 1px, transparent 1.2px); background-size: calc(20px * var(--cvz, 1)) calc(20px * var(--cvz, 1)); }
+  .cv:active { cursor: grabbing; }
+  .cv-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  .cv-edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; }
+  .cv-edge { fill: none; stroke-width: 2; pointer-events: none; }
+  .cv-edge.sel { stroke: var(--brand) !important; stroke-width: 3; }
+  .cv-edge-temp { stroke: var(--brand); stroke-dasharray: 6 4; }
+  .cv-edge-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+  .cv-edge-label { font-size: 12px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; width: fit-content; margin: 0 auto; color: var(--text-2); }
+  .cv-node { position: absolute; background: var(--surface); border: 2px solid var(--cv-c, var(--line)); border-radius: 10px; cursor: default; box-shadow: 0 2px 8px rgb(16 16 32 / .06); }
+  .cv-node.sel { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .cv-node.cv-group { background: color-mix(in srgb, var(--cv-c, var(--text-3)) 7%, transparent); border-style: solid; box-shadow: none; }
+  .cv-group-label { position: absolute; top: -26px; left: 0; font-size: 14px; font-weight: 700; color: var(--cv-c, var(--text-2)); white-space: nowrap; }
+  .cv-body { width: 100%; height: 100%; overflow: auto; padding: 10px 14px; border-radius: 8px; }
+  .cv-file .cv-body { padding: 0; }
+  .cv-md { font-size: 14px; }
+  .cv-file-title { position: sticky; top: 0; background: var(--surface-2); border-bottom: 1px solid var(--line); padding: 6px 12px; font-weight: 600; font-size: 13px; cursor: pointer; color: var(--link); }
+  .cv-file .cv-md { padding: 8px 14px; }
+  .cv-img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .cv-link { display: grid; gap: 4px; height: 100%; place-content: center; text-align: center; text-decoration: none; color: var(--link); font-weight: 600; }
+  .cv-link small { color: var(--text-3); font-weight: 400; word-break: break-all; }
+  .cv-missing { color: var(--danger); font-size: 13px; }
+  .cv-edit { width: 100%; height: 100%; border: 0; outline: none; resize: none; background: none; font: 14px/1.6 Inter, system-ui, sans-serif; color: var(--text); }
+  .cv-dot { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--brand); border: 2px solid var(--surface); opacity: 0; cursor: crosshair; z-index: 2; }
+  .cv-node:hover .cv-dot, .cv-node.sel .cv-dot { opacity: 1; }
+  .cv-dot-top { top: -7px; left: calc(50% - 6px); } .cv-dot-bottom { bottom: -7px; left: calc(50% - 6px); }
+  .cv-dot-left { left: -7px; top: calc(50% - 6px); } .cv-dot-right { right: -7px; top: calc(50% - 6px); }
+  .cv-resize { position: absolute; right: -4px; bottom: -4px; width: 14px; height: 14px; cursor: nwse-resize; opacity: 0; }
+  .cv-node.sel .cv-resize { opacity: 1; background: linear-gradient(135deg, transparent 50%, var(--brand) 50%); border-radius: 0 0 8px 0; }
+  .cv-tools { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 2px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 4px; box-shadow: var(--shadow); }
+  .cv-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+  .cv-hint { position: absolute; top: 40%; width: 100%; text-align: center; color: var(--text-3); pointer-events: none; }
+  .cv-node-bar { position: absolute; display: flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); z-index: 5; }
+  .cv-node-bar button { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; background: var(--surface); color: var(--text-2); display: grid; place-items: center; font-size: 11px; }
+  /* Bases */
+  .base { padding: 18px 24px 40px; }
+  .base-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .base-tabs { display: flex; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; }
+  .base-tab { border: 0; background: none; padding: 5px 10px; border-radius: 7px; cursor: pointer; font-weight: 600; font-size: 13px; color: var(--text-2); }
+  .base-tab.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  .base-quick { max-width: 260px; }
+  .base-bar .btn { display: inline-flex; gap: 6px; align-items: center; }
+  .base-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .base-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .base-table th { text-align: left; font-size: 12px; color: var(--text-3); font-weight: 600; padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; background: var(--surface-2); position: sticky; top: 0; }
+  .base-table td { padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .base-table tr:last-child td { border-bottom: 0; }
+  .base-table a { color: var(--link); text-decoration: none; }
+  .base-count { margin-top: 8px; }
+  .base-yaml { width: 100%; min-height: 50vh; font: 12px/1.5 var(--mono); border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--surface-2); color: var(--text); margin: 10px 0; }
+  .base-cols { display: grid; gap: 2px; max-height: 50vh; overflow: auto; margin-top: 10px; }
+  .base-col { display: flex; justify-content: space-between; align-items: center; padding: 2px 6px; border-radius: 6px; }
+  .base-col:hover { background: var(--hover); }
+  .base-frows { display: grid; gap: 8px; margin: 12px 0; }
+  .base-frow { display: flex; gap: 6px; align-items: center; }
+  .base-frow select, .base-frow input { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; min-width: 0; }
+  .base-frow input[data-v] { flex: 1; }
   .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--surface); padding: 8px 14px; border-radius: 10px; font-size: 13px; z-index: 60; box-shadow: var(--shadow); max-width: calc(100vw - 32px); }
   .toast.error { background: var(--danger); color: #fff; }
 
@@ -306,6 +365,7 @@
 <script src="/assets/vendor/highlightjs/highlight.min.js"></script>
 <script src="/assets/vendor/d3/d3.min.js"></script>
 <script src="/assets/brand/vendor/lrm-editor.js"></script>
+<script src="/assets/brand/vendor/js-yaml.min.js"></script>
 <script src="/assets/brand/vault.js"></script>
 </body>
 </html>

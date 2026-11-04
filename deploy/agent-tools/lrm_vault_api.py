@@ -35,6 +35,8 @@ ASSET_TYPES = {
 }
 # knowledge/index.md is regenerated and log.md is the agent's change log.
 READ_ONLY = {"knowledge/index.md", "knowledge/log.md"}
+# Obsidian's other editable files: Canvas boards (JSON Canvas) and Bases (YAML table views).
+BOARD_EXT = (".canvas", ".base")
 BAD_NAME = re.compile(r'[<>:"|?*\\\x00-\x1f]')
 MAX_NOTE = 2 * 1024 * 1024
 MAX_ENTRIES = 5000
@@ -123,7 +125,7 @@ class Vault:
                     out.append({"path": f"{prefix}/{d}", "type": "dir"})
                 for name in sorted(filenames):
                     ext = os.path.splitext(name)[1].lower()
-                    if name.startswith(".") or (ext != ".md" and ext not in ASSET_TYPES):
+                    if name.startswith(".") or (ext != ".md" and ext not in ASSET_TYPES and ext not in BOARD_EXT):
                         continue
                     try:
                         st = os.stat(os.path.join(dirpath, name))
@@ -215,6 +217,42 @@ def _as_list(value):
     return [v.strip() for v in str(value or "").split(",") if v.strip()]
 
 
+def _yaml_props(text):
+    """A note's properties with their real names and types, for table views (None if unreadable)."""
+    if not text.startswith("---"):
+        return {}
+    end = text.find("\n---", 3)
+    if end == -1:
+        return {}
+    try:
+        import yaml
+        data = yaml.safe_load(text[3:end]) or {}
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return {}
+    out = {}
+    for key, value in list(data.items())[:40]:
+        if isinstance(value, (list, tuple)):
+            value = [v if isinstance(v, (int, float, bool)) else str(v)[:200] for v in value[:30]]
+        elif isinstance(value, (int, float, bool)) or value is None:
+            pass
+        else:
+            value = str(value)[:300]
+        out[str(key)[:60]] = value
+    return out
+
+
+def board_meta(text):
+    """Links of a Canvas board (its file cards), so backlinks and the graph see them."""
+    try:
+        data = json.loads(text or "{}")
+    except ValueError:
+        return {"title": "", "aliases": [], "tags": [], "links": [], "props": {}}
+    links = [{"t": n["file"], "w": 1, "e": False} for n in data.get("nodes", []) if isinstance(n, dict) and n.get("type") == "file" and n.get("file")]
+    return {"title": "", "aliases": [], "tags": [], "links": links[:500], "props": {}}
+
+
 def note_meta(text):
     props, body = _frontmatter(text)
     plain = INLINE_CODE.sub("", FENCE.sub("", body))
@@ -229,7 +267,9 @@ def note_meta(text):
     tags = {t.lstrip("#") for t in _as_list(props.get("tags") or props.get("tag"))}
     tags.update(m.group(1) for m in TAG.finditer(plain))
     heading = HEADING.search(plain)
+    typed = _yaml_props(text)
     return {
+        "props": typed if typed is not None else props,
         "title": heading.group(1).strip() if heading else "",
         "aliases": _as_list(props.get("aliases") or props.get("alias")),
         "tags": sorted(t for t in tags if t and not t.isdigit()),
@@ -246,7 +286,7 @@ def _cached_meta(full, mtime, size):
         text = full.read_text(encoding="utf-8", errors="replace") if size <= MAX_NOTE else ""
     except OSError:
         text = ""
-    meta = note_meta(text)
+    meta = board_meta(text) if str(full).endswith(".canvas") else note_meta(text)
     if len(_meta_cache) > 20000:
         _meta_cache.clear()
     _meta_cache[key] = (mtime, size, meta)
@@ -387,7 +427,7 @@ class LrmVaultHandler:
     def _index(vault):
         entries, truncated = vault.entries()
         entries = [e for e in entries if e["type"] == "dir" or vault.safe(e["path"])]
-        for e in vault.notes(entries):
+        for e in vault.notes(entries) + [x for x in entries if x["type"] == "file" and x["path"].endswith(".canvas")]:
             e.update(_cached_meta(vault.safe(e["path"]), e["mtime"], e["size"]))
             if e["path"] in READ_ONLY:
                 e["readonly"] = True
@@ -449,6 +489,8 @@ class LrmVaultHandler:
         section, rel, full = vault.resolve(vpath)
         if vault.vpath(section, rel) in READ_ONLY:
             raise VaultError("this note is maintained by the agent and is read-only")
+        if vpath.lower().endswith(BOARD_EXT):
+            return _write_board(vault, section, rel, full, vpath, content, body.get("expected_mtime"))
         if not vpath.lower().endswith(".md"):
             raise VaultError("only notes can be edited")
         if len(content.encode("utf-8")) > MAX_NOTE:
@@ -479,9 +521,12 @@ class LrmVaultHandler:
                 raise VaultError("invalid folder")
             full.mkdir(parents=True)
             return _ok(path=vpath)
-        if not vpath.lower().endswith(".md"):
+        if not vpath.lower().endswith((".md",) + BOARD_EXT):
             raise VaultError("note names end with .md")
         content = body.get("content") or ""
+        if vpath.lower().endswith(".canvas"):
+            content = content or '{"nodes":[],"edges":[]}'
+            _check_board(vpath, content)
         if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_NOTE:
             raise VaultError("invalid content")
         _atomic_write(full, content)
@@ -504,8 +549,8 @@ class LrmVaultHandler:
         is_dir = f_old.is_dir()
         if is_dir and (new + "/").startswith(old + "/"):
             raise VaultError("can't move a folder into itself")
-        if not is_dir and old.lower().endswith(".md") != new.lower().endswith(".md"):
-            raise VaultError("keep the .md extension")
+        if not is_dir and os.path.splitext(old)[1].lower() != os.path.splitext(new)[1].lower():
+            raise VaultError("keep the file's extension")
         entries, _ = vault.entries()
         moved_notes = {}
         if is_dir:
@@ -676,3 +721,27 @@ def git_request(kind, repo=""):
     os.chmod(tmp, 0o666)
     os.replace(tmp, os.path.join(GIT_CONTROL, target))
     return git_state()
+
+
+def _check_board(vpath, content):
+    if len(content.encode("utf-8")) > MAX_NOTE:
+        raise VaultError("file too large")
+    if vpath.lower().endswith(".canvas"):
+        try:
+            data = json.loads(content)
+        except ValueError:
+            raise VaultError("not a valid Canvas file")
+        if not isinstance(data, dict) or not isinstance(data.get("nodes", []), list) or not isinstance(data.get("edges", []), list):
+            raise VaultError("not a valid Canvas file")
+
+
+def _write_board(vault, section, rel, full, vpath, content, expected):
+    """Canvas boards and Bases: plain files, saved with the same changed-meanwhile check as notes."""
+    _check_board(vpath, content)
+    if not full.is_file():
+        raise FileNotFoundError(f"'{vpath}' not found")
+    if expected is not None and abs(full.stat().st_mtime - float(expected)) > 0.01:
+        return _fail("This file changed on disk since you opened it.", "conflict")
+    _atomic_write(full, content)
+    vault.changed({section}, [rel] if section == "knowledge" else [])
+    return _ok(path=vpath, mtime=full.stat().st_mtime)

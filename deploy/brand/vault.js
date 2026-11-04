@@ -20,6 +20,10 @@ const basename = (p) => p.slice(p.lastIndexOf('/') + 1);
 const stem = (p) => basename(p).replace(/\.md$/i, '');
 const isNote = (p) => /\.md$/i.test(p);
 const isImage = (p) => /\.(png|jpe?g|gif|webp|svg)$/i.test(p);
+const isCanvas = (p) => /\.canvas$/i.test(p);
+const isBase = (p) => /\.base$/i.test(p);
+const kindOf = (p) => (isNote(p) ? 'note' : isCanvas(p) ? 'canvas' : isBase(p) ? 'base' : 'asset');
+const isText = (tab) => ['note', 'canvas', 'base'].includes(tab?.kind);
 const sectionOf = (p) => p.split('/')[0];
 function normPath(p) {
   const out = [];
@@ -202,7 +206,8 @@ function buildIndex(entries) {
       for (const tag of e.tags || []) push(S.tags, tag, e.path);
     }
   }
-  for (const [path, e] of S.notes) {
+  const linkers = [...S.notes, ...S.entries.filter((e) => e.type === 'file' && isCanvas(e.path)).map((e) => [e.path, e])];
+  for (const [path, e] of linkers) {
     const out = new Set(); const missing = new Set();
     for (const l of e.links || []) {
       const target = resolveLink(l.t, path, !l.w);
@@ -233,8 +238,8 @@ const loadIndexSoon = () => { clearTimeout(indexTimer); indexTimer = setTimeout(
 // Notes the agent changed while they were open (and the user hasn't touched) are reloaded.
 async function refreshOpenNotes() {
   for (const tab of S.tabs) {
-    if (tab.kind !== 'note' || tab.loading || tab.conflict || tab.content !== tab.saved) continue;
-    const entry = S.notes.get(tab.path);
+    if (!isText(tab) || tab.loading || tab.conflict || tab.content !== tab.saved) continue;
+    const entry = S.notes.get(tab.path) || S.entries.find((e) => e.path === tab.path);
     if (!entry || (!tab.stale && entry.mtime <= tab.mtime + 0.001)) continue;
     tab.stale = false;
     try {
@@ -242,7 +247,8 @@ async function refreshOpenNotes() {
       if (tab.content !== tab.saved) continue;
       Object.assign(tab, { content: data.content, saved: data.content, mtime: data.mtime, editable: data.editable });
       if (tab === activeTab()) {
-        if (ed && tab.mode === 'edit') ed.setDoc(data.content);
+        if (ed && tab.kind === 'note' && tab.mode === 'edit') ed.setDoc(data.content);
+        else if (tab.kind === 'canvas' && tab.cvBusy) { /* the board is being dragged: next refresh */ }
         else renderView();
         renderRight(); renderStatus();
       }
@@ -547,9 +553,11 @@ function renderTree() {
   const row = (e, depth) => {
     const dir = e.type === 'dir';
     const open = S.expanded.has(e.path);
-    const name = dir ? basename(e.path) : (isNote(e.path) ? stem(e.path) : basename(e.path));
+    const board = isCanvas(e.path) || isBase(e.path);
+    const name = dir ? basename(e.path) : (isNote(e.path) || board ? e.path.split('/').pop().replace(/\.(md|canvas|base)$/i, '') : basename(e.path));
     const ext = !dir && !isNote(e.path) ? `<span class="ext">${esc(e.path.split('.').pop().toUpperCase())}</span>` : '';
-    const icon = dir ? (open ? 'fa-regular fa-folder-open' : 'fa-regular fa-folder') : isNote(e.path) ? 'fa-regular fa-file-lines' : isImage(e.path) ? 'fa-regular fa-image' : 'fa-regular fa-file';
+    const icon = dir ? (open ? 'fa-regular fa-folder-open' : 'fa-regular fa-folder') : isNote(e.path) ? 'fa-regular fa-file-lines'
+      : isCanvas(e.path) ? 'fa-regular fa-object-group' : isBase(e.path) ? 'fa-solid fa-table' : isImage(e.path) ? 'fa-regular fa-image' : 'fa-regular fa-file';
     const cls = ['tree-row', dir && S.folder === e.path ? 'selected-folder' : '', !dir && e.path === current ? 'active' : ''].join(' ');
     let html = `<div class="${cls}" role="treeitem" tabindex="-1" data-path="${esc(e.path)}" data-type="${e.type}" draggable="true" style="padding-left:${6 + depth * 14}px"${dir ? ` aria-expanded="${open}"` : ''}>
       ${dir ? `<i class="fa-solid fa-chevron-right chev${open ? ' open' : ''}"></i>` : '<span class="chev"></span>'}<i class="ico ${icon}"></i><span class="name">${esc(name)}</span>${ext}
@@ -589,6 +597,8 @@ function treeMenu(path, type, x, y) {
     items.push({ icon: 'fa-regular fa-folder-open', label: 'New folder', fn: () => newFolder(path) });
     items.push({ icon: 'fa-solid fa-paperclip', label: 'Upload images or PDFs…', fn: () => uploadInto(path) });
     items.push({ icon: 'fa-regular fa-copy', label: 'New note from template…', fn: () => { S.folder = path; newFromTemplate(); } });
+    items.push({ icon: 'fa-regular fa-object-group', label: 'New canvas', fn: () => newBoard('canvas', path) });
+    items.push({ icon: 'fa-solid fa-table', label: 'New table view (base)', fn: () => newBoard('base', path) });
   } else {
     items.push({ icon: 'fa-regular fa-file-lines', label: 'Open in new tab', fn: () => openPath(path, { newTab: true }) });
     if (isNote(path)) items.push({ icon: 'fa-solid fa-link', label: 'Copy [[link]]', fn: () => copy(`[[${linkName(path)}]]`) });
@@ -742,7 +752,7 @@ async function movePath(path, newPath) {
     const res = await post('rename', { path, new_path: newPath, update_links: true });
     const oldStem = stem(path);
     for (const tab of S.tabs) {
-      if (tab.kind !== 'note' && tab.kind !== 'asset') continue;
+      if (tab.kind === 'graph') continue;
       if (tab.path === path) tab.path = newPath;
       else if (tab.path.startsWith(`${path}/`)) tab.path = newPath + tab.path.slice(path.length);
     }
@@ -750,7 +760,7 @@ async function movePath(path, newPath) {
     S.expanded.add(dirname(newPath));
     await loadIndex({ quiet: true });
     // Notes that the link update rewrote are reloaded from disk.
-    for (const tab of S.tabs) if (tab.kind === 'note') tab.stale = true;
+    for (const tab of S.tabs) if (isText(tab)) tab.stale = true;
     await refreshOpenNotes();
     const tab = activeTab();
     if (tab?.path === newPath && isNote(newPath) && stem(newPath) !== oldStem && tab.content.startsWith(`# ${oldStem}\n`)) {
@@ -792,12 +802,12 @@ function saveState() {
 }
 
 function newTabObj(kind, path, mode) {
-  return { kind, path, mode: mode || 'read', content: '', saved: '', mtime: 0, editable: true, loading: kind === 'note', error: '', conflict: false, history: [], fwd: [], scroll: 0 };
+  return { kind, path, mode: mode || 'read', content: '', saved: '', mtime: 0, editable: true, loading: isText({ kind }), error: '', conflict: false, history: [], fwd: [], scroll: 0 };
 }
 
 async function openPath(path, { newTab = false, mode = null, heading = '', line = 0, fromHistory = false } = {}) {
   if (!path) return;
-  const kind = isNote(path) ? 'note' : 'asset';
+  const kind = kindOf(path);
   const existing = S.tabs.findIndex((t) => t.path === path);
   if (existing >= 0 && !fromHistory) {
     activate(existing);
@@ -817,7 +827,7 @@ async function openPath(path, { newTab = false, mode = null, heading = '', line 
   }
   S.folder = path === ROOT_FILE ? S.folder : dirname(path);
   saveState(); renderTabs(); renderTree(); renderView();
-  if (kind === 'note') await loadTab(tab);
+  if (isText(tab)) await loadTab(tab);
   if (tab === activeTab()) {
     if (heading) scrollToHeading(heading);
     if (line && tab.mode === 'edit') caretToLine(line);
@@ -857,9 +867,9 @@ function closeTab(i, { skipSave = false } = {}) {
 
 function renderTabs() {
   $('#tabbar').innerHTML = S.tabs.map((t, i) => {
-    const name = t.kind === 'graph' ? (t.center ? `Graph: ${stem(t.center)}` : 'Graph view') : (t.path === ROOT_FILE ? 'MEMORY' : (isNote(t.path) ? stem(t.path) : basename(t.path)));
-    const icon = t.kind === 'graph' ? 'fa-diagram-project' : t.kind === 'asset' ? 'fa-image' : 'fa-file-lines';
-    const dirty = t.kind === 'note' && t.content !== t.saved;
+    const name = t.kind === 'graph' ? (t.center ? `Graph: ${stem(t.center)}` : 'Graph view') : (t.path === ROOT_FILE ? 'MEMORY' : (t.kind === 'asset' ? basename(t.path) : stem(t.path.replace(/\.(canvas|base)$/i, '.md'))));
+    const icon = t.kind === 'graph' ? 'fa-diagram-project' : t.kind === 'asset' ? 'fa-image' : t.kind === 'canvas' ? 'fa-object-group' : t.kind === 'base' ? 'fa-table' : 'fa-file-lines';
+    const dirty = isText(t) && t.content !== t.saved;
     return `<div class="tab${i === S.active ? ' active' : ''}" data-i="${i}" title="${esc(t.path || name)}">
       <i class="fa-regular ${icon}" style="font-size:11px;opacity:.7"></i><span class="t-name">${esc(name)}</span>${dirty ? '<span class="dirty" title="Saving…"></span>' : ''}
       <button class="icon-btn close" data-close="${i}" title="Close"><i class="fa-solid fa-xmark"></i></button></div>`;
@@ -877,11 +887,11 @@ $('#tabbar').addEventListener('auxclick', (e) => { const tab = e.target.closest(
 // ---- saving --------------------------------------------------------------------------------
 let saveTimer = null;
 function scheduleSave(tab) { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveTab(tab), 900); }
-async function flush(tab) { if (tab?.kind === 'note' && tab.content !== tab.saved && !tab.conflict) { clearTimeout(saveTimer); await saveTab(tab); } }
+async function flush(tab) { if (isText(tab) && tab.content !== tab.saved && !tab.conflict) { clearTimeout(saveTimer); await saveTab(tab); } }
 async function flushAll() { clearTimeout(saveTimer); for (const t of S.tabs) await flush(t); }
 
 async function saveTab(tab, { force = false } = {}) {
-  if (tab.kind !== 'note' || !tab.editable || (tab.conflict && !force)) return;
+  if (!isText(tab) || !tab.editable || (tab.conflict && !force)) return;
   if (tab.saving) { tab.again = true; return; }
   if (tab.content === tab.saved && !force) return;
   const content = tab.content;
@@ -898,7 +908,7 @@ async function saveTab(tab, { force = false } = {}) {
   renderTabs(); renderStatus();
 }
 window.addEventListener('beforeunload', (e) => {
-  if (S.tabs.some((t) => t.kind === 'note' && t.content !== t.saved)) { flushAll(); e.preventDefault(); e.returnValue = ''; }
+  if (S.tabs.some((t) => isText(t) && t.content !== t.saved)) { flushAll(); e.preventDefault(); e.returnValue = ''; }
 });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
 
@@ -931,6 +941,10 @@ function renderView() {
   if (!tab || tab.kind !== 'graph') stopGraph();
   if (!tab) { view.innerHTML = emptyState(); renderRight(); renderStatus(); return; }
   if (tab.kind === 'graph') { renderGraph(view, tab); renderRight(); renderStatus(); return; }
+  if ((tab.kind === 'canvas' || tab.kind === 'base') && !tab.loading) {
+    if (tab.kind === 'canvas') renderCanvas(view, tab); else renderBase(view, tab);
+    renderRight(); renderStatus(); return;
+  }
   const back = tab.history.length; const fwd = tab.fwd.length;
   const head = `<div class="note-head">
     <button class="icon-btn" data-act="back" title="Back (Alt ←)" ${back ? '' : 'disabled style="opacity:.35"'}><i class="fa-solid fa-arrow-left"></i></button>
@@ -1573,6 +1587,584 @@ function drawGraph(tab) {
   S.sim = sim;
 }
 
+// ---- Canvas: Obsidian's JSON Canvas boards (.canvas) ------------------------------------------------
+// Cards (text, notes, images, links) and groups on an endless board, joined by arrows.
+// Drag to move, drag the corner to resize, drag a side dot onto another card to connect,
+// double-click the board for a new card, double-click a card to edit it, Delete removes.
+const CANVAS_COLORS = { 1: '#e5484d', 2: '#f76b15', 3: '#e2b600', 4: '#30a46c', 5: '#05a2c2', 6: '#8e4ec6' };
+const cvColor = (c) => (c ? CANVAS_COLORS[c] || c : '');
+const cvId = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
+const noteCache = new Map();
+
+async function newBoard(kind, folder = S.folder) {
+  if (!folder || folder === ROOT_FILE || !(SECTIONS.includes(folder) || S.dirs.has(folder))) folder = 'knowledge';
+  const label = kind === 'canvas' ? 'canvas' : 'table view';
+  const name = await ask({ title: `New ${label}`, text: `In <b>${esc(folder)}</b>`, value: kind === 'canvas' ? 'Untitled canvas' : 'Untitled table', ok: 'Create' });
+  if (!name) return;
+  const ext = kind === 'canvas' ? '.canvas' : '.base';
+  const path = uniquePath(folder, name.replace(/[\\/<>:"|?*#^[\]]/g, ' ').trim() || 'Untitled', ext);
+  const content = kind === 'canvas' ? JSON.stringify({ nodes: [], edges: [] }, null, '\t')
+    : window.jsyaml.dump({ filters: { and: [`file.inFolder("${folder}")`] }, views: [{ type: 'table', name: 'Table', order: ['file.name', 'tags', 'file.mtime'] }] });
+  try {
+    await post('create', { path, content });
+    await loadIndex({ quiet: true });
+    openPath(path);
+  } catch (e) { fail(e); }
+}
+
+function boardHead(tab, extra = '') {
+  return `<div class="note-head"><div class="crumbs">${crumbs(tab.path)}</div>${extra}
+    <button class="icon-btn" data-act="more" title="More"><i class="fa-solid fa-ellipsis-vertical"></i></button></div>`;
+}
+
+function renderCanvas(view, tab) {
+  let data;
+  try { data = JSON.parse(tab.content || '{}'); } catch { view.innerHTML = `${boardHead(tab)}<div class="doc"><div class="banner warn">This canvas file is damaged and cannot be shown.</div></div>`; return; }
+  data.nodes = Array.isArray(data.nodes) ? data.nodes : []; data.edges = Array.isArray(data.edges) ? data.edges : [];
+  tab.cv ||= { x: 0, y: 0, z: 1, fit: true };
+  const tools = `<div class="cv-tools">
+    <button class="icon-btn" data-cv="card" title="Add a card (or double-click the board)"><i class="fa-regular fa-note-sticky"></i></button>
+    <button class="icon-btn" data-cv="note" title="Add a note from the vault"><i class="fa-regular fa-file-lines"></i></button>
+    <button class="icon-btn" data-cv="link" title="Add a web link"><i class="fa-solid fa-link"></i></button>
+    <button class="icon-btn" data-cv="group" title="Add a group"><i class="fa-regular fa-square"></i></button>
+    <span class="cv-sep"></span>
+    <button class="icon-btn" data-cv="out" title="Zoom out"><i class="fa-solid fa-minus"></i></button>
+    <button class="icon-btn" data-cv="in" title="Zoom in"><i class="fa-solid fa-plus"></i></button>
+    <button class="icon-btn" data-cv="fit" title="Zoom to fit"><i class="fa-solid fa-expand"></i></button></div>`;
+  view.innerHTML = `${boardHead(tab)}<div class="cv" id="cv" tabindex="0"><div class="cv-world" id="cv-world"><svg class="cv-edges" id="cv-edges"><defs>
+    <marker id="cv-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs></svg></div>
+    ${tools}<div class="cv-hint">${data.nodes.length ? '' : 'Double-click to add a card. Drag a card\'s side dot onto another card to connect them.'}</div></div>`;
+  const root = $('#cv'); const world = $('#cv-world'); const svg = $('#cv-edges');
+  let sel = null; // {type: 'node'|'edge', id}
+  let saveT = null;
+  const save = () => {
+    clearTimeout(saveT);
+    saveT = setTimeout(() => { tab.content = JSON.stringify(data, null, '\t'); renderTabs(); scheduleSave(tab); }, 400);
+  };
+  const byId = (id) => data.nodes.find((n) => n.id === id);
+  const applyView = () => { world.style.transform = `translate(${tab.cv.x}px, ${tab.cv.y}px) scale(${tab.cv.z})`; root.style.setProperty('--cvz', tab.cv.z); };
+  const toWorld = (cx, cy) => { const r = root.getBoundingClientRect(); return { x: (cx - r.left - tab.cv.x) / tab.cv.z, y: (cy - r.top - tab.cv.y) / tab.cv.z }; };
+  const fit = () => {
+    if (!data.nodes.length) { tab.cv = { x: root.clientWidth / 2, y: root.clientHeight / 2, z: 1 }; applyView(); return; }
+    const xs = data.nodes.flatMap((n) => [n.x, n.x + n.width]); const ys = data.nodes.flatMap((n) => [n.y, n.y + n.height]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const z = Math.min(1.2, Math.max(0.1, Math.min((root.clientWidth - 80) / (x1 - x0 || 1), (root.clientHeight - 100) / (y1 - y0 || 1))));
+    tab.cv = { z, x: (root.clientWidth - (x1 - x0) * z) / 2 - x0 * z, y: (root.clientHeight - (y1 - y0) * z) / 2 - y0 * z + 20 };
+    applyView();
+  };
+
+  const side = (n, s) => ({ top: [n.x + n.width / 2, n.y], bottom: [n.x + n.width / 2, n.y + n.height], left: [n.x, n.y + n.height / 2], right: [n.x + n.width, n.y + n.height / 2] }[s]);
+  const nearestSide = (n, x, y) => ['top', 'bottom', 'left', 'right'].map((s) => [s, Math.hypot(side(n, s)[0] - x, side(n, s)[1] - y)]).sort((a, b) => a[1] - b[1])[0][0];
+  const autoSides = (a, b) => {
+    const dx = (b.x + b.width / 2) - (a.x + a.width / 2); const dy = (b.y + b.height / 2) - (a.y + a.height / 2);
+    return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? ['right', 'left'] : ['left', 'right']) : (dy > 0 ? ['bottom', 'top'] : ['top', 'bottom']);
+  };
+  const normal = { top: [0, -1], bottom: [0, 1], left: [-1, 0], right: [1, 0] };
+  const curve = ([x1, y1], s1, [x2, y2], s2) => {
+    const d = Math.max(40, Math.hypot(x2 - x1, y2 - y1) / 3);
+    return `M${x1},${y1} C${x1 + normal[s1][0] * d},${y1 + normal[s1][1] * d} ${x2 + normal[s2][0] * d},${y2 + normal[s2][1] * d} ${x2},${y2}`;
+  };
+
+  function drawEdges() {
+    const parts = [svg.querySelector('defs').outerHTML];
+    for (const e of data.edges) {
+      const a = byId(e.fromNode); const b = byId(e.toNode);
+      if (!a || !b) continue;
+      const [sa, sb] = autoSides(a, b);
+      const s1 = e.fromSide || sa; const s2 = e.toSide || sb;
+      const path = curve(side(a, s1), s1, side(b, s2), s2);
+      const color = cvColor(e.color) || 'var(--text-3)';
+      const chosen = sel?.type === 'edge' && sel.id === e.id;
+      const start = e.fromEnd === 'arrow' ? ' marker-start="url(#cv-arrow)"' : '';
+      const end = e.toEnd === 'none' ? '' : ' marker-end="url(#cv-arrow)"';
+      parts.push(`<path d="${path}" class="cv-edge-hit" data-edge="${esc(e.id)}"/><path d="${path}" class="cv-edge${chosen ? ' sel' : ''}" stroke="${esc(color)}"${start}${end}/>`);
+      if (e.label) {
+        const p1 = side(a, s1); const p2 = side(b, s2);
+        parts.push(`<foreignObject x="${(p1[0] + p2[0]) / 2 - 80}" y="${(p1[1] + p2[1]) / 2 - 14}" width="160" height="28"><div class="cv-edge-label" data-edge="${esc(e.id)}">${esc(e.label)}</div></foreignObject>`);
+      }
+    }
+    svg.innerHTML = parts.join('');
+  }
+
+  function cardBody(n) {
+    if (n.type === 'text') return `<div class="md cv-md">${renderMarkdown(n.text || '', tab.path).html || '<p class="muted">Empty card. Double-click to write.</p>'}</div>`;
+    if (n.type === 'link') {
+      let host = n.url; try { host = new URL(n.url).hostname; } catch { /* as typed */ }
+      return `<a class="cv-link" href="${esc(n.url)}" target="_blank" rel="noopener noreferrer"><i class="fa-solid fa-globe"></i> ${esc(host)}<small>${esc(n.url)}</small></a>`;
+    }
+    if (n.type === 'file') {
+      const target = resolveLink(n.file, tab.path) || (S.lc.get(String(n.file).toLowerCase()) || '');
+      if (!target) return `<div class="cv-missing"><i class="fa-solid fa-triangle-exclamation"></i> ${esc(n.file)} is missing</div>`;
+      if (isImage(target)) return `<img class="cv-img" src="${esc(fileUrl(target))}" alt="${esc(basename(target))}" draggable="false">`;
+      if (/\.pdf$/i.test(target)) return `<div class="cv-file-title" data-open="${esc(target)}"><i class="fa-regular fa-file-pdf"></i> ${esc(basename(target))}</div>`;
+      return `<div class="cv-file-title" data-open="${esc(target)}"><i class="fa-regular fa-file-lines"></i> ${esc(stem(target))}</div><div class="md cv-md" data-note="${esc(target)}"></div>`;
+    }
+    return '';
+  }
+
+  function drawNodes() {
+    world.querySelectorAll('.cv-node').forEach((el) => el.remove());
+    const ordered = [...data.nodes.filter((n) => n.type === 'group'), ...data.nodes.filter((n) => n.type !== 'group')];
+    for (const n of ordered) {
+      const el = document.createElement('div');
+      el.className = `cv-node cv-${n.type}${sel?.type === 'node' && sel.id === n.id ? ' sel' : ''}`;
+      el.dataset.node = n.id;
+      Object.assign(el.style, { left: `${n.x}px`, top: `${n.y}px`, width: `${n.width}px`, height: `${n.height}px` });
+      const color = cvColor(n.color);
+      if (color) el.style.setProperty('--cv-c', color);
+      el.innerHTML = (n.type === 'group' ? `<div class="cv-group-label">${esc(n.label || 'Group')}</div>` : `<div class="cv-body">${cardBody(n)}</div>`)
+        + ['top', 'right', 'bottom', 'left'].map((s) => `<span class="cv-dot cv-dot-${s}" data-side="${s}"></span>`).join('')
+        + '<span class="cv-resize" data-resize="1"></span>';
+      world.appendChild(el);
+    }
+    world.querySelectorAll('.cv-md').forEach((el) => { highlightCode(el); fillRich(el); });
+    world.querySelectorAll('[data-note]').forEach(async (el) => {
+      const path = el.dataset.note;
+      const entry = S.notes.get(path);
+      const key = `${path}@${entry?.mtime}`;
+      try {
+        if (!noteCache.has(key)) noteCache.set(key, (await api('read', { path })).content);
+        el.innerHTML = renderMarkdown(noteCache.get(key), path).html;
+        highlightCode(el); fillRich(el);
+      } catch { el.textContent = ''; }
+    });
+    drawEdges();
+    drawToolbar();
+  }
+
+  function drawToolbar() {
+    root.querySelector('.cv-node-bar')?.remove();
+    if (sel?.type !== 'node' || !tab.editable) return;
+    const n = byId(sel.id); if (!n) return;
+    const bar = document.createElement('div');
+    bar.className = 'cv-node-bar';
+    bar.innerHTML = Object.keys(CANVAS_COLORS).map((c) => `<button data-color="${c}" style="background:${CANVAS_COLORS[c]}" title="Colour"></button>`).join('')
+      + '<button data-color="" title="No colour" class="cv-nocolor"><i class="fa-solid fa-ban"></i></button>'
+      + (n.type === 'group' ? '<button data-cv="label" title="Rename group"><i class="fa-solid fa-i-cursor"></i></button>' : '')
+      + (n.type === 'file' ? '<button data-cv="open" title="Open the note"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>' : '')
+      + '<button data-cv="delete" title="Delete (Del)"><i class="fa-regular fa-trash-can"></i></button>';
+    root.appendChild(bar);
+    const r = world.querySelector(`[data-node="${CSS.escape(n.id)}"]`)?.getBoundingClientRect(); const rr = root.getBoundingClientRect();
+    if (r) { bar.style.left = `${Math.max(8, r.left - rr.left)}px`; bar.style.top = `${Math.max(8, r.top - rr.top - 44)}px`; }
+  }
+
+  const addNode = (node) => { data.nodes.push({ id: cvId(), ...node }); sel = { type: 'node', id: data.nodes[data.nodes.length - 1].id }; drawNodes(); save(); return data.nodes[data.nodes.length - 1]; };
+  const center = () => { const r = root.getBoundingClientRect(); return toWorld(r.left + r.width / 2, r.top + r.height / 2); };
+  const remove = () => {
+    if (!sel || !tab.editable) return;
+    if (sel.type === 'node') {
+      data.nodes = data.nodes.filter((n) => n.id !== sel.id);
+      data.edges = data.edges.filter((e) => e.fromNode !== sel.id && e.toNode !== sel.id);
+    } else data.edges = data.edges.filter((e) => e.id !== sel.id);
+    sel = null; drawNodes(); save();
+  };
+
+  function editText(n) {
+    if (!tab.editable) return;
+    const el = world.querySelector(`[data-node="${CSS.escape(n.id)}"] .cv-body`);
+    if (!el) return;
+    if (n.type === 'group') { renameGroup(n); return; }
+    if (n.type !== 'text') return;
+    el.innerHTML = '<textarea class="cv-edit" spellcheck="true"></textarea>';
+    const ta = el.querySelector('textarea');
+    ta.value = n.text || '';
+    ta.focus();
+    tab.cvBusy = true;
+    ta.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') ta.blur(); });
+    ta.addEventListener('blur', () => { tab.cvBusy = false; if (ta.value !== (n.text || '')) { n.text = ta.value; save(); } drawNodes(); });
+  }
+  async function renameGroup(n) {
+    const label = await ask({ title: 'Group name', value: n.label || '', ok: 'Save' });
+    if (label != null) { n.label = label; drawNodes(); save(); }
+  }
+
+  // ---- pointer interactions ----
+  let drag = null;
+  root.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('.cv-tools, .cv-node-bar, textarea, a, [data-open]')) return;
+    root.focus({ preventScroll: true });
+    const p = toWorld(e.clientX, e.clientY);
+    const nodeEl = e.target.closest('.cv-node');
+    const edgeEl = e.target.closest('[data-edge]');
+    if (edgeEl && !nodeEl) { sel = { type: 'edge', id: edgeEl.dataset.edge }; drawNodes(); return; }
+    if (!nodeEl) { sel = null; drawNodes(); drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: tab.cv.x, oy: tab.cv.y }; root.setPointerCapture(e.pointerId); return; }
+    const n = byId(nodeEl.dataset.node);
+    if (!n) return;
+    if (sel?.id !== n.id) { sel = { type: 'node', id: n.id }; drawNodes(); }
+    if (!tab.editable) return;
+    if (e.target.dataset.side) {
+      drag = { kind: 'link', from: n, side: e.target.dataset.side, temp: null };
+    } else if (e.target.dataset.resize) {
+      drag = { kind: 'resize', n, sx: p.x, sy: p.y, w: n.width, h: n.height };
+    } else {
+      const inside = n.type === 'group' ? data.nodes.filter((m) => m !== n && m.x >= n.x && m.y >= n.y && m.x + m.width <= n.x + n.width && m.y + m.height <= n.y + n.height) : [];
+      drag = { kind: 'move', n, sx: p.x, sy: p.y, ox: n.x, oy: n.y, inside: inside.map((m) => [m, m.x, m.y]), moved: false };
+    }
+    tab.cvBusy = true;
+    root.setPointerCapture(e.pointerId);
+  });
+  root.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    if (drag.kind === 'pan') { tab.cv.x = drag.ox + e.clientX - drag.sx; tab.cv.y = drag.oy + e.clientY - drag.sy; applyView(); drawToolbar(); return; }
+    const p = toWorld(e.clientX, e.clientY);
+    const snap = (v) => Math.round(v / 10) * 10;
+    if (drag.kind === 'move') {
+      const dx = p.x - drag.sx; const dy = p.y - drag.sy;
+      if (Math.abs(dx) + Math.abs(dy) > 2) drag.moved = true;
+      drag.n.x = snap(drag.ox + dx); drag.n.y = snap(drag.oy + dy);
+      for (const [m, mx, my] of drag.inside) { m.x = snap(mx + dx); m.y = snap(my + dy); }
+      for (const m of [drag.n, ...drag.inside.map((x) => x[0])]) {
+        const el = world.querySelector(`[data-node="${CSS.escape(m.id)}"]`);
+        if (el) { el.style.left = `${m.x}px`; el.style.top = `${m.y}px`; }
+      }
+      drawEdges(); drawToolbar();
+    } else if (drag.kind === 'resize') {
+      drag.n.width = Math.max(80, snap(drag.w + p.x - drag.sx)); drag.n.height = Math.max(40, snap(drag.h + p.y - drag.sy));
+      const el = world.querySelector(`[data-node="${CSS.escape(drag.n.id)}"]`);
+      if (el) { el.style.width = `${drag.n.width}px`; el.style.height = `${drag.n.height}px`; }
+      drawEdges();
+    } else if (drag.kind === 'link') {
+      drawEdges();
+      const [x1, y1] = side(drag.from, drag.side);
+      svg.insertAdjacentHTML('beforeend', `<path d="${curve([x1, y1], drag.side, [p.x, p.y], 'top')}" class="cv-edge cv-edge-temp" marker-end="url(#cv-arrow)"/>`);
+    }
+  });
+  root.addEventListener('pointerup', (e) => {
+    const d = drag; drag = null; tab.cvBusy = false;
+    if (!d) return;
+    if (d.kind === 'link') {
+      const target = document.elementsFromPoint(e.clientX, e.clientY).map((el) => el.closest?.('.cv-node')).find(Boolean);
+      const to = target && byId(target.dataset.node);
+      if (to && to.id !== d.from.id) {
+        const p = toWorld(e.clientX, e.clientY);
+        data.edges.push({ id: cvId(), fromNode: d.from.id, fromSide: d.side, toNode: to.id, toSide: nearestSide(to, p.x, p.y) });
+        save();
+      }
+      drawEdges();
+    } else if (d.kind === 'move' && d.moved) save();
+    else if (d.kind === 'resize') { drawNodes(); save(); }
+  });
+  root.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      const r = root.getBoundingClientRect(); const mx = e.clientX - r.left; const my = e.clientY - r.top;
+      const z = Math.min(3, Math.max(0.1, tab.cv.z * Math.exp(-e.deltaY / 400)));
+      tab.cv.x = mx - (mx - tab.cv.x) * (z / tab.cv.z); tab.cv.y = my - (my - tab.cv.y) * (z / tab.cv.z); tab.cv.z = z;
+    } else { tab.cv.x -= e.deltaX; tab.cv.y -= e.deltaY; }
+    applyView(); drawToolbar();
+  }, { passive: false });
+  root.addEventListener('dblclick', (e) => {
+    if (e.target.closest('.cv-tools, .cv-node-bar, textarea')) return;
+    const edgeEl = e.target.closest('[data-edge]');
+    const nodeEl = e.target.closest('.cv-node');
+    if (edgeEl && !nodeEl && tab.editable) {
+      const edge = data.edges.find((x) => x.id === edgeEl.dataset.edge);
+      ask({ title: 'Arrow label', value: edge.label || '', ok: 'Save' }).then((v) => { if (v != null) { edge.label = v; drawEdges(); save(); } });
+      return;
+    }
+    if (nodeEl) { editText(byId(nodeEl.dataset.node)); return; }
+    if (!tab.editable) return;
+    const p = toWorld(e.clientX, e.clientY);
+    const n = addNode({ type: 'text', text: '', x: Math.round(p.x - 130), y: Math.round(p.y - 30), width: 260, height: 120 });
+    setTimeout(() => editText(n), 30);
+  });
+  root.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); remove(); }
+    if (e.key === 'Enter' && sel?.type === 'node') { e.preventDefault(); editText(byId(sel.id)); }
+  });
+  root.addEventListener('click', async (e) => {
+    // Links and tags inside cards are handled by the page; everything else is the board's.
+    if (!e.target.closest('a.internal, [data-tag]')) e.stopPropagation();
+    const open = e.target.closest('[data-open]');
+    if (open) { e.preventDefault(); openPath(open.dataset.open, { newTab: true }); return; }
+    const color = e.target.closest('[data-color]');
+    if (color && sel?.type === 'node') { const n = byId(sel.id); if (color.dataset.color) n.color = color.dataset.color; else delete n.color; drawNodes(); save(); return; }
+    const b = e.target.closest('[data-cv]');
+    if (!b) return;
+    const act = b.dataset.cv;
+    if (act === 'fit') return fit();
+    if (act === 'in' || act === 'out') {
+      const z = Math.min(3, Math.max(0.1, tab.cv.z * (act === 'in' ? 1.25 : 0.8)));
+      const cx = root.clientWidth / 2; const cy = root.clientHeight / 2;
+      tab.cv.x = cx - (cx - tab.cv.x) * (z / tab.cv.z); tab.cv.y = cy - (cy - tab.cv.y) * (z / tab.cv.z); tab.cv.z = z;
+      return applyView();
+    }
+    if (act === 'delete') return remove();
+    if (act === 'label') return renameGroup(byId(sel.id));
+    if (act === 'open') { const n = byId(sel.id); const t = resolveLink(n.file, tab.path) || n.file; return openPath(t, { newTab: true }); }
+    if (!tab.editable) return;
+    const c = center();
+    if (act === 'card') { const n = addNode({ type: 'text', text: '', x: Math.round(c.x - 130), y: Math.round(c.y - 60), width: 260, height: 120 }); setTimeout(() => editText(n), 30); }
+    if (act === 'group') addNode({ type: 'group', label: 'Group', x: Math.round(c.x - 250), y: Math.round(c.y - 160), width: 500, height: 320 });
+    if (act === 'link') {
+      const url = await ask({ title: 'Add a web link', value: 'https://', ok: 'Add' });
+      if (url && /^https?:\/\/\S+$/.test(url)) addNode({ type: 'link', url, x: Math.round(c.x - 200), y: Math.round(c.y - 140), width: 400, height: 280 });
+    }
+    if (act === 'note') {
+      picker({
+        placeholder: 'Add a note or image to the board…', footer: '<span><kbd>↵</kbd> add</span>',
+        items: (q) => [...S.lc.values()].filter((p) => !isCanvas(p)).map((p) => ({ path: p, score: fuzzy(q, p), html: esc(isNote(p) ? stem(p) : basename(p)), sub: dirname(p) }))
+          .filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 40),
+        onPick: (it) => addNode({ type: 'file', file: it.path, x: Math.round(c.x - 200), y: Math.round(c.y - 150), width: 400, height: isImage(it.path) ? 300 : 400 }),
+      });
+    }
+  });
+
+  applyView();
+  drawNodes();
+  if (tab.cv.fit) { tab.cv.fit = false; requestAnimationFrame(fit); }
+}
+
+// ---- Bases: table views of notes by their properties (.base, Obsidian's format) --------------------
+// Supported filters: file.inFolder("x"), file.hasTag("a"), file.hasLink("x"), file.hasProperty("p"),
+// prop.contains("x"), prop.isEmpty(), comparisons (prop == "x", file.name != "y", rating >= 3), with
+// and / or / not groups. Anything else is skipped and named above the table.
+const FILE_COLS = { 'file.name': 'Name', 'file.folder': 'Folder', 'file.mtime': 'Modified', 'file.size': 'Size', 'file.tags': 'Tags', 'file.links': 'Links', 'file.path': 'Path' };
+
+function baseRow(e) {
+  return { path: e.path, name: stem(e.path), folder: dirname(e.path), ext: 'md', mtime: e.mtime, size: e.size,
+    tags: e.tags || [], links: [...(S.out.get(e.path) || [])], props: e.props || {} };
+}
+function baseValue(row, key) {
+  key = String(key).replace(/^note\./, '');
+  if (key === 'file.name') return row.name;
+  if (key === 'file.folder') return row.folder;
+  if (key === 'file.path') return row.path;
+  if (key === 'file.ext') return row.ext;
+  if (key === 'file.mtime') return row.mtime * 1000;
+  if (key === 'file.size') return row.size;
+  if (key === 'file.tags') return row.tags;
+  if (key === 'file.links') return row.links.length;
+  if (key === 'tags' && !(key in row.props)) return row.tags;
+  return row.props[key];
+}
+function literal(text) {
+  const t = String(text).trim();
+  if (/^(["']).*\1$/.test(t)) return t.slice(1, -1);
+  if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (t === 'true' || t === 'false') return t === 'true';
+  if (t === 'null') return null;
+  const d = /^date\((["'])(.+)\1\)$/.exec(t);
+  if (d) return new Date(d[2]).getTime();
+  return undefined;
+}
+function compare(a, op, b) {
+  if (Array.isArray(a)) return op === '!=' ? !a.map(String).includes(String(b)) : op === '==' ? a.map(String).includes(String(b)) : false;
+  if (typeof b === 'number' && typeof a === 'string' && a !== '' && !Number.isNaN(Number(a))) a = Number(a);
+  if (typeof b === 'number' && typeof a === 'string' && !Number.isNaN(Date.parse(a))) a = Date.parse(a);
+  switch (op) {
+    case '==': return a === b || String(a ?? '') === String(b ?? '');
+    case '!=': return !(a === b || String(a ?? '') === String(b ?? ''));
+    case '>': return a > b; case '>=': return a >= b; case '<': return a < b; case '<=': return a <= b;
+    default: return false;
+  }
+}
+function evalFilter(f, row, skipped) {
+  if (f == null) return true;
+  if (Array.isArray(f)) return f.every((x) => evalFilter(x, row, skipped));
+  if (typeof f === 'object') {
+    if (f.and) return (f.and || []).every((x) => evalFilter(x, row, skipped));
+    if (f.or) return (f.or || []).some((x) => evalFilter(x, row, skipped));
+    if (f.not) return !(f.not || []).some((x) => evalFilter(x, row, skipped));
+    return true;
+  }
+  let expr = String(f).trim(); let negate = false;
+  if (expr.startsWith('!') && !expr.startsWith('!=')) { negate = true; expr = expr.slice(1).trim(); }
+  const result = evalExpr(expr, row, skipped);
+  return negate ? !result : result;
+}
+function evalExpr(expr, row, skipped) {
+  const args = (s) => [...s.matchAll(/(["'])(.*?)\1/g)].map((m) => m[2]);
+  let m;
+  if ((m = /^file\.inFolder\((.*)\)$/.exec(expr))) { const f = args(m[1])[0] || ''; return row.folder === f || row.folder.startsWith(`${f}/`); }
+  if ((m = /^file\.hasTag\((.*)\)$/.exec(expr))) { const want = args(m[1]).map((t) => t.replace(/^#/, '').toLowerCase()); return row.tags.some((t) => want.some((w) => t.toLowerCase() === w || t.toLowerCase().startsWith(`${w}/`))); }
+  if ((m = /^file\.hasLink\((.*)\)$/.exec(expr))) { const target = resolveLink(args(m[1])[0] || '', row.path); return Boolean(target) && row.links.includes(target); }
+  if ((m = /^file\.hasProperty\((.*)\)$/.exec(expr))) return (args(m[1])[0] || '') in row.props;
+  if ((m = /^([\w.-]+)\.contains\((.*)\)$/.exec(expr))) {
+    const v = baseValue(row, m[1]); const want = String(args(m[2])[0] ?? literal(m[2]) ?? '').toLowerCase();
+    return Array.isArray(v) ? v.some((x) => String(x).toLowerCase() === want || String(x).toLowerCase().includes(want)) : String(v ?? '').toLowerCase().includes(want);
+  }
+  if ((m = /^([\w.-]+)\.isEmpty\(\)$/.exec(expr))) { const v = baseValue(row, m[1]); return v == null || v === '' || (Array.isArray(v) && !v.length); }
+  if ((m = /^([\w.-]+)\s*(==|!=|>=|<=|>|<)\s*(.+)$/.exec(expr))) {
+    const right = literal(m[3]);
+    if (right === undefined) { skipped.add(expr); return true; }
+    return compare(baseValue(row, m[1]), m[2], right);
+  }
+  if ((m = /^([\w.-]+)$/.exec(expr))) { const v = baseValue(row, m[1]); return Array.isArray(v) ? v.length > 0 : Boolean(v); }
+  skipped.add(expr);
+  return true;
+}
+function cellHtml(value, key) {
+  if (value == null || value === '') return '<span class="muted">—</span>';
+  if (key === 'file.mtime') return esc(new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
+  if (key === 'file.size') return esc(value > 1024 ? `${(value / 1024).toFixed(1)} KB` : `${value} B`);
+  const one = (v) => {
+    const s = String(v);
+    const wl = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(s);
+    if (wl) { const t = resolveLink(wl[1]); return `<a href="#" class="internal${t ? '' : ' unresolved'}" data-href="${esc(t || wl[1])}"${t ? '' : ' data-create="1"'}>${esc(wl[2] || wl[1])}</a>`; }
+    if (key === 'tags' || key === 'file.tags') return `<span class="tag-chip" data-tag="${esc(s.replace(/^#/, ''))}">#${esc(s.replace(/^#/, ''))}</span>`;
+    if (typeof v === 'boolean') return v ? '<i class="fa-solid fa-square-check" style="color:var(--brand)"></i>' : '<i class="fa-regular fa-square"></i>';
+    if (/^https?:\/\//.test(s)) return `<a href="${esc(s)}" target="_blank" rel="noopener noreferrer">${esc(s.replace(/^https?:\/\//, '').slice(0, 40))}</a>`;
+    return esc(s);
+  };
+  return Array.isArray(value) ? value.map(one).join(' ') : one(value);
+}
+
+function renderBase(view, tab) {
+  let doc;
+  try { doc = window.jsyaml.load(tab.content || '') || {}; } catch (e) { doc = null; }
+  if (!doc || typeof doc !== 'object') {
+    view.innerHTML = `${boardHead(tab)}<div class="scroller"><div class="doc"><div class="banner warn">This table view's file could not be read: fix it below.</div><textarea class="base-yaml" id="base-yaml">${esc(tab.content)}</textarea><button class="btn primary" data-base="save-yaml">Save</button></div></div>`;
+    return;
+  }
+  doc.views = Array.isArray(doc.views) && doc.views.length ? doc.views : [{ type: 'table', name: 'Table' }];
+  tab.baseView = Math.min(tab.baseView || 0, doc.views.length - 1);
+  const v = doc.views[tab.baseView];
+  const skipped = new Set();
+  let rows = [...S.notes.values()].filter((e) => !e.path.startsWith(`${TEMPLATE_DIR}/`)).map(baseRow)
+    .filter((r) => evalFilter(doc.filters, r, skipped) && evalFilter(v.filters, r, skipped));
+  const allProps = [...new Set(rows.flatMap((r) => Object.keys(r.props)))].sort();
+  const cols = Array.isArray(v.order) && v.order.length ? v.order : ['file.name', ...allProps.slice(0, 4)];
+  const label = (c) => doc.properties?.[c]?.displayName || doc.properties?.[`note.${c}`]?.displayName || FILE_COLS[c] || c.replace(/^note\./, '');
+  const sort = Array.isArray(v.sort) && v.sort[0] ? v.sort[0] : null;
+  if (sort) {
+    const dir = String(sort.direction || 'ASC').toUpperCase() === 'DESC' ? -1 : 1;
+    rows.sort((a, b) => {
+      const x = baseValue(a, sort.property); const y = baseValue(b, sort.property);
+      if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+      return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true })) * dir;
+    });
+  }
+  const quick = (tab.baseQuick || '').toLowerCase();
+  if (quick) rows = rows.filter((r) => [r.path, ...Object.values(r.props).flat().map(String), ...r.tags].join(' ').toLowerCase().includes(quick));
+  const limit = Number(v.limit) > 0 ? Number(v.limit) : 1000;
+  const shown = rows.slice(0, limit);
+  const tabsHtml = doc.views.map((x, i) => `<button class="base-tab${i === tab.baseView ? ' on' : ''}" data-view="${i}">${esc(x.name || `View ${i + 1}`)}</button>`).join('');
+  const arrow = (c) => (sort?.property === c ? (String(sort.direction).toUpperCase() === 'DESC' ? ' ↓' : ' ↑') : '');
+  view.innerHTML = `${boardHead(tab)}<div class="scroller"><div class="base">
+    <div class="base-bar"><div class="base-tabs">${tabsHtml}${tab.editable ? '<button class="base-tab" data-base="add-view" title="Add a view"><i class="fa-solid fa-plus"></i></button>' : ''}</div>
+      <input class="pane-input base-quick" id="base-quick" placeholder="Search in this table…" value="${esc(tab.baseQuick || '')}">
+      ${tab.editable ? `<button class="btn" data-base="filters"><i class="fa-solid fa-filter"></i> Filter</button><button class="btn" data-base="columns"><i class="fa-solid fa-table-columns"></i> Columns</button>
+      <button class="btn" data-base="yaml" title="Edit the .base file"><i class="fa-solid fa-code"></i></button>` : ''}</div>
+    ${skipped.size ? `<div class="banner info"><i class="fa-solid fa-circle-info"></i>Some filters only work in Obsidian and were skipped here: <code>${esc([...skipped].join(', '))}</code></div>` : ''}
+    <div class="base-wrap"><table class="base-table"><thead><tr>${cols.map((c) => `<th data-sort="${esc(c)}">${esc(label(c))}${arrow(c)}</th>`).join('')}</tr></thead>
+    <tbody>${shown.map((r) => `<tr>${cols.map((c) => (c === 'file.name'
+      ? `<td><a href="#" class="internal" data-href="${esc(r.path)}">${esc(r.name)}</a></td>`
+      : `<td>${cellHtml(baseValue(r, c), c)}</td>`)).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="muted">No notes match.</td></tr>`}</tbody></table></div>
+    <div class="muted base-count">${rows.length} note${rows.length === 1 ? '' : 's'}${rows.length > shown.length ? `, showing ${shown.length}` : ''}</div></div></div>`;
+
+  const saveDoc = () => { tab.content = window.jsyaml.dump(doc, { lineWidth: 120 }); renderTabs(); scheduleSave(tab); renderBase(view, tab); };
+  const root = view;
+  root.querySelector('#base-quick')?.addEventListener('input', (e) => {
+    tab.baseQuick = e.target.value; clearTimeout(tab.baseT);
+    tab.baseT = setTimeout(() => { renderBase(view, tab); const q = view.querySelector('#base-quick'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 250);
+  });
+  root.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => { tab.baseView = Number(b.dataset.view); renderBase(view, tab); }));
+  root.querySelectorAll('th[data-sort]').forEach((th) => th.addEventListener('click', () => {
+    if (!tab.editable) return;
+    const c = th.dataset.sort;
+    const cur = v.sort?.[0];
+    v.sort = [{ property: c, direction: cur?.property === c && String(cur.direction).toUpperCase() === 'ASC' ? 'DESC' : 'ASC' }];
+    saveDoc();
+  }));
+  root.querySelectorAll('[data-base]').forEach((b) => b.addEventListener('click', async () => {
+    const act = b.dataset.base;
+    if (act === 'add-view') {
+      const name = await ask({ title: 'New view', value: `View ${doc.views.length + 1}`, ok: 'Add' });
+      if (name) { doc.views.push({ type: 'table', name, order: cols }); tab.baseView = doc.views.length - 1; saveDoc(); }
+    }
+    if (act === 'columns') baseColumns(doc, v, cols, allProps, saveDoc);
+    if (act === 'filters') baseFilters(v, saveDoc);
+    if (act === 'yaml') baseYaml(tab, () => renderBase(view, tab));
+    if (act === 'save-yaml') { tab.content = view.querySelector('#base-yaml').value; scheduleSave(tab); renderBase(view, tab); }
+  }));
+}
+
+function baseColumns(doc, v, cols, allProps, saveDoc) {
+  const options = [...new Set([...cols, 'file.name', 'file.folder', 'file.mtime', 'file.tags', 'file.links', 'file.size', ...allProps])];
+  const { overlay, close } = modal(`<div class="msg"><h3>Columns</h3><div class="muted">Tick the columns to show; use the arrows to order them.</div>
+    <div class="base-cols">${options.map((c) => `<div class="base-col" data-col="${esc(c)}"><label><input type="checkbox" ${cols.includes(c) ? 'checked' : ''}> ${esc(FILE_COLS[c] || c)}</label>
+    <span><button class="icon-btn" data-up title="Up"><i class="fa-solid fa-arrow-up"></i></button><button class="icon-btn" data-down title="Down"><i class="fa-solid fa-arrow-down"></i></button></span></div>`).join('')}</div></div>
+    <div class="btns"><button class="btn" data-a="cancel">Cancel</button><button class="btn primary" data-a="ok">Save</button></div>`);
+  const list = overlay.querySelector('.base-cols');
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.base-col');
+    if (e.target.closest('[data-up]') && row.previousElementSibling) row.parentNode.insertBefore(row, row.previousElementSibling);
+    if (e.target.closest('[data-down]') && row.nextElementSibling) row.parentNode.insertBefore(row.nextElementSibling, row);
+  });
+  overlay.querySelector('[data-a=cancel]').onclick = close;
+  overlay.querySelector('[data-a=ok]').onclick = () => {
+    v.order = [...list.querySelectorAll('.base-col')].filter((r) => r.querySelector('input').checked).map((r) => r.dataset.col);
+    close(); saveDoc();
+  };
+}
+
+// Filters of a view, as simple rows (folder / tag / property). Others: edit the file's YAML.
+function baseFilters(v, saveDoc) {
+  const parts = !v.filters ? [] : typeof v.filters === 'string' ? [v.filters] : Array.isArray(v.filters?.and) ? v.filters.and : null;
+  if (parts === null || parts.some((p) => typeof p !== 'string')) { toast('These filters are too advanced for the simple editor; use the </> button to edit the file', true); return; }
+  const parse = (p) => {
+    let m;
+    if ((m = /^file\.inFolder\((["'])(.*)\1\)$/.exec(p))) return { k: 'folder', v: m[2] };
+    if ((m = /^file\.hasTag\((["'])(.*)\1\)$/.exec(p))) return { k: 'tag', v: m[2] };
+    if ((m = /^([\w.-]+)\.contains\((["'])(.*)\2\)$/.exec(p))) return { k: 'prop', p: m[1], op: 'contains', v: m[3] };
+    if ((m = /^([\w.-]+)\s*(==|!=|>=|<=|>|<)\s*(.+)$/.exec(p))) return { k: 'prop', p: m[1], op: m[2], v: String(literal(m[3]) ?? m[3]) };
+    return { k: 'raw', v: p };
+  };
+  const rows = parts.map(parse);
+  const folders = ['knowledge', 'memory', ...[...S.dirs].sort()];
+  const rowHtml = (r) => `<div class="base-frow">
+    <select data-k>${['folder', 'tag', 'prop', 'raw'].map((k) => `<option value="${k}" ${r.k === k ? 'selected' : ''}>${{ folder: 'In folder', tag: 'Has tag', prop: 'Property', raw: 'Expression' }[k]}</option>`).join('')}</select>
+    <input data-p placeholder="property" value="${esc(r.p || '')}" ${r.k === 'prop' ? '' : 'hidden'}>
+    <select data-op ${r.k === 'prop' ? '' : 'hidden'}>${['==', '!=', 'contains', '>', '>=', '<', '<='].map((o) => `<option ${r.op === o ? 'selected' : ''}>${o}</option>`).join('')}</select>
+    <input data-v list="${r.k === 'folder' ? 'base-folders' : ''}" placeholder="value" value="${esc(r.v || '')}">
+    <button class="icon-btn" data-rm title="Remove"><i class="fa-solid fa-xmark"></i></button></div>`;
+  const { overlay, close } = modal(`<div class="msg"><h3>Show notes where all of these are true</h3>
+    <datalist id="base-folders">${folders.map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
+    <div class="base-frows">${rows.map(rowHtml).join('')}</div><button class="btn" data-add><i class="fa-solid fa-plus"></i> Add condition</button></div>
+    <div class="btns"><button class="btn" data-a="cancel">Cancel</button><button class="btn primary" data-a="ok">Save</button></div>`);
+  const box = overlay.querySelector('.base-frows');
+  overlay.querySelector('[data-add]').onclick = () => box.insertAdjacentHTML('beforeend', rowHtml({ k: 'folder', v: '' }));
+  box.addEventListener('click', (e) => { if (e.target.closest('[data-rm]')) e.target.closest('.base-frow').remove(); });
+  box.addEventListener('change', (e) => {
+    if (!e.target.matches('[data-k]')) return;
+    const row = e.target.closest('.base-frow'); const k = e.target.value;
+    row.querySelector('[data-p]').hidden = k !== 'prop'; row.querySelector('[data-op]').hidden = k !== 'prop';
+    row.querySelector('[data-v]').setAttribute('list', k === 'folder' ? 'base-folders' : '');
+  });
+  overlay.querySelector('[data-a=cancel]').onclick = close;
+  overlay.querySelector('[data-a=ok]').onclick = () => {
+    const q = (s) => JSON.stringify(String(s));
+    const out = [...box.querySelectorAll('.base-frow')].map((row) => {
+      const k = row.querySelector('[data-k]').value; const val = row.querySelector('[data-v]').value.trim();
+      const prop = row.querySelector('[data-p]').value.trim(); const op = row.querySelector('[data-op]').value;
+      if (!val && k !== 'prop') return null;
+      if (k === 'folder') return `file.inFolder(${q(val.replace(/\/+$/, ''))})`;
+      if (k === 'tag') return `file.hasTag(${q(val.replace(/^#/, ''))})`;
+      if (k === 'raw') return val;
+      if (!prop) return null;
+      if (op === 'contains') return `${prop}.contains(${q(val)})`;
+      return `${prop} ${op} ${/^-?\d+(\.\d+)?$/.test(val) || val === 'true' || val === 'false' ? val : q(val)}`;
+    }).filter(Boolean);
+    if (out.length) v.filters = { and: out }; else delete v.filters;
+    close(); saveDoc();
+  };
+}
+
+function baseYaml(tab, done) {
+  const { overlay, close } = modal(`<div class="msg"><h3>Edit the table view file</h3><div class="muted">Obsidian Bases format (YAML).</div>
+    <textarea class="base-yaml">${esc(tab.content)}</textarea></div>
+    <div class="btns"><button class="btn" data-a="cancel">Cancel</button><button class="btn primary" data-a="ok">Save</button></div>`);
+  overlay.querySelector('.modal').style.width = 'min(760px, calc(100vw - 32px))';
+  overlay.querySelector('[data-a=cancel]').onclick = close;
+  overlay.querySelector('[data-a=ok]').onclick = () => {
+    const text = overlay.querySelector('textarea').value;
+    try { window.jsyaml.load(text); } catch (e) { toast(`Not valid YAML: ${e.message.split('\n')[0]}`, true); return; }
+    tab.content = text; renderTabs(); scheduleSave(tab); close(); done();
+  };
+}
+
 // ---- quick switcher & command palette -----------------------------------------------------------------
 function picker({ placeholder, items, onPick, footer }) {
   const { overlay, close } = modal(`<input class="q" placeholder="${esc(placeholder)}" spellcheck="false" autocomplete="off"><div class="list"></div><div class="foot">${footer}</div>`);
@@ -1602,6 +2194,10 @@ function quickSwitcher(newTab = false) {
     footer: `<span><kbd>↑↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>${isMac ? '⌘' : 'Ctrl'} ↵</kbd> new tab</span><span><kbd>⇧ ↵</kbd> create</span>`,
     items: (q) => {
       const found = rankNotes(q, 40).map((it) => ({ path: it.path, html: `${esc(it.alias || it.name)}${it.alias ? ` <span class="muted">→ ${esc(it.name)}</span>` : ''}`, sub: dirname(it.path) || 'vault' }));
+      for (const e of S.entries) {
+        if (e.type !== 'file' || !(isCanvas(e.path) || isBase(e.path)) || !fuzzy(q, basename(e.path))) continue;
+        found.push({ path: e.path, html: `<i class="fa-solid ${isCanvas(e.path) ? 'fa-object-group' : 'fa-table'}" style="opacity:.6"></i> ${esc(basename(e.path))}`, sub: dirname(e.path) });
+      }
       if (q && !S.notes.has(`${q}.md`)) found.push({ create: q, html: `<i class="fa-solid fa-plus" style="color:var(--brand)"></i> Create “${esc(q)}”`, sub: q.includes('/') ? '' : `in ${S.folder && S.folder !== ROOT_FILE ? S.folder : 'knowledge'}` });
       return found;
     },
@@ -1707,6 +2303,8 @@ const COMMANDS = [
   { name: 'Create new note', key: 'N', fn: () => newNote() },
   { name: 'Create new folder', fn: () => newFolder() },
   { name: 'New note from template', fn: () => newFromTemplate() },
+  { name: 'New canvas', fn: () => newBoard('canvas') },
+  { name: 'New table view (base)', fn: () => newBoard('base') },
   { name: 'Insert template', fn: () => insertTemplate() },
   { name: 'Find and replace in this note', key: 'H', fn: () => { const t = activeTab(); if (t?.kind === 'note' && t.editable && t.mode !== 'edit') { t.mode = 'edit'; renderView(); } ed?.find(); } },
   { name: 'Toggle live preview / source mode', fn: () => toggleSourceMode() },
@@ -1801,7 +2399,7 @@ async function switchAgent(id) {
   S.tabs = S.tabs.filter((t) => t.kind === 'graph' || S.lc.has(t.path.toLowerCase()));
   S.active = Math.min(Math.max(S.active, S.tabs.length ? 0 : -1), S.tabs.length - 1);
   renderTabs(); renderTree(); renderView();
-  for (const t of S.tabs) if (t.kind === 'note') loadTab(t);
+  for (const t of S.tabs) if (isText(t)) loadTab(t);
 }
 
 async function start() {
