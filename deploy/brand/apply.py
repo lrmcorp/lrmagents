@@ -451,6 +451,23 @@ patch("api/sessions.py",
 # ---- Keep trying: three rounds over the fallback chain instead of two (the owner asked that a
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
+
+# OpenRouter reserves credit for the whole max_tokens of a request, and without one it
+# assumes the model's maximum output (hundreds of thousands of tokens), so a small
+# balance answers "402 requires more credits, or fewer max_tokens" although a normal
+# reply costs cents. Cap the output on OpenRouter (LRMAGENT_OPENROUTER_MAX_TOKENS).
+patch("models/openai_compatible_bot.py",
+      '            # Add max_tokens if specified\n'
+      '            if kwargs.get("max_tokens"):\n'
+      '                request_params["max_tokens"] = kwargs["max_tokens"]\n',
+      '            # Add max_tokens if specified\n'
+      '            if kwargs.get("max_tokens"):\n'
+      '                request_params["max_tokens"] = kwargs["max_tokens"]\n'
+      '            if "openrouter.ai" in str(api_config.get("api_base") or ""):\n'
+      '                import os as _lrm_os\n'
+      '                _cap = int(_lrm_os.environ.get("LRMAGENT_OPENROUTER_MAX_TOKENS") or 8192)\n'
+      '                request_params["max_tokens"] = min(int(request_params.get("max_tokens") or _cap), _cap)\n',
+      root=app)
 # ---- AI plans (sign-ins for Codex, Claude Code, Gemini, ...) is a tab of Config, next to Models,
 # instead of its own menu page.
 patch("templates/views/config.html",

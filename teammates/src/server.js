@@ -28,8 +28,11 @@ const ASSETS = {
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
 let saved = {};
 try { saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { /* first start */ }
+// The owner's standing choice for Codex; a model saved in Config → AI plans replaces it.
+const DEFAULT_MODELS = { codex: process.env.TEAMMATE_CODEX_MODEL ?? 'gpt-6-sol' };
 const settings = {
-  model: (id) => String(saved[id]?.model || ''),
+  model: (id) => String(saved[id]?.model || DEFAULT_MODELS[id] || ''),
+  saved: (id) => String(saved[id]?.model || ''),
   set(id, model) {
     saved[id] = { ...(saved[id] || {}), model: String(model || '').trim().slice(0, 120) };
     fs.mkdirSync(DATA, { recursive: true });
@@ -61,7 +64,7 @@ async function teammateRows(force = false) {
     const s = await status(t, RUN_AS).catch(() => ({ installed: false, signedIn: false }));
     const model = settings.model(t.id) || (s.signedIn && t.provider ? await defaultModel(t, RUN_AS).catch(() => '') : '');
     const models = s.signedIn ? await modelChoices(t, RUN_AS).catch(() => []) : [];
-    return { id: t.id, name: t.name, maker: t.maker, plan: t.plan, blurb: t.blurb, loginHelp: t.loginHelp, model, models, modelSet: Boolean(settings.model(t.id)), ...s };
+    return { id: t.id, name: t.name, maker: t.maker, plan: t.plan, blurb: t.blurb, loginHelp: t.loginHelp, model, models, modelSet: Boolean(settings.saved(t.id)), ...s };
   }));
   cache = { at: Date.now(), rows };
   return rows;

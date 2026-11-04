@@ -166,7 +166,7 @@ class LrmVoiceHandler:
             return _json("503 Service Unavailable", {"error": f"The voice service is not reachable ({e.reason})."})
         except Exception as e:
             logger.warning(f"[Voice] {op} failed: {e}")
-            return _json("500 Internal Server Error", {"error": str(e)[:300]})
+            return _json("500 Internal Server Error", {"error": str(e)[:1500]})
 
 
 # The personal assistant exists from the first start, so it shows up on the Agents page.

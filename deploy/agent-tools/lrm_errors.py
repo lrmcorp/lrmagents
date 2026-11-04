@@ -64,11 +64,55 @@ def _short(text):
     return text[:300]
 
 
+# Short reasons for one model in the "every model failed" list.
+SHORT = (
+    (r"usage limit|hit your limit|plan limit|limit reached|try again (in|at) ", "plan usage limit reached"),
+    (r"fewer max_tokens|can only afford", "not enough credit for this request"),
+    (r"insufficient[ _](balance|quota|credits?)|credit balance|out of credit|payment required|exceeded your current quota|status: 402", "out of credit"),
+    (r"invalid[ _]api[ _]key|incorrect api key|unauthori[sz]ed|not signed in|not logged in|status: 401", "key or sign-in rejected"),
+    (r"rate[ _]limit|too many requests|status: 429", "too many requests"),
+    (r"model[ _]not[ _]found|does not exist|no such model|unknown (plan )?model|invalid model|status: 404", "model not available"),
+    (r"timed? ?out|timeout|connection|network", "could not be reached"),
+    (r"overloaded|busy|unavailable|bad gateway|internal server error|status: 5\d\d", "provider having problems"),
+)
+
+
+def _why(text):
+    low = text.lower()
+    for pattern, label in SHORT:
+        if re.search(pattern, low):
+            return label
+    return _short(text)[:90] or "failed"
+
+
+def all_failed(raw):
+    """One line per model that was tried, from upstream's 'a: err | b: err' detail."""
+    detail = raw.split("\n", 1)[1] if "\n" in raw else ""
+    seen, lines = set(), []
+    for part in detail.split(" | "):
+        name, _, err = part.partition(": ")
+        name = name.strip()
+        if not name or not err:
+            continue
+        line = f"• {name}{_provider(name) if '/' not in name else ''}: {_why(err)}"
+        if line not in seen:
+            seen.add(line)
+            lines.append(line)
+    if not lines:
+        return ""
+    return ("None of your AI models could answer. Each one was tried:\n" + "\n".join(lines[:8]) +
+            "\nTop up or sign in again where it says so (Config → Models, Config → AI plans). " + LOGS)
+
+
 def friendly(error, model_name=None):
     """A message for the chat explaining ``error`` in plain words."""
     raw = str(error or "").strip()
     try:
         low = raw.lower()
+        if ALL_FAILED in low:
+            listed = all_failed(raw)
+            if listed:
+                return listed
         provider = _provider(model_name)
         for pattern, message in RULES:
             if re.search(pattern, low):

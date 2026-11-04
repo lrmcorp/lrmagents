@@ -59,3 +59,23 @@ for cfg in ("/app/config.json", os.path.join(get_data_root(), "config.json"), "/
         except Exception as e:
             print(cfg, e)
 PY' </dev/null
+echo "== live test: one message to the personal assistant"
+dc exec -T cowagent sh -c 'cd /app && PYTHONPATH=/app python - <<PY 2>&1 | grep -v "^\[" | tail -15
+import json, time, urllib.request, urllib.error
+from config import load_config, conf
+load_config()
+port = int(conf().get("web_port") or 9899)
+body = {"agent_id": "personal", "conversation_id": "lrm-voice:personal:diagnose", "stream": False,
+        "messages": [{"role": "user", "content": "Diagnostic check from the owner: reply with just OK."}]}
+req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", data=json.dumps(body).encode(), method="POST",
+                             headers={"Authorization": "Bearer " + str(conf().get("external_api_token") or ""), "Content-Type": "application/json"})
+t = time.time()
+try:
+    r = json.load(urllib.request.urlopen(req, timeout=600))
+    print("answer:", repr(r["choices"][0]["message"]["content"])[:200], "model:", r.get("model"), f"{time.time()-t:.0f}s")
+except urllib.error.HTTPError as e:
+    print("failed:", e.code, e.read()[:1200])
+except Exception as e:
+    print("failed:", e)
+PY' </dev/null
+echo "== fallback during the test"; dc logs --no-color --since 15m cowagent 2>&1 | grep -iE 'fallback|LLM API error|failed across|402|usage limit|lrmplans' | cut -c1-380 | tail -25
