@@ -83,6 +83,10 @@ jobs:
           OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # OpenRouter (one key, many models) replaces the direct DeepSeek account when its key is set;
+          # its models are listed under OpenRouter in the model picker (the main model is chosen there).
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODELS: ${{ vars.LRMAGENT_OPENROUTER_MODELS || 'deepseek/deepseek-v4-pro-0813,deepseek/deepseek-v4.1-flash-1017' }}
           # Optional backup models, e.g. "claudeAPI:claude-sonnet-5-5,openai:gpt-5.5". Unset leaves
           # the fallback chain to Config -> Models -> Main Model -> Fallback in the console.
           MODEL_FALLBACK: ${{ vars.LRMAGENT_MODEL_FALLBACK }}
@@ -103,9 +107,29 @@ jobs:
             export CHAT_FALLBACK
             echo "Model fallback: $CHAT_FALLBACK" >> "$GITHUB_STEP_SUMMARY"
           fi
-          for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
-            if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
-          done | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.cowagent'
+          CLEAR=""
+          if [[ -n "$OPENROUTER_API_KEY" ]]; then
+            # A custom (OpenAI-compatible) provider, as Python literals: LRMagent reads list- and
+            # dict-valued settings from the environment with ast.literal_eval.
+            eval "$(python3 -c 'import os, shlex
+          models = [m.strip() for m in os.environ["OPENROUTER_MODELS"].split(",") if m.strip()]
+          provider = [{"id": "openrouter", "name": "OpenRouter", "api_key": os.environ["OPENROUTER_API_KEY"],
+                       "api_base": "https://openrouter.ai/api/v1", "model": models[0], "models": models}]
+          print("CUSTOM_PROVIDERS=" + shlex.quote(repr(provider)))')"
+            export CUSTOM_PROVIDERS
+            # The direct DeepSeek account is no longer used: clear any key saved before, and do not
+            # force a direct-DeepSeek main model; the main model stays the one chosen in the console.
+            DEEPSEEK_API_KEY=""; CLEAR="DEEPSEEK_API_KEY"
+            if [[ "$MODEL" == deepseek* && "$MODEL" != */* ]]; then MODEL=""; fi
+            echo "OpenRouter models in the picker: $OPENROUTER_MODELS" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::No OPENROUTER_API_KEY secret: add it (Settings → Secrets → Actions) to switch the agents to OpenRouter."
+          fi
+          { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL CUSTOM_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
+              if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
+            done
+            for name in $CLEAR; do printf '%s=\n' "$name"; done
+          } | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.cowagent'
           # The WhatsApp gateway talks to LRMagent through its OpenAI-compatible API with
           # a token generated once on the server and never leaving it.
           $SSH "$VPS" 'umask 077 && cd ~/cowagent && { test -s .env.api-token || openssl rand -hex 32 > .env.api-token; } \

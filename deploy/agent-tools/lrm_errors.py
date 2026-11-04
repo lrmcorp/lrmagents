@@ -17,7 +17,7 @@ LOGS = "Details are in Monitor → Logs."
 RULES = (
     (r"\[context_overflow\]|context length|context window|maximum context|too many tokens|prompt is too long",
      "This conversation has become too long for the AI model. Start a new chat and continue there."),
-    (r"insufficient[ _]balance|insufficient[ _]quota|credit balance|out of credit|billing|payment required|exceeded your current quota|status: 402",
+    (r"insufficient[ _]balance|insufficient[ _]quota|insufficient[ _]credits?|credit balance|out of credit|billing|payment required|exceeded your current quota|status: 402",
      "Your AI provider account{provider} has run out of credit, so the model can't answer. Top up the balance on the "
      "provider's website, or switch to another model under Config → Models (or say \"switch to Claude\" in chat)."),
     (r"invalid[ _]api[ _]key|incorrect api key|invalid x-api-key|authentication|unauthori[sz]ed|api key not valid|status: 401",
@@ -41,6 +41,8 @@ ALL_FAILED = "main model and every fallback model failed"
 
 def _provider(model_name):
     name = str(model_name or "").lower()
+    if "/" in name:  # vendor/model ids come through OpenRouter
+        return " (OpenRouter)"
     for key, label in (("deepseek", "DeepSeek"), ("claude", "Anthropic"), ("gpt", "OpenAI"),
                        ("o1", "OpenAI"), ("o3", "OpenAI"), ("o4", "OpenAI"), ("gemini", "Google Gemini"),
                        ("qwen", "Alibaba Qwen"), ("glm", "Zhipu GLM"), ("kimi", "Moonshot Kimi"),

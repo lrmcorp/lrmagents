@@ -430,4 +430,10 @@ patch("static/js/core/i18n.js", "function applyI18n() {\n",
 # ---- Dates as DD-MM-YYYY (the owner's format) on the Tasks page.
 patch("static/js/views/tasks.js", "d.toLocaleString()",
       "(d.toLocaleDateString('en-GB').replace(/\\//g, '-') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))", count="all")
+# ---- A custom provider may list several models ("models"), e.g. OpenRouter's: the chat
+# picker offers them all, not only the default "model".
+patch("api/sessions.py",
+      '                cp_model = str(cp.get("model") or "").strip()\n                if cp_model:\n                    models.append(cp_model)\n',
+      '                cp_model = str(cp.get("model") or "").strip()\n                if cp_model:\n                    models.append(cp_model)\n'
+      '                models += [m for m in (cp.get("models") or []) if isinstance(m, str) and m.strip() and m not in models]\n')
 print("LRM brand applied")
