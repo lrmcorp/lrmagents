@@ -1,6 +1,6 @@
 """The owner's personal assistant: a separate agent with voice, camera and private memory.
 
-- Created once at start-up (id "personal", named Rose; rename it on the Agents page).
+- Created once at start-up (id "personal", named Sora; rename it on the Agents page).
 - Its memory is its own workspace. Other agents can't open files there (file tools and
   shell commands that name it are refused), so what is personal stays with it.
 - Chats any agent has that are about the owner's private life are summarised into its
@@ -15,7 +15,8 @@ from pathlib import Path
 from common.log import logger
 
 ID = "personal"
-NAME = os.environ.get("LRMAGENT_PERSONAL_NAME", "Rose")
+NAME = os.environ.get("LRMAGENT_PERSONAL_NAME", "Sora")
+OLD_DEFAULT_NAMES = ("Rose",)  # earlier default; renamed once unless the owner chose a name
 
 PERSONA = """# AGENT.md - Who am I?
 
@@ -72,8 +73,19 @@ def workspace():
 
 
 def ensure_agent():
-    """Create the personal agent once; never touches it again after that."""
-    if profile() is not None:
+    """Create the personal agent once; afterwards only renames the earlier default name."""
+    current = profile()
+    if current is not None:
+        if current.name in OLD_DEFAULT_NAMES and current.name != NAME:
+            try:
+                from agent.admin import get_agent_admin_service
+                get_agent_admin_service().update_agent(ID, name=NAME)
+                persona = Path(current.workspace) / "AGENT.md"
+                text = persona.read_text(encoding="utf-8")
+                persona.write_text(re.sub(rf"\b{re.escape(current.name)}\b", NAME, text), encoding="utf-8")
+                logger.info(f"[Personal] renamed the personal agent {current.name} -> {NAME}")
+            except Exception as e:
+                logger.warning(f"[Personal] could not rename the personal agent: {e}")
         return False
     try:
         from agent.admin import get_agent_admin_service
