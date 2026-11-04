@@ -119,7 +119,28 @@ function _lrmEnsureWhatsApp(doc) {
         group.items.splice(at + 1, 0, Object.assign({}, page.item));
         for (const g of doc.groups) for (const i of g.items) if ((page.hide || []).includes(i.view)) i.hidden = true;
     }
-    return doc;
+    return _lrmGroup(doc);
+}
+
+// Short labelled sections, easier to scan than one long list. Pages the owner added
+// themselves keep their order in a last section; hidden pages stay hidden.
+function _lrmGroup(doc) {
+    const sections = [
+        { id: 'chat', title: '', keys: ['chat', 'artifacts'] },
+        { id: 'lrm-assistants', title: 'Assistants', keys: ['lrm-personal', 'agents', 'lrm-teammates'] },
+        { id: 'lrm-knowledge', title: 'Knowledge', keys: ['lrm-vault', 'skills', 'memory', 'knowledge'] },
+        { id: 'lrm-connect', title: 'Connect', keys: ['lrm-whatsapp', 'lrm-connections', 'channels'] },
+        { id: 'lrm-work', title: 'Work', keys: ['tasks', 'lrm-activity', 'lrm-browser'] },
+        { id: 'lrm-settings', title: 'Settings', keys: ['config', 'lrm-usage', 'logs'] },
+    ];
+    const keyOf = (i) => (i.type === 'builtin' ? i.view : i.id);
+    const all = doc.groups.flatMap(g => g.items);
+    const used = new Set();
+    const groups = sections.map(sec => ({ id: sec.id, title: sec.title, items: sec.keys.map(k => all.find(i => keyOf(i) === k)).filter(Boolean) }));
+    groups.forEach(g => g.items.forEach(i => used.add(i)));
+    const rest = all.filter(i => !used.has(i));
+    if (rest.length) groups.push({ id: 'lrm-more', title: 'More', items: rest });
+    return { groups: groups.filter(g => g.items.length) };
 }
 
 function _menuMergeStock(saved) {""")

@@ -56,7 +56,12 @@
         let moreOpen = false;
         try { moreOpen = localStorage.getItem('lrm_menu_more') === '1'; } catch (e) { /* private mode */ }
         setMore(moreOpen);
-        more.onclick = () => setMore(!sidebar.classList.contains('lrm-more-open'));
+        more.onclick = () => {
+            const open = !sidebar.classList.contains('lrm-more-open');
+            setMore(open);
+            // the Settings section opens at the end of the menu: bring it into view
+            if (open) requestAnimationFrame(() => nav.querySelector('[data-group="lrm-settings"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+        };
         nav.after(more);
 
         const account = document.createElement('div');
