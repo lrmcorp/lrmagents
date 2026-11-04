@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { explain } from '../src/jobs.js';
-import { TEAMMATES, byId, childEnv, pickModel, runArgs, safeFolder } from '../src/teammates.js';
+import { TEAMMATES, byId, childEnv, codexModels, pickModel, runArgs, safeFolder } from '../src/teammates.js';
 
 test('every teammate has a sign-in command and a run command', () => {
   for (const t of TEAMMATES) {
@@ -48,7 +48,7 @@ test('explain: plain reasons', () => {
   const t = byId('codex');
   assert.match(explain('Error: Not logged in. Run codex login', t), /not signed in/);
   assert.match(explain('429 usage limit reached', t), /usage limit/);
-  assert.match(explain('weird', t), /log on the Teammates page/);
+  assert.match(explain('weird', t), /log in Config → AI plans/);
 });
 
 test('plans as chat models: owner-only sessions', async () => {
@@ -58,4 +58,10 @@ test('plans as chat models: owner-only sessions', async () => {
   assert.equal((await allowedSession('web-session-1')).ok, true);
   assert.equal((await allowedSession('openai:conversation:lrm-brief:default:2026-11-04')).ok, true);
   assert.equal((await allowedSession('openai:conversation:api-caller')).ok, false);
+});
+
+test('codexModels: the plan\'s models from the Codex cache, hidden ones left out', () => {
+  const raw = JSON.stringify({ fetched_at: 'x', models: [{ slug: 'gpt-a', display_name: 'A' }, { slug: 'gpt-b', visibility: 'hide' }, { slug: 'gpt-a' }, 'gpt-c'] });
+  assert.deepEqual(codexModels(raw), [{ id: 'gpt-a', name: 'A' }, { id: 'gpt-c', name: 'gpt-c' }]);
+  assert.deepEqual(codexModels('not json'), []);
 });

@@ -142,6 +142,10 @@ test('approvalReply: YES/NO with a code, nothing else', () => {
   assert.deepEqual(approvalReply('YES k7qp'), { decision: 'approve', code: 'K7QP' });
   assert.deepEqual(approvalReply(' no K7QP. '), { decision: 'deny', code: 'K7QP' });
   assert.equal(approvalReply('yes please do it'), null);
+  assert.deepEqual(approvalReply('Yes'), { decision: 'approve', code: '' });
+  assert.deepEqual(approvalReply('iya!'), { decision: 'approve', code: '' });
+  assert.deepEqual(approvalReply('tidak'), { decision: 'deny', code: '' });
+  assert.equal(approvalReply('maybe'), null);
   assert.equal(approvalReply('K7QP'), null);
   assert.equal(approvalReply(''), null);
 });

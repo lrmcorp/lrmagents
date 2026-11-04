@@ -164,3 +164,32 @@ export async function defaultModel(teammate, ids = {}) {
   const r = await run(['opencode', 'models', teammate.provider], childEnv(teammate), { uid: ids.uid, gid: ids.gid, timeout: 30000 });
   return pickModel(teammate.provider, r.out.replace(/\x1b\[[0-9;]*m/g, '').split('\n'));
 }
+
+// Models the owner can pick for a teammate (Config → AI plans). Codex keeps the list
+// its ChatGPT plan offers in ~/.codex/models_cache.json; OpenCode lists a provider's
+// models; Claude Code takes its aliases. Blank in the picker means the CLI's default.
+export function codexModels(raw) {
+  let data;
+  try { data = JSON.parse(raw); } catch { return []; }
+  const list = Array.isArray(data) ? data : Array.isArray(data?.models) ? data.models : Array.isArray(data?.data) ? data.data : [];
+  const out = [];
+  for (const m of list) {
+    const slug = typeof m === 'string' ? m : m?.slug || m?.id || m?.model;
+    if (!slug || typeof slug !== 'string' || /^(hide|hidden)$/i.test(m?.visibility || '')) continue;
+    if (!out.some((o) => o.id === slug)) out.push({ id: slug, name: (typeof m === 'object' && (m.display_name || m.name)) || slug });
+  }
+  return out.slice(0, 40);
+}
+
+export async function modelChoices(teammate, ids = {}) {
+  if (teammate.id === 'codex') {
+    try { return codexModels(fs.readFileSync(path.join(HOME, '.codex', 'models_cache.json'), 'utf8')); } catch { return []; }
+  }
+  if (teammate.id === 'claude') return [{ id: 'opus', name: 'Opus (newest)' }, { id: 'sonnet', name: 'Sonnet (newest)' }, { id: 'haiku', name: 'Haiku (newest)' }];
+  if (teammate.provider) {
+    const r = await run(['opencode', 'models', teammate.provider], childEnv(teammate), { uid: ids.uid, gid: ids.gid, timeout: 30000 });
+    return r.out.replace(/\x1b\[[0-9;]*m/g, '').split('\n').map((l) => l.trim()).filter((l) => l.startsWith(`${teammate.provider}/`))
+      .slice(0, 60).map((id) => ({ id, name: id }));
+  }
+  return [];
+}

@@ -4,7 +4,7 @@ Grok or DeepSeek) running on the owner's own plans in the teammates container.
 Only the owner may use them: from the console, or from the WhatsApp number's own
 chat ("Message yourself"). Other WhatsApp contacts and API callers are refused,
 because these are personal subscriptions. The tool waits a little for the answer;
-longer tasks report back on WhatsApp (or on the Teammates page) when done.
+longer tasks report back on WhatsApp (or in Config → AI plans) when done.
 
 Installed into LRMagent by its image (deploy/agent-tools); see README.
 """
@@ -106,7 +106,7 @@ class AskTeammate(BaseTool):
                 lines = [f"- {r['id']} ({r['name']}, {r['plan']}): " + ("signed in" if r.get("signedIn") else "NOT signed in")
                          + (f", model {r['model']}" if r.get("model") else "") for r in rows]
                 return ToolResult.success("Teammates:\n" + "\n".join(lines)
-                                          + "\nOne that is not signed in needs a one-time sign-in on the console's Teammates page.")
+                                          + "\nOne that is not signed in needs a one-time sign-in in the console under Config → AI plans.")
             if action == "start":
                 return self._start(args, notify)
             job_id = (args.get("job_id") or "").strip()
@@ -148,7 +148,7 @@ class AskTeammate(BaseTool):
                     pass
                 return ToolResult.success(self._describe(job))
         where = "I'll get the result on this WhatsApp chat when it's done." if notify else \
-            "Follow it on the Teammates page, or ask me for its status."
+            "Follow it in Config → AI plans, or ask me for its status."
         return ToolResult.success(f"{teammate} is still working on it (job {job_id}). {where} "
                                   "Tell the user that, briefly; don't wait for it.")
 

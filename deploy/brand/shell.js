@@ -31,7 +31,7 @@
         plus.title = 'New chat';
         plus.setAttribute('aria-label', 'New chat');
         plus.innerHTML = '<i class="fas fa-plus"></i>';
-        plus.onclick = (e) => { if (typeof onNewChatButton === 'function') onNewChatButton(e); };
+        plus.onclick = (e) => newChatPicker(plus, e);
         brand.appendChild(plus);
 
         // The sidebar is the menu. "Chats" (top of it) opens the conversation list as a page
@@ -84,7 +84,7 @@
         window.lrmOpenChats = () => setChats(true);
         chatsItem.onclick = () => setChats(chats.hidden);
         $('.lrm-chats-close', chats).onclick = () => setChats(false);
-        $('.lrm-chats-new', chats).onclick = (e) => { setChats(false); if (typeof onNewChatButton === 'function') onNewChatButton(e); };
+        $('.lrm-chats-new', chats).onclick = (e) => newChatPicker($('.lrm-chats-new', chats), e, () => setChats(false));
         // Opening a chat, a page from the menu or a new chat closes the list.
         panel.addEventListener('click', (e) => { if (e.target.closest('.session-item') && !e.target.closest('button')) setChats(false); });
         nav.addEventListener('click', (e) => { if (e.target.closest('.sidebar-item')) setChats(false); });
@@ -203,6 +203,46 @@
         }
         if (note) note.hidden = !empty;
         filterSessions();
+    }
+
+    // ---- new chat: pick the agent (the stock picker lives in the chat list, out of sight) --------
+    function newChatPicker(anchor, event, before) {
+        event?.stopPropagation();
+        document.querySelector('.lrm-picker')?.remove();
+        const agents = agentList();
+        const start = (id) => {
+            before?.();
+            if (typeof startSoloChat === 'function') startSoloChat(id); else if (typeof newChat === 'function') newChat(true);
+            setTimeout(() => $('#chat-input')?.focus(), 60);
+        };
+        if (agents.length < 2) return start(agents[0]?.id);
+        const box = document.createElement('div');
+        box.className = 'lrm-picker';
+        box.innerHTML = `<div class="lrm-picker-head">New chat with</div>${agents.map((a) => `<button type="button" data-id="${esc(a.id)}">
+            <span class="lrm-picker-orb">${(() => { try { return typeof agentAvatarHTML === 'function' ? agentAvatarHTML(a, 26) : esc((a.name || a.id)[0]); } catch (e) { return esc((a.name || a.id)[0]); } })()}</span>
+            <span><b>${esc(a.name || a.id)}</b><small>${esc(a.description || '')}</small></span></button>`).join('')}
+            ${typeof openTeamChatModal === 'function' ? '<button type="button" data-team="1"><span class="lrm-picker-orb"><i class="fas fa-user-group"></i></span><span><b>Team chat</b><small>Several agents in one conversation</small></span></button>' : ''}`;
+        document.body.appendChild(box);
+        const r = anchor.getBoundingClientRect();
+        box.style.top = `${Math.min(r.bottom + 6, innerHeight - box.offsetHeight - 10)}px`;
+        box.style.left = `${Math.max(10, Math.min(r.left, innerWidth - box.offsetWidth - 10))}px`;
+        box.addEventListener('click', (e) => {
+            const b = e.target.closest('button'); if (!b) return;
+            box.remove();
+            if (b.dataset.team) { before?.(); openTeamChatModal(); } else start(b.dataset.id);
+        });
+        setTimeout(() => document.addEventListener('click', function off(e) { if (!box.contains(e.target)) { box.remove(); document.removeEventListener('click', off); } }), 0);
+    }
+    // Starting a chat with an agent always lands on the chat, whatever page was open.
+    for (const name of ['startSoloChat', 'startChatWithAgent']) {
+        const original = window[name];
+        if (typeof original !== 'function') continue;
+        window[name] = function (...args) {
+            const out = original.apply(this, args);
+            try { if (typeof currentView !== 'undefined' && currentView !== 'chat' && typeof navigateTo === 'function') navigateTo('chat'); } catch (e) { /* ignore */ }
+            document.querySelector('.lrm-chats')?.setAttribute('hidden', '');
+            return out;
+        };
     }
 
     // ---- tool steps: one line per answer -------------------------------------------

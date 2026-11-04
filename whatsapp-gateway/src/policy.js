@@ -351,10 +351,15 @@ export function extractLocalFiles(text, roots) {
 }
 
 // "YES K7QP" / "no k7qp": the owner answering an approval request.
+// "yes" / "no" (English or Indonesian) answers the newest request waiting for the owner;
+// "YES CODE" still picks a specific one. Anything longer is a normal message.
+const YES = /^(yes|y|ok|okay|approve|allow|ya|iya|yap|yup|boleh|setuju|lanjut)$/i;
+const NO = /^(no|n|nope|deny|refuse|reject|tidak|nggak|gak|enggak|jangan|tolak)$/i;
 export function approvalReply(text) {
-  const m = /^\s*(yes|y|ok|approve|allow|no|n|deny|refuse)\s+([A-Za-z0-9]{4,6})\s*[.!]?\s*$/i.exec(String(text ?? ''));
-  if (!m) return null;
-  return { decision: /^(yes|y|ok|approve|allow)$/i.test(m[1]) ? 'approve' : 'deny', code: m[2].toUpperCase() };
+  const t = String(text ?? '').trim().replace(/[.!👍✅❌]+$/u, '').trim();
+  const m = /^(\S+)(?:\s+([A-Za-z0-9]{4,6}))?$/.exec(t);
+  if (!m || !(YES.test(m[1]) || NO.test(m[1]))) return null;
+  return { decision: YES.test(m[1]) ? 'approve' : 'deny', code: m[2] ? m[2].toUpperCase() : '' };
 }
 
 // Plain text only (no media): messages that may be joined with the next few when

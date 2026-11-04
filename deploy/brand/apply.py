@@ -131,15 +131,17 @@ function _lrmGroup(doc) {
         { id: 'lrm-knowledge', title: 'Knowledge', keys: ['lrm-vault', 'skills', 'memory', 'knowledge'] },
         { id: 'lrm-connect', title: 'Connect', keys: ['lrm-whatsapp', 'lrm-connections', 'channels'] },
         { id: 'lrm-work', title: 'Work', keys: ['tasks', 'lrm-activity', 'lrm-browser'] },
-        { id: 'lrm-settings', title: 'Settings', keys: ['config', 'lrm-teammates', 'lrm-usage', 'logs'] },
+        { id: 'lrm-settings', title: 'Settings', keys: ['config', 'lrm-usage', 'logs'] },
     ];
     const keyOf = (i) => (i.type === 'builtin' ? i.view : i.id);
     // Teammates is where the AI plans are signed in (Codex, Claude, Gemini...): a setting.
-    for (const g of doc.groups) for (const i of g.items) if (i.id === 'lrm-teammates' && (!i.title || i.title === 'Teammates')) i.title = 'AI plans';
+    // AI plans is a tab of Config now (Config → AI plans): no menu entry of its own.
+    const retired = new Set(['lrm-teammates']);
     const all = doc.groups.flatMap(g => g.items);
     const used = new Set();
     const groups = sections.map(sec => ({ id: sec.id, title: sec.title, items: sec.keys.map(k => all.find(i => keyOf(i) === k)).filter(Boolean) }));
     groups.forEach(g => g.items.forEach(i => used.add(i)));
+    all.forEach(i => { if (retired.has(keyOf(i))) used.add(i); });
     const rest = all.filter(i => !used.has(i));
     if (rest.length) groups.push({ id: 'lrm-more', title: 'More', items: rest });
     return { groups: groups.filter(g => g.items.length) };
@@ -446,4 +448,31 @@ patch("api/sessions.py",
       '                cp_model = str(cp.get("model") or "").strip()\n                if cp_model:\n                    models.append(cp_model)\n',
       '                cp_model = str(cp.get("model") or "").strip()\n                if cp_model:\n                    models.append(cp_model)\n'
       '                models += [m for m in (cp.get("models") or []) if isinstance(m, str) and m.strip() and m not in models]\n')
+# ---- Keep trying: three rounds over the fallback chain instead of two (the owner asked that a
+# turn goes on to other models until one answers).
+patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
+# ---- AI plans (sign-ins for Codex, Claude Code, Gemini, ...) is a tab of Config, next to Models,
+# instead of its own menu page.
+patch("templates/views/config.html",
+      '                                    <button id="config-tab-integrations" onclick="switchConfigTab(\'integrations\')"',
+      '                                    <button id="config-tab-plans" onclick="switchConfigTab(\'plans\')"\n'
+      '                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">\n'
+      '                                        <i class="fas fa-robot mr-1.5"></i><span>AI plans</span>\n'
+      '                                    </button>\n'
+      '                                    <button id="config-tab-integrations" onclick="switchConfigTab(\'integrations\')"')
+patch("templates/views/config.html",
+      '                            <div id="config-panel-integrations" class="grid gap-6 hidden">',
+      '                            <div id="config-panel-plans" class="hidden">\n'
+      '                                <p class="text-sm text-slate-500 mb-3">Your own subscriptions (ChatGPT, Claude, Google, xAI) as models and coding teammates. '
+      'Sign in once here; signed-in plans appear under <b>Your plans</b> in the model picker.</p>\n'
+      '                                <iframe id="lrm-plans-frame" title="AI plans" style="width:100%;height:calc(100vh - 230px);min-height:520px;border:1px solid var(--lrm-line,#dbdbe5);border-radius:12px;background:#fff"></iframe>\n'
+      '                            </div>\n'
+      '                            <div id="config-panel-integrations" class="grid gap-6 hidden">')
+patch("static/js/views/config.js",
+      "    ['basic', 'models', 'integrations'].forEach(name => {",
+      "    ['basic', 'models', 'plans', 'integrations'].forEach(name => {")
+patch("static/js/views/config.js",
+      "    if (tab === 'integrations') loadIntegrationsView();\n",
+      "    if (tab === 'integrations') loadIntegrationsView();\n"
+      "    if (tab === 'plans') { const f = document.getElementById('lrm-plans-frame'); if (f && !f.src) f.src = '/teammates/'; }\n")
 print("LRM brand applied")

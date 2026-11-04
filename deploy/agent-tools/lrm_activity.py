@@ -313,11 +313,11 @@ def gate(executor, tool_name, arguments, tool_call_id):
         executor._emit_event("tool_execution_progress", {
             "tool_call_id": tool_call_id, "tool_name": tool_name,
             "message": f"⏳ Waiting for your approval (code {code}): this {why}. Approve or deny below, on the Activity page, "
-                       f"or reply YES {code} / NO {code} on your WhatsApp. Expires in {minutes} min.",
+                       f"or reply yes / no on your WhatsApp. Expires in {minutes} min.",
         })
         if channel != "web":
             _notify_owner(agent_id, f"🔐 Approval needed ({_agent_name(agent_id)}): it wants to {why}.\n\n{tool_name}: {summary}\n\n"
-                                    f"Reply YES {code} to allow or NO {code} to refuse. Expires in {minutes} min.")
+                                    f"Reply *yes* to allow or *no* to refuse. Expires in {minutes} min.")
         deadline = time.time() + TIMEOUT
         cancel = getattr(executor, "cancel_event", None)
         status = "pending"

@@ -87,6 +87,11 @@ jobs:
           # its models are listed under OpenRouter in the model picker (the main model is chosen there).
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODELS: ${{ vars.LRMAGENT_OPENROUTER_MODELS || 'deepseek/deepseek-v4-pro-0813,deepseek/deepseek-v4.1-flash-1017' }}
+          # The main model of every agent (an agent's own model in Agents, and a chat's pick, still win).
+          # Default: Codex on the owner's ChatGPT plan, with the OpenRouter models as automatic backups
+          # (they also answer contacts, who can't use the owner's plans).
+          MAIN_PROVIDER: ${{ vars.LRMAGENT_MAIN_PROVIDER || 'custom:lrmplans' }}
+          MAIN_MODEL: ${{ vars.LRMAGENT_MAIN_MODEL || 'codex' }}
           # Optional backup models, e.g. "claudeAPI:claude-sonnet-5-5,openai:gpt-5.5". Unset leaves
           # the fallback chain to Config -> Models -> Main Model -> Fallback in the console.
           MODEL_FALLBACK: ${{ vars.LRMAGENT_MODEL_FALLBACK }}
@@ -122,11 +127,22 @@ jobs:
             DEEPSEEK_API_KEY=""; CLEAR="DEEPSEEK_API_KEY"
             export LRMAGENT_HIDDEN_PROVIDERS="deepseek"
             if [[ "$MODEL" == deepseek* && "$MODEL" != */* ]]; then MODEL=""; fi
+            # Settings saved in the console still pointed at the direct DeepSeek account: set the main
+            # model explicitly (an empty variable would not override them).
+            BOT_TYPE="$MAIN_PROVIDER"; MODEL="$MAIN_MODEL"; export BOT_TYPE MODEL
+            if [[ -z "$MODEL_FALLBACK" ]]; then
+              CHAT_FALLBACK="$(python3 -c 'import os
+          models = [m.strip() for m in os.environ["OPENROUTER_MODELS"].split(",") if m.strip()]
+          # last resort: OpenRouter's auto router picks any model that is up
+          print(repr({"enabled": True, "chain": [{"provider": "custom:openrouter", "model": m} for m in models + ["openrouter/auto"]]}))')"
+              export CHAT_FALLBACK
+            fi
+            echo "Main model: $BOT_TYPE / $MODEL · backups: $OPENROUTER_MODELS" >> "$GITHUB_STEP_SUMMARY"
             echo "OpenRouter models in the picker: $OPENROUTER_MODELS" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::warning::No OPENROUTER_API_KEY secret: add it (Settings → Secrets → Actions) to switch the agents to OpenRouter."
           fi
-          { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL CUSTOM_PROVIDERS LRMAGENT_HIDDEN_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
+          { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL BOT_TYPE CUSTOM_PROVIDERS LRMAGENT_HIDDEN_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
               if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
             done
             for name in $CLEAR; do printf '%s=\n' "$name"; done

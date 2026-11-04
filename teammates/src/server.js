@@ -11,7 +11,7 @@ import pty from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { Jobs, RUN_AS } from './jobs.js';
 import { MODEL_OF, PLAN_MODELS, handleCompletion } from './chat.js';
-import { HOME, TEAMMATES, byId, childEnv, defaultModel, status } from './teammates.js';
+import { HOME, TEAMMATES, byId, childEnv, defaultModel, modelChoices, status } from './teammates.js';
 
 const PORT = Number(process.env.PORT || 8090);
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -60,7 +60,8 @@ async function teammateRows(force = false) {
   const rows = await Promise.all(TEAMMATES.map(async (t) => {
     const s = await status(t, RUN_AS).catch(() => ({ installed: false, signedIn: false }));
     const model = settings.model(t.id) || (s.signedIn && t.provider ? await defaultModel(t, RUN_AS).catch(() => '') : '');
-    return { id: t.id, name: t.name, maker: t.maker, plan: t.plan, blurb: t.blurb, loginHelp: t.loginHelp, model, modelSet: Boolean(settings.model(t.id)), ...s };
+    const models = s.signedIn ? await modelChoices(t, RUN_AS).catch(() => []) : [];
+    return { id: t.id, name: t.name, maker: t.maker, plan: t.plan, blurb: t.blurb, loginHelp: t.loginHelp, model, models, modelSet: Boolean(settings.model(t.id)), ...s };
   }));
   cache = { at: Date.now(), rows };
   return rows;
@@ -124,7 +125,7 @@ async function route(req, res) {
     if (p === '/teammates/v1/chat/completions' && req.method === 'POST') {
       const body = await readJson(req, 8 << 20);
       const row = (await teammateRows()).find((t) => t.id === PLAN_MODELS[body.model]);
-      if (row && !row.signedIn) return send(res, 409, { error: { message: `${row.name} is not signed in yet. Sign in once on the Teammates page (console menu → Teammates).` } });
+      if (row && !row.signedIn) return send(res, 409, { error: { message: `${row.name} is not signed in yet. Sign in once on Config → AI plans in the console.` } });
       return handleCompletion(req, res, body, settings);
     }
     return send(res, 404, { error: { message: 'not found' } });
@@ -136,7 +137,7 @@ async function route(req, res) {
     if (p === '/teammates/internal/jobs' && req.method === 'POST') {
       const body = await readJson(req);
       const row = (await teammateRows()).find((t) => t.id === body.teammate);
-      if (row && !row.signedIn) return send(res, 409, { error: `${row.name} is not signed in yet. Sign in once on the Teammates page (console menu → Teammates).` });
+      if (row && !row.signedIn) return send(res, 409, { error: `${row.name} is not signed in yet. Sign in once on Config → AI plans in the console.` });
       return send(res, 200, { job: jobs.create({ ...body, source: body.notify ? 'whatsapp' : 'agent' }) });
     }
     const m = p.match(/^\/teammates\/internal\/jobs\/([a-f0-9]+)(\/stop|\/ack)?$/);

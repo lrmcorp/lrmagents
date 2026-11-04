@@ -48,7 +48,15 @@ class LrmActivityHandler:
             return json.dumps({"status": "error", "message": "invalid JSON"})
         if body.get("op") == "decide":
             via = "whatsapp" if _internal_caller() else "console"
-            done = act.decide(body.get("code"), body.get("decision"), via)
+            code = str(body.get("code") or "").strip().upper()
+            if not code:
+                # A plain "yes"/"no": the newest request waiting for the owner, tool approval or vault update.
+                from agent import lrm_vault_flow as flow
+                waiting = [(r.get("ts") or 0, r["code"]) for r in act.pending()]
+                waiting += [(i.get("updated") or 0, i.get("code")) for i in flow._load() if i["status"] == "owner" and i.get("code")]
+                code = max(waiting)[1] if waiting else ""
+                body["code"] = code
+            done = act.decide(body.get("code"), body.get("decision"), via) if code else None
             if not done:
                 # A vault update waiting for the owner answers to the same YES/NO CODE replies.
                 from agent import lrm_vault_flow as flow
@@ -62,7 +70,9 @@ class LrmActivityHandler:
                                        f"✅ Saved to the vault: {item['path'].replace('knowledge/', '', 1)}" if saved
                                        else f"🚫 Not saved: {item['title']}"}, ensure_ascii=False)
                 return json.dumps({"status": "error", "message": "No pending approval with that code (it may have expired)."})
-            return json.dumps({"status": "success", "approval": done}, ensure_ascii=False)
+            what = done.get("summary") or done.get("tool_name") or ""
+            return json.dumps({"status": "success", "approval": done, "message":
+                               (f"✅ Allowed: {what}" if done.get("status") == "approved" else f"🚫 Refused: {what}")}, ensure_ascii=False)
         if body.get("op") == "mode" and not _internal_caller():
             try:
                 act.set_mode(body.get("mode"))

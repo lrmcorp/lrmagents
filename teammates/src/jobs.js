@@ -117,7 +117,7 @@ export class Jobs {
     const dir = prepareFolder(t, job.folder, RUN_AS.uid, RUN_AS.gid);
     let model = this.settings.model(t.id);
     if (!model && t.provider) model = await defaultModel(t, RUN_AS);
-    if (t.provider && !model) throw new Error(`${t.name} is not signed in, so no model is available. Sign in on the Teammates page.`);
+    if (t.provider && !model) throw new Error(`${t.name} is not signed in, so no model is available. Sign in in Config → AI plans.`);
     Object.assign(job, { status: 'running', startedAt: Date.now(), model });
     this.save(job);
     const logFile = path.join(JOBS, `${job.id}.log`);
@@ -183,8 +183,8 @@ export class Jobs {
 // Plain-language reasons for the usual failures.
 export function explain(output, teammate) {
   const low = String(output || '').toLowerCase();
-  if (/not logged in|please log in|login required|unauthori[sz]ed|401|invalid api key|authentication|no credentials|run .*login/.test(low)) return `${teammate.name} is not signed in (or its sign-in expired). Sign in again on the Teammates page.`;
+  if (/not logged in|please log in|login required|unauthori[sz]ed|401|invalid api key|authentication|no credentials|run .*login/.test(low)) return `${teammate.name} is not signed in (or its sign-in expired). Sign in again in Config → AI plans.`;
   if (/usage limit|rate limit|quota|429|limit reached|out of credits|insufficient/.test(low)) return `${teammate.name} hit its plan's usage limit. Try again later or use another teammate.`;
   if (/enotfound|econnrefused|network|timed out|timeout/.test(low)) return `${teammate.name} could not reach its service. Try again in a moment.`;
-  return `${teammate.name} stopped with an error. The log on the Teammates page has the details.`;
+  return `${teammate.name} stopped with an error. The log in Config → AI plans has the details.`;
 }

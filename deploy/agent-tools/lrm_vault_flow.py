@@ -280,7 +280,7 @@ def _notify_owner(item):
         + ([f"- What: {item['summary']}"] if item["summary"] else [])
         + ([f"- Note: {item['review_note']}"] if item.get("review_note") else [])
         + ["", *[(l if l.startswith(("-", "*")) else f"> {l}") for l in preview]]
-        + ["", f"Reply *YES {item.get('code', '')}* to save or *NO {item.get('code', '')}* to reject."
+        + ["", "Reply *yes* to save or *no* to reject."
            + (f" Full note: {domain} → Vault → Updates." if domain else " Full note: Vault → Updates.")])
     try:
         req = urllib.request.Request(f"{url}/whatsapp/internal/notify-owner", method="POST",

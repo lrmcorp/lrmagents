@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Teammates · LRMagent</title>
+<title>AI plans · LRMagent</title>
 <link rel="icon" href="/assets/favicon.ico">
 <link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
 <link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
@@ -47,7 +47,9 @@
   .check { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-2); font-weight: 500; white-space: nowrap; }
   .check input { width: auto; accent-color: var(--primary); }
   .model { display: flex; gap: 6px; }
-  .model input { font-size: 12px; padding: 5px 8px; }
+  .model input, .model select { font-size: 12px; padding: 5px 8px; min-width: 0; }
+  .model input[hidden] { display: none; }
+  .model-f { margin-top: 10px; }
   .jobs { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
   .job { display: grid; grid-template-columns: 110px 1fr auto; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; align-items: center; }
   .job:last-child { border-bottom: 0; }
@@ -72,10 +74,10 @@
 </head>
 <body>
 <main>
-  <h1>Teammates</h1>
+  <h1>AI plans</h1>
   <p class="lede">Coding and research AIs that work for you on the plans you already pay for. Sign each one in once. Then give them tasks here, or just ask any agent, in the console or on your own WhatsApp: <i>"ask Codex to fix the login bug in the ln repo"</i>. Each teammate keeps its own folders and remembers its previous session there.</p>
 
-  <h2>Your teammates <button id="refresh" title="Check sign-in again"><i class="fas fa-rotate"></i> Refresh</button></h2>
+  <h2>Your plans <button id="refresh" title="Check sign-in again"><i class="fas fa-rotate"></i> Refresh</button></h2>
   <div class="grid" id="cards"><div class="empty">Loading…</div></div>
 
   <h2>Give a task</h2>
@@ -115,10 +117,23 @@ async function api(path, body) {
 }
 const ago = (t) => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
 
+// The model a plan runs on: what the plan offers, or any name typed under "Other".
+function modelPicker(t) {
+  const list = t.models || [];
+  const cur = t.modelSet ? t.model : '';
+  const known = !cur || list.some((m) => m.id === cur);
+  const opts = [`<option value="">Default${!t.modelSet && t.model ? ` (${esc(t.model)})` : ''}</option>`]
+    .concat(list.map((m) => `<option value="${esc(m.id)}" ${m.id === cur ? 'selected' : ''}>${esc(m.name && m.name !== m.id ? `${m.name} · ${m.id}` : m.id)}</option>`))
+    .concat(`<option value="__other" ${known ? '' : 'selected'}>Other…</option>`);
+  return `<label class="f model-f">Model<div class="model"><select data-pick="${t.id}">${opts.join('')}</select>
+    <input data-model="${t.id}" value="${known ? '' : esc(cur)}" placeholder="model name" spellcheck="false" ${known ? 'hidden' : ''}>
+    <button data-save="${t.id}">Save</button></div></label>`;
+}
+
 function renderCards() {
   $('#cards').innerHTML = state.teammates.map((t) => {
     const pill = !t.installed ? '<span class="pill off">Not installed</span>' : t.signedIn ? `<span class="pill ok"><i class="fas fa-check"></i>Signed in${t.detail ? ` · ${esc(t.detail)}` : ''}</span>` : '<span class="pill no">Not signed in</span>';
-    const model = ['grok', 'deepseek'].includes(t.id) || t.modelSet ? `<div class="model"><input data-model="${t.id}" value="${esc(t.model)}" placeholder="${t.id === 'grok' ? 'xai/…' : t.id === 'deepseek' ? 'deepseek/…' : 'default model'}" title="Model; blank picks one" spellcheck="false"><button data-save="${t.id}">Save</button></div>` : '';
+    const model = t.signedIn ? modelPicker(t) : '';
     return `<div class="card"><div class="who"><span class="orb" style="background:${COLORS[t.id]}">${esc(t.name[0])}</span><span><b>${esc(t.name)}</b><small>${esc(t.maker)} · ${esc(t.plan)}${t.version ? ` · ${esc(t.version)}` : ''}</small></span></div>
       <p class="blurb">${esc(t.blurb)}</p>${pill}${model}
       <div class="row"><button class="${t.signedIn ? '' : 'primary'}" data-login="${t.id}"><i class="fas fa-right-to-bracket"></i>${t.signedIn ? 'Sign in again' : 'Sign in'}</button>
@@ -211,6 +226,15 @@ async function showJob(id) {
   tick();
 }
 
+function pickedModel(id) {
+  const sel = $(`[data-pick="${id}"]`);
+  return sel && sel.value !== '__other' ? sel.value : $(`[data-model="${id}"]`).value;
+}
+document.addEventListener('change', (e) => {
+  const sel = e.target.closest('select[data-pick]');
+  if (sel) { const box = $(`[data-model="${sel.dataset.pick}"]`); box.hidden = sel.value !== '__other'; if (!box.hidden) box.focus(); }
+});
+
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('button, .job');
   if (!b) return;
@@ -218,7 +242,7 @@ document.addEventListener('click', async (e) => {
   if (b.dataset.shell) return terminal(null, true);
   if (b.dataset.task) { $('#who').value = b.dataset.task; $('#task').focus(); return; }
   if (b.dataset.save) {
-    try { await api('/teammates/api/settings', { teammate: b.dataset.save, model: $(`[data-model="${b.dataset.save}"]`).value }); toast('Saved'); load(true); } catch (err) { toast(err.message, true); }
+    try { await api('/teammates/api/settings', { teammate: b.dataset.save, model: pickedModel(b.dataset.save) }); toast('Saved'); load(true); } catch (err) { toast(err.message, true); }
     return;
   }
   if (b.dataset.job) return showJob(b.dataset.job);
