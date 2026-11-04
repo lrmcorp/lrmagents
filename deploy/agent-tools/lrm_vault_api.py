@@ -332,6 +332,8 @@ class LrmVaultHandler:
                            editable=vault.vpath(section, rel) not in READ_ONLY)
             if params.op == "search":
                 return self._search(vault, params.q)
+            if params.op == "git":
+                return _ok(**git_state())
             return _fail("unknown op")
         except (VaultError, FileNotFoundError) as e:
             web.header("Content-Type", "application/json; charset=utf-8")
@@ -349,6 +351,10 @@ class LrmVaultHandler:
             agent_id = body.get("agent_id") or web.input(agent_id="").agent_id
             vault = Vault(agent_id)
             op = body.get("op")
+            if op == "git_config":
+                return _ok(**git_request("config", body.get("repo", "")))
+            if op == "git_sync":
+                return _ok(**git_request("sync"))
             with _lock:
                 if op == "write":
                     return self._write(vault, body)
@@ -584,3 +590,52 @@ def _rebase_relative_links(text, old_vpath, new_vpath, moved):
         return m.group(0).replace(href, rebased, 1)
 
     return MDLINK.sub(md, text)
+
+
+# ---- Git: the host's vault sync, through ~/vault-sync/control (deploy/vault-control.sh) ----
+
+GIT_CONTROL = os.environ.get("LRMAGENT_VAULT_CONTROL", "/home/agent/vault-control")
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def git_state():
+    path = os.path.join(GIT_CONTROL, "state.json")
+    if not os.path.isdir(GIT_CONTROL):
+        return {"available": False}
+    try:
+        with open(path, encoding="utf-8") as f:
+            state = json.load(f)
+    except (OSError, ValueError):
+        return {"available": True, "ready": False}
+    state["sync_status"] = state.pop("status", "")  # "status" is the API's own success field
+    state.update(available=True, ready=True, stale=time.time() - float(state.get("updated") or 0) > 180,
+                 pending_config=os.path.exists(os.path.join(GIT_CONTROL, "config-request.json")),
+                 pending_sync=os.path.exists(os.path.join(GIT_CONTROL, "sync-request")))
+    return state
+
+
+def normalize_repo(text):
+    """owner/repo from what people paste: a URL, an SSH address or owner/repo."""
+    text = str(text or "").strip()
+    m = re.search(r"github\.com[:/]+([^/\s]+/[^/\s]+?)(?:\.git)?/?$", text)
+    if m:
+        text = m.group(1)
+    return text.removesuffix(".git").strip("/")
+
+
+def git_request(kind, repo=""):
+    if not os.path.isdir(GIT_CONTROL):
+        raise VaultError("Git sync is not set up on this server yet (it arrives with the next deploy).")
+    if kind == "config":
+        repo = normalize_repo(repo)
+        if repo and not _REPO_RE.match(repo):
+            raise VaultError("Enter the repository as owner/name, e.g. lrmcorp/lrmagent-vault.")
+        target, data = "config-request.json", json.dumps({"repo": repo})
+    else:
+        target, data = "sync-request", str(int(time.time()))
+    tmp = os.path.join(GIT_CONTROL, f".{target}.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(data)
+    os.chmod(tmp, 0o666)
+    os.replace(tmp, os.path.join(GIT_CONTROL, target))
+    return git_state()

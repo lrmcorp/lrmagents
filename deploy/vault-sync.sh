@@ -18,7 +18,10 @@
 # the agent's version beside it as "<note> (agent copy <date>).md".
 set -Eeuo pipefail
 
-REPO="${1:?usage: vault-sync.sh owner/repo}"
+# The repo: the argument, else the one set from the console's Vault → Git panel or the
+# LRMAGENT_VAULT_REPO variable (~/vault-sync/repo-name). None set: nothing to do.
+REPO="${1:-$(cat "$HOME/vault-sync/repo-name" 2>/dev/null || true)}"
+[[ -n "$REPO" ]] || exit 0
 URL="${VAULT_REMOTE_URL:-git@github.com:$REPO.git}"
 VOLUME="${VAULT_VOLUME:-cowagent_workspace}"
 BASE="$HOME/vault-sync"

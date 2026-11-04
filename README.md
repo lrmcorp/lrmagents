@@ -166,6 +166,9 @@ When an AI model call fails, the chat says what happened and what to do instead 
 
 ### Open the vault in Obsidian (hourly two-way sync)
 
+**Easiest:** in the console, open **Vault** and press the GitHub button (top right). Enter the repository (`owner/name`); the panel shows the server's deploy key with the exact steps (create the private repo, add the key with write access), then **Sync now** and the last sync result and log. It works through `deploy/vault-control.sh` (cron, every minute) and `~/vault-sync/control`, mounted into the console. The `LRMAGENT_VAULT_REPO` variable below still works and, when set, wins over the panel.
+
+
 The vault can be synced with a **private** GitHub repo, so you can read and edit it in Obsidian on desktop or phone (for example with the Obsidian Git plugin).
 
 1. Create an empty **private** repository, for example `lrmcorp/lrmagent-vault`. This repo (`lrmagents`) is public, so it must not hold the vault.

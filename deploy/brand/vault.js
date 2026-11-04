@@ -1476,6 +1476,92 @@ function quickSwitcher(newTab = false) {
   });
 }
 
+// ---- Git: sync with a private GitHub repo, opened as a vault in Obsidian ---------------------------
+const GIT_STATE = {
+  OK: ['ok', 'Synced'], RETRY: ['busy', 'Will retry'], CONFLICT: ['bad', 'Conflict'], FAIL: ['bad', 'Problem'],
+};
+function gitBadge(st) {
+  if (!st?.available || !st.ready) return ['', 'Not set up'];
+  if (st.syncing || st.pending_sync) return ['busy', 'Syncing…'];
+  if (st.pending_config) return ['busy', 'Saving…'];
+  if (!st.repo) return ['', 'Off'];
+  return GIT_STATE[st.sync_status] || ['busy', 'Waiting for first sync'];
+}
+async function gitDot() {
+  try {
+    const st = await api('git');
+    const [cls] = gitBadge(st);
+    const dot = $('#git-dot');
+    dot.hidden = !st.repo;
+    dot.className = `git-dot ${cls}`;
+  } catch { /* ignore */ }
+}
+
+function gitPanel() {
+  const { overlay, close } = modal('<div class="git" id="git-body">Loading…</div>');
+  overlay.querySelector('.modal').style.width = 'min(640px, calc(100vw - 32px))';
+  let timer = null; let typing = false;
+  const stop = () => { clearTimeout(timer); };
+  overlay.addEventListener('cancel', stop);
+  const draw = (st) => {
+    const body = $('#git-body', overlay);
+    if (!body) return stop();
+    if (!st.available) {
+      body.innerHTML = '<h3><i class="fa-brands fa-github"></i>Sync with GitHub</h3><p>Git sync is not on this server yet. It arrives with the next deploy.</p>';
+      return;
+    }
+    const [cls, label] = gitBadge(st);
+    const repo = st.repo || '';
+    const when = st.status_time ? new Date(st.status_time).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    const needsKey = st.sync_status === 'FAIL' && /reach|deploy key|permission|denied/i.test(st.message || '');
+    const steps = repo && (needsKey || !st.sync_status) ? `
+      <ol>
+        <li>Create the repository if it doesn't exist: <a href="https://github.com/new?name=${encodeURIComponent(repo.split('/')[1] || '')}&visibility=private" target="_blank" rel="noopener">github.com/new</a>, owner <b>${esc(repo.split('/')[0])}</b>, name <b>${esc(repo.split('/')[1])}</b>, <b>Private</b>.</li>
+        <li>Open <a href="https://github.com/${esc(repo)}/settings/keys/new" target="_blank" rel="noopener">${esc(repo)} → Settings → Deploy keys → Add</a>. Title <b>LRMagent</b>, paste the key below, tick <b>Allow write access</b>, then <b>Add key</b>.</li>
+        <li>Come back and press <b>Sync now</b>.</li>
+      </ol>
+      <div class="key" id="git-key">${esc(st.deploy_key || 'The key appears within a minute.')}</div>
+      <div class="row"><button class="btn" id="git-copy"><i class="fa-regular fa-copy"></i> Copy key</button></div>` : '';
+    body.innerHTML = `<h3><i class="fa-brands fa-github"></i>Sync with GitHub <span class="state ${cls}">${esc(label)}</span><button class="icon-btn x" id="git-close" title="Close"><i class="fa-solid fa-xmark"></i></button></h3>
+      <p class="muted" style="margin:0">Your knowledge notes go to a private GitHub repository every hour, and changes made there come back. Open that repository as a vault in the Obsidian app (with the Obsidian Git plugin, or a GitHub Desktop clone) to use real Obsidian on your computer or phone.</p>
+      ${st.error ? `<div class="banner warn" style="margin:0"><i class="fa-solid fa-triangle-exclamation"></i>${esc(st.error)}</div>` : ''}
+      ${st.message && st.sync_status && st.sync_status !== 'OK' ? `<div class="banner ${cls === 'bad' ? 'warn' : 'info'}" style="margin:0">${esc(st.message)}</div>` : ''}
+      ${st.sync_status === 'OK' ? `<div class="muted">Last sync ${esc(when)}: ${esc(st.message)}</div>` : ''}
+      <div class="row"><input id="git-repo" placeholder="owner/repository, e.g. lrmcorp/lrmagent-vault" value="${esc(repo)}" spellcheck="false" ${st.source === 'github' ? 'disabled title="Set by the LRMAGENT_VAULT_REPO GitHub variable"' : ''}>
+        ${st.source === 'github' ? '' : `<button class="btn primary" id="git-save">${repo ? 'Change' : 'Save'}</button>`}</div>
+      ${st.source === 'github' ? '<div class="muted">Set by the LRMAGENT_VAULT_REPO variable in GitHub; change it there.</div>' : ''}
+      ${steps}
+      ${repo ? `<div class="row"><button class="btn primary" id="git-sync"${st.syncing || st.pending_sync ? ' disabled' : ''}><i class="fa-solid fa-rotate"></i> Sync now</button>
+        <a class="btn" href="https://github.com/${esc(repo)}" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> Open on GitHub</a>
+        ${st.source === 'github' ? '' : '<button class="btn" id="git-off">Turn off</button>'}</div>` : ''}
+      <div class="muted">Synced: <code>knowledge/</code> (and agents' own knowledge folders). A note changed in both places keeps your Obsidian version and saves the agent's as "(agent copy)".${st.stale ? ' <b>The server has not answered for a few minutes.</b>' : ''}</div>
+      ${st.log?.length ? `<details><summary class="muted">Sync log</summary><pre>${esc(st.log.join('\n'))}</pre></details>` : ''}`;
+    $('#git-close', body)?.addEventListener('click', () => { stop(); close(); gitDot(); });
+    const input = $('#git-repo', body);
+    input?.addEventListener('focus', () => { typing = true; });
+    input?.addEventListener('blur', () => { typing = false; });
+    $('#git-copy', body)?.addEventListener('click', () => copy(st.deploy_key || ''));
+    $('#git-save', body)?.addEventListener('click', async () => {
+      try { draw(await post('git_config', { repo: input.value })); typing = false; toast('Saved. The server picks it up within a minute.'); } catch (e) { fail(e); }
+    });
+    $('#git-sync', body)?.addEventListener('click', async () => {
+      try { draw(await post('git_sync', {})); toast('Syncing within a minute'); } catch (e) { fail(e); }
+    });
+    $('#git-off', body)?.addEventListener('click', async () => {
+      const ok = await ask({ title: 'Turn off Git sync?', text: 'Notes stay where they are, here and on GitHub; they just stop syncing.', ok: 'Turn off' });
+      if (ok) { try { draw(await post('git_config', { repo: '' })); } catch (e) { fail(e); } }
+    });
+  };
+  const tick = async () => {
+    if (!document.body.contains(overlay)) return;
+    if (!typing) { try { const st = await api('git'); draw(st); } catch (e) { $('#git-body', overlay).textContent = e.message; } }
+    timer = setTimeout(tick, 3000);
+  };
+  tick();
+  overlay.addEventListener('cancel', () => { stop(); gitDot(); });
+  return close;
+}
+
 const COMMANDS = [
   { name: 'Open quick switcher', key: 'O', fn: () => quickSwitcher() },
   { name: 'Create new note', key: 'N', fn: () => newNote() },
@@ -1494,6 +1580,8 @@ const COMMANDS = [
   { name: 'Toggle right sidebar', fn: () => setPane('right') },
   { name: 'Close this tab', fn: () => S.active >= 0 && closeTab(S.active) },
   { name: 'Reload the vault from disk', fn: () => loadIndex() },
+  { name: 'Sync with GitHub now', fn: async () => { try { await post('git_sync', {}); toast('Syncing within a minute'); } catch (e) { fail(e); } } },
+  { name: 'Git sync settings', fn: () => gitPanel() },
 ];
 function palette() {
   picker({
@@ -1527,6 +1615,7 @@ $('#toggle-left').onclick = () => setPane('left');
 $('#toggle-right').onclick = () => setPane('right');
 $('#btn-switcher').onclick = () => quickSwitcher();
 $('#btn-palette').onclick = () => palette();
+$('#btn-git').onclick = () => gitPanel();
 $('#btn-daily').onclick = () => dailyNote();
 $('#btn-graph').onclick = () => openGraph();
 $('#btn-new-note').onclick = () => newNote();
@@ -1590,6 +1679,8 @@ async function start() {
   select.onchange = () => switchAgent(select.value);
   await switchAgent(id);
   runSearch();
+  gitDot();
+  setInterval(gitDot, 60000);
   // Agents write to their memory all the time: pick up their changes while the page is open.
   setInterval(() => { if (document.visibilityState === 'visible' && !S.tabs.some((t) => t.saving)) loadIndex({ quiet: true }); }, 15000);
 }

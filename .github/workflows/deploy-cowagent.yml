@@ -114,6 +114,7 @@ jobs:
         run: |
           $SSH "$VPS" "cd ~/cowagent && test \"\$(cat .deploy-revision)\" = '$GITHUB_SHA' \
             && (sudo -n docker network inspect lnint-edge >/dev/null 2>&1 || sudo -n docker network create lnint-edge) \
+            && mkdir -p ~/vault-sync/control && chmod 777 ~/vault-sync/control \
             && sudo -n docker compose -f deploy/compose.yaml build --pull \
             && sudo -n docker compose -f deploy/compose.yaml up -d --remove-orphans \
             && curl -fsS --retry 30 --retry-delay 2 --retry-all-errors --max-time 5 http://127.0.0.1:9899/ >/dev/null \
@@ -127,25 +128,37 @@ jobs:
             && crontab -l | grep -c "# lrmagent-backup" \
             && { ls ~/backups/lrmagent/*.tar.gz >/dev/null 2>&1 || bash ~/cowagent/deploy/backup.sh; }'
       # Hourly two-way sync of the knowledge vault with a private repo (README "Second brain").
-      # The VPS makes its own deploy key; only the public half is shown here.
+      # The repo is set either by the LRMAGENT_VAULT_REPO variable (which wins) or from the
+      # console's Vault → Git panel, through vault-control.sh (every minute). The VPS makes
+      # its own deploy key; only the public half is shown.
       - name: Set up vault sync
         env:
           VAULT_REPO: ${{ vars.LRMAGENT_VAULT_REPO }}
           BACKUP_PASSPHRASE: ${{ secrets.LRMAGENT_BACKUP_PASSPHRASE }}
         run: |
-          if [[ -z "$VAULT_REPO" ]]; then
-            $SSH "$VPS" '{ crontab -l 2>/dev/null | grep -v "# lrmagent-vault"; } | crontab -; rm -f ~/.lrmagent-backup-pass ~/.lrmagent-offsite-repo'
-            echo "Vault sync: off (set the LRMAGENT_VAULT_REPO variable to turn it on)." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
+          if [[ -n "$VAULT_REPO" ]]; then
+            [[ "$VAULT_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::LRMAGENT_VAULT_REPO must look like owner/repo"; exit 1; }
           fi
-          [[ "$VAULT_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::LRMAGENT_VAULT_REPO must look like owner/repo"; exit 1; }
           pub="$($SSH "$VPS" "command -v git >/dev/null || sudo -n apt-get install -y -q git >/dev/null; \
-            mkdir -p ~/vault-sync ~/.ssh && chmod 700 ~/.ssh \
+            mkdir -p ~/vault-sync/control ~/.ssh && chmod 700 ~/.ssh && chmod 777 ~/vault-sync/control \
             && { test -f ~/.ssh/lrmagent_vault || ssh-keygen -q -t ed25519 -N '' -C lrmagent-vault@vps -f ~/.ssh/lrmagent_vault; } \
             && cp ~/cowagent/deploy/github_known_hosts ~/vault-sync/known_hosts \
-            && line='41 * * * * bash \$HOME/cowagent/deploy/vault-sync.sh $VAULT_REPO >> \$HOME/vault-sync/sync.log 2>&1 # lrmagent-vault' \
-            && { crontab -l 2>/dev/null | grep -v '# lrmagent-vault'; echo \"\$line\"; } | crontab - \
+            && if [ -n '$VAULT_REPO' ]; then \
+                 [ \"\$(cat ~/vault-sync/repo-name 2>/dev/null)\" = '$VAULT_REPO' ] || rm -rf ~/vault-sync/repo ~/vault-sync/status ~/vault-sync/retries; \
+                 echo '$VAULT_REPO' > ~/vault-sync/repo-name; echo github > ~/vault-sync/repo-source; \
+               elif [ \"\$(cat ~/vault-sync/repo-source 2>/dev/null)\" = github ]; then \
+                 rm -f ~/vault-sync/repo-name ~/vault-sync/repo-source ~/vault-sync/status ~/vault-sync/retries; rm -rf ~/vault-sync/repo; \
+               fi \
+            && sync_line='41 * * * * bash \$HOME/cowagent/deploy/vault-sync.sh >> \$HOME/vault-sync/sync.log 2>&1 # lrmagent-vault' \
+            && control_line='* * * * * bash \$HOME/cowagent/deploy/vault-control.sh >> \$HOME/vault-sync/control.log 2>&1 # lrmagent-vault-control' \
+            && { crontab -l 2>/dev/null | grep -v '# lrmagent-vault'; echo \"\$sync_line\"; echo \"\$control_line\"; } | crontab - \
+            && bash ~/cowagent/deploy/vault-control.sh >/dev/null \
             && cat ~/.ssh/lrmagent_vault.pub")"
+          if [[ -z "$VAULT_REPO" ]]; then
+            $SSH "$VPS" 'rm -f ~/.lrmagent-backup-pass ~/.lrmagent-offsite-repo'
+            echo "Vault sync: set the repo in the console (Vault → Git), or with the LRMAGENT_VAULT_REPO variable." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # Off-site backups: encrypted with this passphrase, pushed to the same private repo.
           if [[ -n "$BACKUP_PASSPHRASE" ]]; then
             printf '%s\n' "$BACKUP_PASSPHRASE" | $SSH "$VPS" "umask 077 && cat > ~/.lrmagent-backup-pass && printf '%s\n' '$VAULT_REPO' > ~/.lrmagent-offsite-repo"

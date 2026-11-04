@@ -41,6 +41,9 @@ services:
       - data:/home/agent/.cow
       # Photos and voice notes received over WhatsApp, read-only for the agent.
       - whatsapp_media:/media/whatsapp:ro
+      # The Vault's Git panel talks to the vault sync on the host through this folder
+      # (~/vault-sync/control; deploy/vault-control.sh).
+      - ../../vault-sync/control:/home/agent/vault-control
     networks:
       default:
       edge:
