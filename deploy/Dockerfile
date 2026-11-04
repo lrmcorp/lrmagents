@@ -32,6 +32,7 @@ COPY deploy/agent-tools/whatsapp_tool /app/agent/tools/whatsapp_tool/
 # Personal assistant: agent, voice page API, reports from other agents.
 COPY deploy/agent-tools/lrm_personal.py /app/agent/lrm_personal.py
 COPY deploy/agent-tools/lrm_voice_api.py /app/channel/web/api/lrm_voice.py
+COPY deploy/agent-tools/lrm_chats_api.py /app/channel/web/api/lrm_chats.py
 COPY deploy/agent-tools/ask_agent /app/agent/tools/ask_agent/
 COPY deploy/agent-tools/lrm_google_api.py /app/channel/web/api/lrm_google.py
 # Watchable browser: live view and take-over API (page copied with the brand files).

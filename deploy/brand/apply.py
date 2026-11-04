@@ -229,7 +229,8 @@ patch("web_channel.py", "\nURLS = (\n",
       "from channel.web.api.lrm_google import LrmGoogleCallbackHandler, LrmGoogleHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_browser import LrmBrowserHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_tts import LrmTtsHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_voice import LrmVoiceHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_voice import LrmVoiceHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_chats import LrmChatsHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
@@ -238,7 +239,8 @@ patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/lrm/google', 'LrmGoogleHandler',\n"
       "    '/api/lrm/browser', 'LrmBrowserHandler',\n"
       "    '/api/lrm/tts', 'LrmTtsHandler',\n"
-      "    '/api/lrm/voice', 'LrmVoiceHandler',\n")
+      "    '/api/lrm/voice', 'LrmVoiceHandler',\n"
+      "    '/api/lrm/chats', 'LrmChatsHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",
@@ -338,6 +340,10 @@ patch("api/sessions.py",
       '    except Exception as e:\n        logger.debug(f"[WebChannel] custom providers unavailable: {e}")\n\n'
       '    try:\n        from agent.lrm_plans import catalog_group as _lrm_plans_group\n'
       '        _plans = _lrm_plans_group()\n        if _plans:\n            catalog.append(_plans)\n'
+      '        # Providers the owner retired (LRMAGENT_HIDDEN_PROVIDERS, e.g. deepseek once OpenRouter is in).\n'
+      '        import os as _os\n'
+      '        _hidden = {p.strip() for p in _os.environ.get("LRMAGENT_HIDDEN_PROVIDERS", "").split(",") if p.strip()}\n'
+      '        catalog[:] = [g for g in catalog if g.get("id") not in _hidden]\n'
       '    except Exception as e:\n        logger.debug(f"[WebChannel] your plans unavailable: {e}")\n\n    return catalog\n')
 patch("models/openai/openai_http_client.py",
       '        if extra_headers:\n            headers.update(extra_headers)\n        return headers\n',

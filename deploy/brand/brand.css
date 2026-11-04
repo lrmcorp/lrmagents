@@ -215,3 +215,37 @@ div:has(> #cfg-password-save),
 .lrm-approve button[data-d="approve"] { background: #18181b; border-color: #18181b; color: #fff; }
 .dark .lrm-approve button[data-d="approve"] { background: #f0f0f4; border-color: #f0f0f4; color: #13101b; }
 .lrm-approve button:disabled { opacity: .5; }
+
+/* Tool steps fold into one line per answer (shell.js adds the toggle). */
+.agent-steps:not(.lrm-steps-open) > .agent-tool-step:not(.tool-streaming) { display: none !important; }
+.lrm-steps-toggle { display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; padding: 4px 8px; margin: 0 0 4px -8px;
+    border-radius: 8px; cursor: pointer; font: inherit; font-size: 13px; color: var(--lrm-muted); }
+.lrm-steps-toggle:hover { background: var(--lrm-sidebar-hover); color: var(--lrm-text); }
+.lrm-steps-toggle .fa-check { color: #16a34a; }
+.lrm-steps-failed { color: #dc2626; }
+.lrm-steps-chev { font-size: 10px; opacity: .7; }
+
+/* Chats page: agent chips, who/where/when under each title, WhatsApp section, transcript. */
+.lrm-chat-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: -6px auto 16px !important; }
+.lrm-chip { border: 1px solid var(--lrm-line); background: var(--lrm-surface); color: var(--lrm-text-2); border-radius: 999px; padding: 5px 12px;
+    font: inherit; font-size: 13px; cursor: pointer; }
+.lrm-chip[aria-pressed="true"] { background: var(--lrm-text); color: var(--lrm-card); border-color: var(--lrm-text); }
+.lrm-chats .session-item { display: grid !important; grid-template-columns: 22px 1fr auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; }
+.lrm-chats .session-item > .session-icon, .lrm-chats .session-item > .session-faces { grid-row: 1 / span 2; }
+.lrm-chats .session-item .session-title { grid-column: 2; font-weight: 550; }
+.lrm-chats .session-item .lrm-chat-meta { grid-column: 2; font-size: 12.5px; color: var(--lrm-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrm-chats .session-item .lrm-chat-meta b { color: var(--lrm-text-2); font-weight: 600; }
+.lrm-chats .session-item > button:not(.lrm-wa-item) { grid-row: 1 / span 2; }
+.lrm-console-head, .lrm-wa-head { font-size: 11.5px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--lrm-muted); margin: 6px 12px 2px; }
+.lrm-wa { margin-top: 20px; }
+.lrm-wa[hidden] { display: none; }
+.lrm-wa-item { width: 100%; text-align: left; border: 0; background: none; font: inherit; cursor: pointer; }
+.lrm-wa-item .fa-whatsapp { color: #25d366; }
+.lrm-back { border: 0; background: none; font: inherit; font-size: 14px; color: var(--lrm-muted); cursor: pointer; padding: 4px 0; margin-bottom: 8px; }
+.lrm-transcript h2 { font-size: 19px; margin: 0 0 16px; color: var(--lrm-text); }
+.lrm-t { display: flex; flex-direction: column; margin: 0 0 12px; max-width: 78%; }
+.lrm-t.assistant { margin-left: auto; align-items: flex-end; }
+.lrm-t-bubble { background: var(--lrm-surface); border: 1px solid var(--lrm-line); border-radius: 14px; padding: 9px 13px; white-space: pre-wrap; font-size: 14.5px; color: var(--lrm-text); }
+.lrm-t.assistant .lrm-t-bubble { background: var(--lrm-sidebar-active); }
+.lrm-t small { font-size: 11.5px; color: var(--lrm-muted); margin-top: 3px; }
+.lrm-chats .lrm-hide { display: none !important; }

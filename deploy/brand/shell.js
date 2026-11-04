@@ -42,11 +42,25 @@
         chats.innerHTML = `<div class="lrm-chats-head"><h1>Chats</h1>
             <button type="button" class="lrm-chats-new"><i class="fas fa-plus"></i>New chat</button>
             <button type="button" class="lrm-icon-btn lrm-chats-close" title="Close (Esc)" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
-            <label class="lrm-search"><i class="fas fa-magnifying-glass"></i><input type="search" placeholder="Search chats..." aria-label="Search chats"></label>`;
+            <label class="lrm-search"><i class="fas fa-magnifying-glass"></i><input type="search" placeholder="Search chats..." aria-label="Search chats"></label>
+            <div class="lrm-chat-chips" role="group" aria-label="Agent"></div>
+            <div class="lrm-chats-body"><div class="lrm-console-head">Console</div></div>
+            <div class="lrm-transcript" hidden></div>`;
         ($('#content-area') || $('#main-content') || document.body).appendChild(chats);
-        chats.appendChild(panel);
+        $('.lrm-chats-body', chats).appendChild(panel);
+        const wa = document.createElement('div');
+        wa.className = 'lrm-wa';
+        $('.lrm-chats-body', chats).appendChild(wa);
+        $('.lrm-chat-chips', chats).addEventListener('click', (e) => {
+            const chip = e.target.closest('.lrm-chip'); if (!chip) return;
+            chatFilter.agent = chip.dataset.agent; renderAgentChips(); filterSessions();
+        });
+        wa.addEventListener('click', (e) => {
+            const row = e.target.closest('.lrm-wa-item'); if (!row) return;
+            openTranscript(row.dataset.agent, row.dataset.session, row.querySelector('.session-title').textContent);
+        });
         panel.classList.remove('hidden');
-        $('input', chats).addEventListener('input', filterSessions);
+        $('.lrm-search input', chats).addEventListener('input', filterSessions);
 
         const chatsItem = document.createElement('a');
         chatsItem.className = 'sidebar-item lrm-chats-item';
@@ -60,7 +74,9 @@
             chatsItem.classList.toggle('active', open);
             document.body.classList.toggle('lrm-chats-open', open);
             if (open) {
-                if (typeof loadSessionList === 'function') loadSessionList();
+                if (typeof loadSessionList === 'function') loadSessionList(filterSessions);
+                renderAgentChips(); loadWhatsAppChats();
+                $('.lrm-transcript', chats).hidden = true; $('.lrm-chats-body', chats).hidden = false;
                 // phones: the sidebar slides over the page; close it to show the list
                 if (window.innerWidth < 1024 && typeof closeSidebar === 'function') closeSidebar(); else $('input', chats).focus({ preventScroll: true });
             }
@@ -102,16 +118,76 @@
         if (typeof loadSessionList === 'function') loadSessionList();
     }
 
-    function filterSessions() {
-        const q = ($('.lrm-search input')?.value || '').trim().toLowerCase();
+    // ---- Chats page: who each chat is with, filters, and the WhatsApp chats -------------
+    const chatFilter = { agent: '' };
+    const dmy = (t) => { const d = new Date(t * 1000); return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`; };
+    const when = (t) => { if (!t) return ''; const d = new Date(t * 1000); const today = new Date().toDateString() === d.toDateString();
+        return today ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : dmy(t); };
+    function agentList() { try { return typeof enabledAgents === 'function' ? enabledAgents() : []; } catch (e) { return []; } }
+    function defaultAgentId() { try { return (typeof activeAgentId !== 'undefined' && activeAgentId) || agentList()[0]?.id || ''; } catch (e) { return ''; } }
+    function sessionInfo(el) {
+        try {
+            const list = typeof _sessionItems !== 'undefined' ? _sessionItems : [];
+            return list.find((s) => s.session_id === el.dataset.sessionId && (!el.dataset.agentId || (s.agent && s.agent.id) === el.dataset.agentId));
+        } catch (e) { return null; }
+    }
+    function decorate() {
         document.querySelectorAll('#session-list .session-item').forEach((el) => {
-            el.style.display = !q || el.textContent.toLowerCase().includes(q) ? '' : 'none';
+            const s = sessionInfo(el);
+            const name = s?.agent?.name || agentList().find((a) => a.id === (el.dataset.agentId || defaultAgentId()))?.name || '';
+            const meta = `${name ? `<b>${esc(name)}</b> · ` : ''}Console${s?.last_active ? ` · ${when(s.last_active)}` : ''}`;
+            let m = el.querySelector('.lrm-chat-meta');
+            if (!m) { m = document.createElement('span'); m.className = 'lrm-chat-meta'; el.querySelector('.session-title')?.after(m); }
+            if (m.innerHTML !== meta) m.innerHTML = meta;
+        });
+    }
+    function filterSessions() {
+        decorate();
+        const q = ($('.lrm-chats .lrm-search input')?.value || '').trim().toLowerCase();
+        const wanted = chatFilter.agent;
+        const match = (el, agentId) => (!q || el.textContent.toLowerCase().includes(q)) && (!wanted || agentId === wanted);
+        document.querySelectorAll('#session-list .session-item').forEach((el) => {
+            el.classList.toggle('lrm-hide', !match(el, el.dataset.agentId || defaultAgentId()));
         });
         // Group headings with nothing left under them are hidden too.
         document.querySelectorAll('#session-list .session-group, #session-list [class*="group"]').forEach((g) => {
             const items = g.querySelectorAll('.session-item');
-            if (items.length) g.style.display = [...items].some((i) => i.style.display !== 'none') ? '' : 'none';
+            if (items.length) g.classList.toggle('lrm-hide', ![...items].some((i) => !i.classList.contains('lrm-hide')));
         });
+        document.querySelectorAll('.lrm-wa-item').forEach((el) => el.classList.toggle('lrm-hide', !match(el, el.dataset.agent)));
+        const wa = $('.lrm-wa');
+        if (wa) wa.hidden = !wa.querySelector('.lrm-wa-item:not(.lrm-hide)');
+    }
+    function renderAgentChips() {
+        const box = $('.lrm-chat-chips');
+        if (!box) return;
+        const agents = agentList();
+        const html = [{ id: '', name: 'All agents' }, ...agents].map((a) => `<button type="button" class="lrm-chip" data-agent="${esc(a.id)}" aria-pressed="${chatFilter.agent === a.id}">${esc(a.name || a.id)}</button>`).join('');
+        if (box.innerHTML !== html) box.innerHTML = html;
+    }
+    async function loadWhatsAppChats() {
+        const box = $('.lrm-wa');
+        if (!box) return;
+        try {
+            const r = await fetch('/api/lrm/chats', { credentials: 'same-origin' });
+            const data = await r.json();
+            const rows = data.chats || [];
+            box.innerHTML = rows.length ? `<div class="lrm-wa-head">WhatsApp</div>${rows.map((c) => `<button type="button" class="session-item lrm-wa-item" data-agent="${esc(c.agent.id)}" data-session="${esc(c.session_id)}">
+                <i class="fab fa-whatsapp session-icon"></i><span class="session-title">${esc(c.title || c.contact)}</span>
+                <span class="lrm-chat-meta"><b>${esc(c.agent.name)}</b> · WhatsApp ${esc(c.contact)} · ${when(c.last_active)}</span></button>`).join('')}` : '';
+        } catch (e) { box.innerHTML = ''; }
+        filterSessions();
+    }
+    async function openTranscript(agent, session, title) {
+        const view = $('.lrm-transcript');
+        view.hidden = false; $('.lrm-chats-body').hidden = true;
+        view.innerHTML = `<button type="button" class="lrm-back"><i class="fas fa-arrow-left"></i> All chats</button><h2>${esc(title)}</h2><div class="lrm-t-list">Loading…</div>`;
+        $('.lrm-back', view).onclick = () => { view.hidden = true; $('.lrm-chats-body').hidden = false; };
+        try {
+            const r = await fetch(`/api/lrm/chats?agent=${encodeURIComponent(agent)}&session=${encodeURIComponent(session)}`, { credentials: 'same-origin' });
+            const msgs = (await r.json()).messages || [];
+            $('.lrm-t-list', view).innerHTML = msgs.map((m) => `<div class="lrm-t ${m.role}"><div class="lrm-t-bubble">${esc(m.text)}</div><small>${m.role === 'user' ? 'Them' : 'Agent'} · ${dmy(m.at)} ${new Date(m.at * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</small></div>`).join('') || 'No messages.';
+        } catch (e) { $('.lrm-t-list', view).textContent = 'Could not load this chat.'; }
     }
 
     function markEmptyList() {
@@ -128,6 +204,37 @@
         if (note) note.hidden = !empty;
         filterSessions();
     }
+
+    // ---- tool steps: one line per answer -------------------------------------------
+    // An answer that used tools shows "✓ 24 steps" instead of the full list; click it to
+    // see them. While it works, only the step in progress shows under that line.
+    function syncSteps() {
+        document.querySelectorAll('.agent-steps').forEach((box) => {
+            const tools = box.querySelectorAll(':scope > .agent-tool-step');
+            let bar = box.querySelector(':scope > .lrm-steps-toggle');
+            if (!tools.length) { bar?.remove(); return; }
+            if (!bar) {
+                bar = document.createElement('button');
+                bar.type = 'button';
+                bar.className = 'lrm-steps-toggle';
+                bar.onclick = () => { box.classList.toggle('lrm-steps-open'); syncSteps(); };
+                box.prepend(bar);
+            }
+            const failed = box.querySelectorAll(':scope > .agent-tool-step.tool-failed').length;
+            const running = box.querySelector(':scope > .agent-tool-step.tool-streaming');
+            const open = box.classList.contains('lrm-steps-open');
+            const label = `${running ? '<i class="fas fa-circle-notch fa-spin"></i>' : '<i class="fas fa-check"></i>'} ${running ? 'Working' : 'Used'} ${tools.length} step${tools.length === 1 ? '' : 's'}`
+                + (failed ? ` <span class="lrm-steps-failed">· ${failed} failed</span>` : '')
+                + ` <i class="fas fa-chevron-${open ? 'up' : 'down'} lrm-steps-chev"></i>`;
+            if (bar.innerHTML !== label) bar.innerHTML = label;
+        });
+    }
+    let stepsQueued = false;
+    new MutationObserver(() => {
+        if (stepsQueued) return;
+        stepsQueued = true;
+        requestAnimationFrame(() => { stepsQueued = false; syncSteps(); });
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
 
     // ---- new chat screen --------------------------------------------------------
     function agents() {

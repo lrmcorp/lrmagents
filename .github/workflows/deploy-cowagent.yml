@@ -120,12 +120,13 @@ jobs:
             # The direct DeepSeek account is no longer used: clear any key saved before, and do not
             # force a direct-DeepSeek main model; the main model stays the one chosen in the console.
             DEEPSEEK_API_KEY=""; CLEAR="DEEPSEEK_API_KEY"
+            export LRMAGENT_HIDDEN_PROVIDERS="deepseek"
             if [[ "$MODEL" == deepseek* && "$MODEL" != */* ]]; then MODEL=""; fi
             echo "OpenRouter models in the picker: $OPENROUTER_MODELS" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "::warning::No OPENROUTER_API_KEY secret: add it (Settings → Secrets → Actions) to switch the agents to OpenRouter."
           fi
-          { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL CUSTOM_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
+          { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL CUSTOM_PROVIDERS LRMAGENT_HIDDEN_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
               if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
             done
             for name in $CLEAR; do printf '%s=\n' "$name"; done
