@@ -27,6 +27,25 @@ for p in get_agent_registry().list():
     print("agent:", p.id, "| enabled:", p.enabled, "| model:", getattr(p, "model", None), getattr(p, "bot_type", None))
 import agent.lrm_plans as lp
 print("plans:", lp.models())
+import json as _j, urllib.request as _u
+for cp in c.get("custom_providers") or []:
+    print("custom provider:", cp.get("id"), cp.get("name"), cp.get("api_base"), cp.get("models") or cp.get("model"), "key set" if cp.get("api_key") else "no key")
+    if "openrouter.ai" in str(cp.get("api_base")):
+        try:
+            ids = {m["id"] for m in _j.load(_u.urlopen("https://openrouter.ai/api/v1/models", timeout=20))["data"]}
+            for m in cp.get("models") or [cp.get("model")]:
+                print("  on OpenRouter:", m, m in ids, sorted(i for i in ids if i.startswith(m.split("-")[0]) and "deepseek" in i)[:8] if m not in ids else "")
+        except Exception as e:
+            print("  model list failed:", e)
+        for m in cp.get("models") or [cp.get("model")]:
+            try:
+                req = _u.Request(cp["api_base"].rstrip("/") + "/chat/completions", data=_j.dumps({"model": m, "max_tokens": 5, "messages": [{"role": "user", "content": "Reply with OK"}]}).encode(),
+                                 headers={"Authorization": "Bearer " + cp["api_key"], "Content-Type": "application/json"})
+                r = _j.load(_u.urlopen(req, timeout=60))
+                print("  answer:", m, repr(r["choices"][0]["message"]["content"])[:40])
+            except Exception as e:
+                body = getattr(e, "read", lambda: b"")()[:200]
+                print("  answer failed:", m, e, body)
 import agent.lrm_personal as pp
 pr = pp.profile()
 print("personal:", pr and (pr.id, pr.name, pr.workspace))
