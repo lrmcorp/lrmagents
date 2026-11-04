@@ -33,7 +33,7 @@ PASS_EVERY = 10 * 60
 MAX_PER_PASS = 12
 MAX_CHARS = 40_000
 FOLDER = "chats"
-SKIP_PREFIXES = ("openai:conversation:lrm-brief:", "lrm-memory:")
+SKIP_PREFIXES = ("openai:conversation:lrm-brief:", "openai:conversation:lrm-report:", "lrm-memory:")
 WHATSAPP = "openai:conversation:whatsapp:"
 
 PROMPT = """You keep the owner's memory for LRMagent (Liando Reyfort Management). Read the conversation below and
@@ -47,8 +47,11 @@ write a note about it for the owner's knowledge vault. Reply with JSON only, no 
   "todos": ["open tasks or follow-ups, each one actionable"],
   "remember": ["lasting facts about the owner or the people involved: preferences, plans, contacts, numbers, dates"],
   "people": ["names of people or organisations that matter in it"],
-  "topics": ["2-5 short lowercase topic tags"]}}
+  "topics": ["2-5 short lowercase topic tags"],
+  "personal": false}}
 
+"personal" is true when the chat is mainly about the owner's private life (family, health, money,
+relationships, home, personal plans or feelings) rather than work or the business.
 Rules: write in English even when the chat is in another language (keep names, quotes and figures as they are).
 Be specific: names, amounts, dates, links. Leave a list empty when there is nothing for it. Never copy passwords,
 API keys, codes or other secrets. If the chat has nothing worth keeping (greetings, a test, small talk), reply
@@ -246,6 +249,8 @@ def render(data, *, session_id, channel, where, contact, agent_id, started, upda
     ]
     if contact:
         props.append(f"contact: {_yaml(contact)}")
+    if data.get("personal") is True:
+        props.append("personal: true")
     props += [f"agent: {_yaml(agent_id or 'default')}", f"session: {_yaml(session_id)}",
               f"tags: {_yaml(['chat'] + topics)}"]
     if people:
@@ -318,8 +323,24 @@ def summarise_pass():
                 continue
             title, text = render(data, session_id=session_id, channel=channel, where=where, contact=contact,
                                  agent_id=profile.id, started=first or last_active, updated=last_active)
-            root = os.path.join(profile.workspace, "memory")
+            # Personal chats (any agent) are kept by the personal assistant only.
+            owner_ws = profile.workspace
+            target_agent = profile.id
+            try:
+                from agent import lrm_personal
+                pws = lrm_personal.workspace()
+                if pws and (data.get("personal") is True or profile.id == lrm_personal.ID):
+                    owner_ws, target_agent = str(pws), lrm_personal.ID
+            except Exception:
+                pass
+            root = os.path.join(owner_ws, "memory")
             rel = entry.get("note")
+            if rel and entry.get("root") and entry.get("root") != root and os.path.exists(os.path.join(entry["root"], rel)):
+                try:
+                    os.remove(os.path.join(entry["root"], rel))  # moved: it turned out personal (or not)
+                except OSError:
+                    pass
+                rel = None
             if not rel or not os.path.exists(os.path.join(root, rel)):
                 started = datetime.datetime.fromtimestamp(first or last_active)
                 folder = os.path.join(FOLDER, started.strftime("%Y-%m"))
@@ -333,12 +354,12 @@ def summarise_pass():
             with open(tmp, "w", encoding="utf-8") as f:
                 f.write(text)
             os.replace(tmp, full)
-            state[key] = {"seq": max_seq, "at": time.time(), "note": rel}
+            state[key] = {"seq": max_seq, "at": time.time(), "note": rel, "root": root}
             _save_state(state)
-            logger.info(f"[ChatMemory] saved {rel} for {profile.id}")
+            logger.info(f"[ChatMemory] saved {rel} for {target_agent}")
             try:
                 from channel.web.api.workspace import _mark_memory_dirty
-                _mark_memory_dirty(profile.id)
+                _mark_memory_dirty(target_agent)
             except Exception:
                 pass
     _save_state(state)

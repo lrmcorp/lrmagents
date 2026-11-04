@@ -22,6 +22,7 @@ services:
     environment:
       # WhatsApp and API chats run their shell commands in the sandbox service below.
       LRMAGENT_SANDBOX_URL: http://sandbox:8099
+      LRMAGENT_VOICE_URL: http://voice:8095
       CHANNEL_TYPE: web
       # Reachable by the ln Caddy proxy over the lnint-edge network; the host port below stays on loopback.
       WEB_HOST: 0.0.0.0
@@ -127,6 +128,26 @@ services:
       edge:
         aliases: [teammates]
 
+  # Voice for the personal assistant and WhatsApp voice replies: speech-to-text
+  # (faster-whisper) and text-to-speech (Kokoro), on the CPU. Internal only.
+  voice:
+    image: lrm-voice
+    build:
+      context: ../voice
+    restart: unless-stopped
+    env_file:
+      - path: ../.env.whatsapp
+        format: raw
+    environment:
+      WHISPER_MODEL: small
+      OMP_NUM_THREADS: "2"
+      TZ: Asia/Jakarta
+    volumes:
+      - voice_models:/models
+    mem_limit: 1600m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
 networks:
   # Shared only with the ln Caddy container, so the agent cannot reach the ln database.
   edge:
@@ -143,3 +164,5 @@ volumes:
   teammates_home:
   teammates_work:
   teammates_data:
+  # Speech models (Whisper, Kokoro), downloaded on first start.
+  voice_models:

@@ -25,11 +25,16 @@ jobs:
       - name: Teammates tests
         working-directory: teammates
         run: npm ci --no-audit --no-fund && npm test
+      - name: Voice service tests
+        working-directory: voice
+        run: python3 test_server.py
       - name: Script and code syntax
         run: |
           for f in deploy/*.sh; do bash -n "$f"; done
           python3 -m py_compile deploy/brand/apply.py deploy/agent-tools/*.py deploy/agent-tools/*/*.py
           node --check deploy/brand/vault.js
+          node --check deploy/brand/topology.js
+          python3 -m py_compile voice/server.py
           node --check deploy/brand/vendor/lrm-editor.js
           for f in .github/workflows/*.yml; do python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$f"; done
       - name: Compose file

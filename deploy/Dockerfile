@@ -29,6 +29,10 @@ COPY deploy/agent-tools/lrm_skills.py /app/agent/lrm_skills.py
 COPY deploy/agent-tools/lrm_memory.py /app/agent/lrm_memory.py
 COPY deploy/agent-tools/google_tool /app/agent/tools/google_tool/
 COPY deploy/agent-tools/whatsapp_tool /app/agent/tools/whatsapp_tool/
+# Personal assistant: agent, voice page API, reports from other agents.
+COPY deploy/agent-tools/lrm_personal.py /app/agent/lrm_personal.py
+COPY deploy/agent-tools/lrm_voice_api.py /app/channel/web/api/lrm_voice.py
+COPY deploy/agent-tools/ask_agent /app/agent/tools/ask_agent/
 COPY deploy/agent-tools/lrm_google_api.py /app/channel/web/api/lrm_google.py
 # Watchable browser: live view and take-over API (page copied with the brand files).
 COPY deploy/agent-tools/lrm_browser_api.py /app/channel/web/api/lrm_browser.py
@@ -45,7 +49,7 @@ RUN set -eux; \
     python /tmp/brand/apply.py /app /tmp/brand/theme.json; \
     static=/app/channel/web/static; \
     mkdir -p "$static/brand"; \
-    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/topology.js /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html "$static/brand/"; \
+    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/topology.js /tmp/brand/personal.html /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html "$static/brand/"; \
     cp -r /tmp/brand/vendor "$static/brand/vendor"; \
     python /tmp/brand/fetch_mediapipe.py "$static/brand/vendor/mediapipe"; \
     cp /tmp/brand/img/logo.jpg "$static/logo.jpg"; \

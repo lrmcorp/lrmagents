@@ -15,6 +15,8 @@ from common.log import logger
 GATEWAY_URL = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/")
 WHATSAPP_PREFIX = "openai:conversation:whatsapp:"
 BRIEF_PREFIX = "openai:conversation:lrm-brief:"
+# The console's voice page (signed-in owner only) and reports one agent asks of another for the owner.
+OWNER_PREFIXES = (BRIEF_PREFIX, "openai:conversation:lrm-voice:", "openai:conversation:lrm-report:")
 REFUSAL = ("This uses the owner's personal accounts, so only the owner can use it: from the LRMagent console or the "
            "WhatsApp number's own chat (Message yourself).")
 
@@ -24,7 +26,7 @@ def owner_session(session_id):
     session_id = str(session_id or "")
     if not session_id.startswith("openai:"):
         return True, None
-    if session_id.startswith(BRIEF_PREFIX):
+    if session_id.startswith(OWNER_PREFIXES):
         return True, None
     if not session_id.startswith(WHATSAPP_PREFIX):
         return False, None

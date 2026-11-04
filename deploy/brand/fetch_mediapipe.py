@@ -14,6 +14,8 @@ import urllib.request
 VERSION = "1.1.1"
 PACKAGE = (f"https://registry.npmjs.org/@mediapipe/tasks-vision/-/tasks-vision-{VERSION}.tgz",
            "fbbea455a8b50c31c39092027b3548336de198bfcdbaf75cc08245e773011b8f")
+OBJECTS = ("https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
+           "4b59100025bea1235a84c1038879a6cccc9f6c49f5e41144e91e74d99e780993")
 MODEL = ("https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
          "fbc2a30080c3c557093b5ddfc334698132eb341044ccee322ccf8bcf3607cde1")
 KEEP = {"package/vision_bundle.js": "vision_bundle.js",
@@ -53,6 +55,7 @@ def main(dest):
         for name, target in KEEP.items():
             (out / target).write_bytes(tar.extractfile(name).read())
     (out / "hand_landmarker.task").write_bytes(fetch(*MODEL))
+    (out / "efficientdet_lite0.tflite").write_bytes(fetch(*OBJECTS))
     (out / "VERSION.txt").write_text(f"@mediapipe/tasks-vision {VERSION} (Apache-2.0), hand_landmarker float16/1\n")
     print("MediaPipe hand tracking fetched")
 

@@ -287,6 +287,10 @@ def gate(executor, tool_name, arguments, tool_call_id):
         private = private_path_refusal(executor, tool_name, arguments)
         if private:
             return private
+        from agent.lrm_personal import refusal as personal_refusal
+        private = personal_refusal(executor, tool_name, arguments)
+        if private:
+            return private
         if tool_name == "browser":
             waited = _wait_for_browser(executor, tool_call_id)
             if waited:

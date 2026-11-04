@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#06070a">
+<title>Personal · LRMagent</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
+<link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+<style>
+  :root { --bg: #06070a; --fg: #f4f4f6; --muted: rgba(244,244,246,.55); --line: rgba(255,255,255,.14); --accent: #ff2d55; --accent-2: #ff7a59;
+    --panel: rgba(14,15,20,.78); --mono: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.5 Inter, system-ui, sans-serif; overflow: hidden; }
+  button { font: inherit; color: inherit; }
+  .stage { position: fixed; inset: 0; display: grid; place-items: center; }
+  canvas#orb { width: min(64vmin, 560px); height: min(64vmin, 560px); cursor: pointer; touch-action: none; }
+  .name { position: absolute; font: 700 clamp(26px, 6vmin, 54px)/1 Inter, system-ui, sans-serif; letter-spacing: .06em; font-style: italic; pointer-events: none;
+    text-shadow: 0 0 18px rgba(255,45,85,.75), 0 0 2px #fff; }
+  .state { position: absolute; top: calc(50% + min(8vmin, 70px)); font: 12px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+  .subs { position: absolute; left: 50%; transform: translateX(-50%); bottom: 112px; width: min(760px, calc(100% - 32px)); text-align: center; pointer-events: none; }
+  .subs .you { color: var(--muted); font-size: 14px; min-height: 21px; }
+  .subs .it { font-size: clamp(16px, 2.4vmin, 20px); min-height: 30px; text-shadow: 0 1px 12px rgba(0,0,0,.8); }
+  .bar { position: fixed; left: 16px; right: 16px; bottom: max(18px, env(safe-area-inset-bottom)); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
+    display: flex; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 8px; backdrop-filter: blur(10px); flex-wrap: wrap; justify-content: center; }
+  .bar button { border: 0; background: transparent; border-radius: 12px; padding: 10px 12px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
+  .bar button:hover { background: rgba(255,255,255,.08); }
+  .bar button[aria-pressed="true"] { background: rgba(255,45,85,.18); color: #ffd0da; }
+  .bar .talk { background: var(--accent); color: #fff; font-weight: 600; padding: 10px 18px; }
+  .bar .talk:hover { background: #ff4669; }
+  .bar .talk.on { background: #fff; color: #111; }
+  .bar select { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; font: inherit; font-size: 12.5px; }
+  .bar select option { color: #111; }
+  .typed { position: fixed; left: 50%; transform: translateX(-50%); bottom: 86px; width: min(560px, calc(100% - 32px)); display: none; }
+  .typed.open { display: flex; gap: 8px; }
+  body.typing .subs { bottom: 150px; }
+  .typed input { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--fg); padding: 11px 14px; font: inherit; outline: none; }
+  .hud { position: fixed; inset: 0; pointer-events: none; }
+  .card { position: absolute; width: min(300px, 40vw); background: var(--panel); border: 1px solid rgba(255,255,255,.22); border-radius: 4px; padding: 12px 14px; pointer-events: auto;
+    box-shadow: 0 0 0 1px rgba(255,45,85,.08), 0 12px 40px rgba(0,0,0,.45); animation: pop .35s ease-out both; backdrop-filter: blur(6px); }
+  .card::before, .card::after { content: ""; position: absolute; width: 10px; height: 10px; border: 1.5px solid var(--fg); }
+  .card::before { top: -1px; left: -1px; border-right: 0; border-bottom: 0; }
+  .card::after { bottom: -1px; right: -1px; border-left: 0; border-top: 0; }
+  .card h4 { margin: 0 0 8px; font: 600 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .card .val { font: 600 30px/1.1 Inter, system-ui, sans-serif; }
+  .card .sub { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+  .card ul { margin: 0; padding-left: 18px; font-size: 13.5px; }
+  .card img { width: 100%; border-radius: 2px; display: block; max-height: 220px; object-fit: cover; }
+  .card p { margin: 0; font-size: 13.5px; white-space: pre-wrap; }
+  .card svg { width: 100%; height: 120px; display: block; }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+  .cam { position: fixed; top: 16px; right: 16px; width: min(360px, 44vw); aspect-ratio: 4/3; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: none; background: #000; }
+  .cam.on { display: block; }
+  .cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .cam .look { position: absolute; left: 8px; bottom: 8px; border: 0; background: var(--accent); color: #fff; border-radius: 10px; padding: 7px 11px; cursor: pointer; font-size: 12.5px; }
+  .cam .seen { position: absolute; right: 8px; bottom: 8px; font: 11px var(--mono); color: #fff; background: rgba(0,0,0,.55); padding: 4px 7px; border-radius: 6px; max-width: 60%; }
+  .top { position: fixed; top: 16px; left: 16px; display: flex; gap: 8px; align-items: center; font: 12px var(--mono); color: var(--muted); }
+  .top a { color: var(--muted); text-decoration: none; border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; }
+  .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #2a0d14; border: 1px solid #6b1f30; color: #ffd0da; padding: 9px 14px; border-radius: 10px; font-size: 13px; display: none; max-width: calc(100% - 32px); }
+  @media (max-width: 760px) {
+    .card { width: calc(50% - 22px); padding: 9px 10px; } .card .val { font-size: 22px; }
+    .subs { bottom: 150px; } .cam { width: 42vw; }
+    .typed { bottom: 140px; } body.typing .subs { bottom: 200px; }
+  }
+</style>
+</head>
+<body>
+<div class="stage"><canvas id="orb" aria-label="Tap to talk"></canvas><div class="name" id="name">LRM</div><div class="state" id="state">starting</div></div>
+<div class="hud" id="hud"></div>
+<div class="top"><span id="who">Personal</span><a href="/assets/brand/personal.html" target="_blank" rel="noopener" title="Open on its own (phone: add to home screen)"><i class="fa-solid fa-up-right-from-square"></i></a></div>
+<div class="cam" id="cam"><video id="video" playsinline muted></video><canvas id="boxes"></canvas>
+  <button class="look" id="look"><i class="fa-solid fa-eye"></i> What do you see?</button><div class="seen" id="seen"></div></div>
+<div class="subs"><div class="you" id="you"></div><div class="it" id="it"></div></div>
+<form class="typed" id="typed"><input id="typed-in" placeholder="Type instead…" autocomplete="off"><button class="bar-btn" style="border:0;background:var(--accent);color:#fff;border-radius:12px;padding:0 14px;cursor:pointer">Send</button></form>
+<div class="bar">
+  <button class="talk" id="talk" title="Hold to talk, or tap to start and stop (Space)"><i class="fa-solid fa-microphone"></i><span id="talk-l">Talk</span></button>
+  <button id="handsfree" title="Hands-free: it listens and answers when you stop talking" aria-pressed="false"><i class="fa-solid fa-wave-square"></i><span class="l">Hands-free</span></button>
+  <button id="camera" title="Camera: let it see" aria-pressed="false"><i class="fa-solid fa-camera"></i><span class="l">Camera</span></button>
+  <button id="keyboard" title="Type a message" aria-pressed="false"><i class="fa-regular fa-keyboard"></i></button>
+  <button id="mute" title="Spoken answers on/off" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
+  <select id="lang" title="Language you speak"><option value="">Auto</option><option value="en">English</option><option value="id">Bahasa Indonesia</option><option value="zh">中文</option></select>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const store = { get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private */ } } };
+  const S = { state: 'idle', level: 0, out: 0, rec: null, chunks: [], stream: null, ctx: null, analyser: null, speaking: null, muted: store.get('lrm_p_muted', false),
+    handsFree: false, busy: false, queue: [], agent: null, detector: null, camOn: false, lastSeen: [] };
+  function toast(t) { const el = $('#toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => { el.style.display = 'none'; }, 6000); }
+  function setState(s, label) { S.state = s; $('#state').textContent = label || ({ idle: 'tap to talk', listening: 'listening', thinking: 'thinking', speaking: 'speaking' }[s] || s); }
+
+  // ---- the orb ---------------------------------------------------------------------
+  const cv = $('#orb'); const g = cv.getContext('2d'); let t0 = performance.now();
+  function size() { const d = Math.min(devicePixelRatio || 1, 2); const r = cv.getBoundingClientRect(); cv.width = r.width * d; cv.height = r.height * d; g.setTransform(d, 0, 0, d, 0, 0); }
+  addEventListener('resize', () => { size(); if (S.panels) showHud(S.panels); }); size();
+  function draw(now) {
+    requestAnimationFrame(draw);
+    const w = cv.clientWidth; const h = cv.clientHeight; const cx = w / 2; const cy = h / 2; const t = (now - t0) / 1000;
+    const live = S.state === 'listening' ? S.level : S.state === 'speaking' ? S.out : 0;
+    const breathe = S.state === 'idle' ? 0.02 * Math.sin(t * 1.6) : 0;
+    const R = w * 0.27 * (1 + breathe + live * 0.22);
+    g.clearRect(0, 0, w, h);
+    // glow
+    const glow = g.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.9);
+    glow.addColorStop(0, `rgba(255,45,85,${0.18 + live * 0.35})`); glow.addColorStop(0.55, 'rgba(255,45,85,0.06)'); glow.addColorStop(1, 'rgba(255,45,85,0)');
+    g.fillStyle = glow; g.beginPath(); g.arc(cx, cy, R * 1.9, 0, Math.PI * 2); g.fill();
+    // main ring
+    g.lineWidth = Math.max(3, w * 0.018); g.strokeStyle = '#ff2d55'; g.shadowColor = '#ff2d55'; g.shadowBlur = 24 + live * 40;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.stroke();
+    g.shadowBlur = 0;
+    // outer tick ring, turning
+    g.save(); g.translate(cx, cy); g.rotate(t * (S.state === 'thinking' ? 1.4 : 0.15));
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * Math.PI * 2; const long = i % 6 === 0; const r1 = R * 1.22; const r2 = r1 + (long ? 12 : 5);
+      g.strokeStyle = `rgba(255,${long ? 120 : 80},${long ? 140 : 110},${long ? 0.9 : 0.45})`; g.lineWidth = long ? 2 : 1;
+      g.beginPath(); g.moveTo(Math.cos(a) * r1, Math.sin(a) * r1); g.lineTo(Math.cos(a) * r2, Math.sin(a) * r2); g.stroke();
+    }
+    g.restore();
+    // thinking arcs / audio wave ring
+    g.save(); g.translate(cx, cy);
+    if (S.state === 'thinking') {
+      for (let k = 0; k < 3; k++) {
+        g.strokeStyle = `rgba(255,${120 + k * 40},${150 + k * 30},${0.75 - k * 0.2})`; g.lineWidth = 2.5 - k * 0.6;
+        const a = t * (2.2 - k * 0.6) + k * 2; g.beginPath(); g.arc(0, 0, R * (0.78 - k * 0.1), a, a + 1.6 + k * 0.4); g.stroke();
+      }
+    } else {
+      g.strokeStyle = 'rgba(255,190,205,.7)'; g.lineWidth = 1.4; g.beginPath();
+      for (let i = 0; i <= 120; i++) {
+        const a = (i / 120) * Math.PI * 2;
+        const wob = (Math.sin(a * 6 + t * 3) + Math.sin(a * 11 - t * 2.3)) * 0.5 * (live * 0.12 + 0.012);
+        const r = R * (0.84 + wob);
+        if (i) g.lineTo(Math.cos(a) * r, Math.sin(a) * r); else g.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      g.stroke();
+    }
+    g.restore();
+    // little satellites
+    for (let i = 0; i < 3; i++) {
+      const a = t * (0.4 + i * 0.17) + i * 2.1; const r = R * (1.45 + i * 0.08);
+      g.fillStyle = 'rgba(255,255,255,.75)'; g.beginPath(); g.arc(cx + Math.cos(a) * r, cy + Math.sin(a) * r, 2, 0, Math.PI * 2); g.fill();
+    }
+  }
+  requestAnimationFrame(draw);
+
+  // ---- audio in ----------------------------------------------------------------------
+  async function mic() {
+    if (S.stream) return S.stream;
+    S.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    S.ctx = S.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    const src = S.ctx.createMediaStreamSource(S.stream);
+    S.analyser = S.ctx.createAnalyser(); S.analyser.fftSize = 1024; src.connect(S.analyser);
+    const buf = new Uint8Array(S.analyser.fftSize);
+    let loud = 0; let quiet = 0;
+    (function meter() {
+      requestAnimationFrame(meter);
+      S.analyser.getByteTimeDomainData(buf);
+      let sum = 0; for (const v of buf) sum += ((v - 128) / 128) ** 2;
+      const rms = Math.sqrt(sum / buf.length);
+      S.level = S.level * 0.7 + Math.min(1, rms * 6) * 0.3;
+      // hands-free: start on speech, stop after a short silence
+      if (!S.handsFree || S.busy || S.state === 'speaking') { loud = 0; quiet = 0; return; }
+      if (rms > 0.045) { loud++; quiet = 0; } else { quiet++; loud = Math.max(0, loud - 1); }
+      if (!S.rec && loud > 6) startRec();
+      if (S.rec && quiet > 55) stopRec();
+    })();
+    return S.stream;
+  }
+  function pickType() { for (const t of ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm']) if (window.MediaRecorder?.isTypeSupported?.(t)) return t; return ''; }
+  async function startRec() {
+    if (S.rec || S.busy) return;
+    try { await mic(); } catch (e) { toast(e?.name === 'NotAllowedError' ? 'Microphone permission was refused. Allow it for this site in the browser.' : `No microphone: ${e.message || e}`); return; }
+    stopSpeaking();
+    S.chunks = []; const type = pickType();
+    S.rec = new MediaRecorder(S.stream, type ? { mimeType: type } : undefined);
+    S.rec.ondataavailable = (e) => { if (e.data.size) S.chunks.push(e.data); };
+    S.rec.onstop = () => { const blob = new Blob(S.chunks, { type: S.rec?.mimeType || type || 'audio/webm' }); S.rec = null; $('#talk').classList.remove('on'); $('#talk-l').textContent = 'Talk'; if (blob.size > 2500) heard(blob); else setState('idle'); };
+    S.rec.start(); S.recAt = Date.now();
+    $('#talk').classList.add('on'); $('#talk-l').textContent = 'Stop'; setState('listening');
+  }
+  function stopRec() { if (S.rec && S.rec.state !== 'inactive') S.rec.stop(); }
+
+  async function heard(blob) {
+    S.busy = true; setState('thinking', 'understanding');
+    try {
+      const lang = $('#lang').value;
+      const r = await fetch('/api/lrm/voice?op=stt', { method: 'POST', body: blob, headers: lang ? { 'X-Lang': lang } : {}, credentials: 'same-origin' });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      if (!data.text) { S.busy = false; setState('idle', "didn't catch that"); return; }
+      await ask(data.text, { lang: data.language });
+    } catch (e) { S.busy = false; setState('idle'); toast(`Couldn't understand the audio: ${e.message}`); }
+  }
+
+  // ---- talking to the assistant ------------------------------------------------------
+  async function ask(text, { lang = '', image = null } = {}) {
+    S.busy = true; $('#you').textContent = text ? `“${text}”` : ''; $('#it').textContent = ''; setState('thinking');
+    try {
+      const r = await fetch('/api/lrm/voice?op=chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang: lang || $('#lang').value || '', image }) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      showHud(data.hud || []);
+      $('#it').textContent = data.text || '';
+      S.busy = false;
+      if (data.text && !S.muted) await speak(data.text, lang); else setState('idle');
+    } catch (e) { S.busy = false; setState('idle'); toast(e.message); }
+  }
+
+  // ---- audio out: sentence by sentence, so it starts talking quickly --------------------
+  function sentences(text) { return (text.match(/[^.!?。！？]+[.!?。！？]*/g) || [text]).map((s) => s.trim()).filter(Boolean).reduce((a, s) => { if (a.length && (a[a.length - 1] + ' ' + s).length < 140) a[a.length - 1] += ' ' + s; else a.push(s); return a; }, []); }
+  async function tts(text, lang) {
+    const r = await fetch('/api/lrm/voice?op=tts', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang }) });
+    if (!r.ok) { let m = `HTTP ${r.status}`; try { m = (await r.json()).error || m; } catch { /* audio */ } throw new Error(m); }
+    return r.arrayBuffer();
+  }
+  async function speak(text, lang) {
+    S.ctx = S.ctx || new (window.AudioContext || window.webkitAudioContext)();
+    if (S.ctx.state === 'suspended') await S.ctx.resume();
+    const token = {}; S.speaking = token; setState('speaking');
+    const parts = sentences(text); let next = tts(parts[0], lang);
+    try {
+      for (let i = 0; i < parts.length; i++) {
+        const buf = await S.ctx.decodeAudioData(await next);
+        if (i + 1 < parts.length) next = tts(parts[i + 1], lang);
+        if (S.speaking !== token) return;
+        await play(buf, token);
+      }
+    } catch (e) { toast(`Voice unavailable: ${e.message}`); }
+    if (S.speaking === token) { S.speaking = null; setState('idle'); }
+  }
+  function play(buf, token) {
+    return new Promise((resolve) => {
+      const src = S.ctx.createBufferSource(); src.buffer = buf;
+      const an = S.ctx.createAnalyser(); an.fftSize = 512; src.connect(an); an.connect(S.ctx.destination);
+      const data = new Uint8Array(an.fftSize); token.src = src;
+      (function meter() { if (S.speaking !== token) return; an.getByteTimeDomainData(data); let s = 0; for (const v of data) s += ((v - 128) / 128) ** 2; S.out = S.out * 0.6 + Math.min(1, Math.sqrt(s / data.length) * 5) * 0.4; requestAnimationFrame(meter); })();
+      src.onended = () => { S.out = 0; resolve(); };
+      src.start();
+    });
+  }
+  function stopSpeaking() { if (S.speaking?.src) try { S.speaking.src.stop(); } catch { /* ended */ } S.speaking = null; S.out = 0; }
+
+  // ---- HUD panels --------------------------------------------------------------------
+  function chart(labels, values) {
+    const max = Math.max(1, ...values.map(Number).filter(Number.isFinite)); const n = values.length || 1; const bw = 100 / n;
+    return `<svg viewBox="0 0 100 60" preserveAspectRatio="none">${values.map((v, i) => { const h = (Number(v) || 0) / max * 48; return `<rect x="${i * bw + bw * 0.18}" y="${52 - h}" width="${bw * 0.64}" height="${h}" fill="#f4f4f6"/>`; }).join('')}
+      <line x1="0" y1="52.5" x2="100" y2="52.5" stroke="rgba(255,255,255,.4)" stroke-width=".4"/></svg>
+      <div class="sub" style="display:flex;justify-content:space-between">${labels.slice(0, 8).map((l) => `<span>${esc(l)}</span>`).join('')}</div>`;
+  }
+  function card(p) {
+    const title = p.title ? `<h4>${esc(p.title)}</h4>` : '';
+    if (p.type === 'stat') return `${title}<div class="val">${esc(p.value)}</div>${p.sub ? `<div class="sub">${esc(p.sub)}</div>` : ''}`;
+    if (p.type === 'chart') return `${title}${chart(p.labels || [], p.values || [])}`;
+    if (p.type === 'list') return `${title}<ul>${(p.items || []).slice(0, 8).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
+    if (p.type === 'image' && /^https?:\/\//.test(p.url || '')) return `${title}<img src="${esc(p.url)}" alt="${esc(p.title || '')}" referrerpolicy="no-referrer" loading="lazy">`;
+    return `${title}<p>${esc(p.body || p.text || '')}</p>`;
+  }
+  function showHud(panels) {
+    S.panels = panels;
+    const hud = $('#hud'); hud.innerHTML = '';
+    if (!panels.length) return;
+    const W = innerWidth; const H = innerHeight; const small = W < 760;
+    // around the orb; the camera view takes the top right when it is on
+    const camBottom = S.camOn ? $('#cam').getBoundingClientRect().bottom + 14 : 0;
+    const right = (y) => Math.max(y, camBottom);
+    const spots = small
+      ? [[12, 64], [W / 2 + 6, S.camOn ? camBottom : 64], [12, 210], [W / 2 + 6, Math.max(210, camBottom + 150)]]
+      : [[W * 0.04, H * 0.1], [W * 0.04, H * 0.4], [W * 0.73, right(H * 0.12)], [W * 0.73, right(H * 0.12) + H * 0.3], [W * 0.04, H * 0.68], [W * 0.73, Math.min(H * 0.74, right(H * 0.12) + H * 0.58)]];
+    panels.slice(0, spots.length).forEach((p, i) => {
+      const el = document.createElement('div'); el.className = 'card'; el.style.left = `${spots[i][0]}px`; el.style.top = `${spots[i][1]}px`; el.style.animationDelay = `${i * 0.08}s`;
+      el.innerHTML = card(p); hud.appendChild(el);
+    });
+  }
+
+  // ---- camera: live object boxes, and "what do you see" -----------------------------
+  async function camera(on) {
+    const box = $('#cam'); const video = $('#video');
+    $('#camera').setAttribute('aria-pressed', String(on));
+    if (!on) { S.camOn = false; box.classList.remove('on'); showHud(S.panels || []); video.srcObject?.getTracks().forEach((t) => t.stop()); video.srcObject = null; return; }
+    try {
+      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: store.get('lrm_p_facing', 'user'), width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      await video.play(); S.camOn = true; box.classList.add('on'); showHud(S.panels || []); detect();
+    } catch (e) { $('#camera').setAttribute('aria-pressed', 'false'); toast(e?.name === 'NotAllowedError' ? 'Camera permission was refused.' : `No camera: ${e.message || e}`); }
+  }
+  async function loadDetector() {
+    if (S.detector || S.detectorFailed) return S.detector;
+    try {
+      if (!window.Vision) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = '/assets/brand/vendor/mediapipe/vision_bundle.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+      const files = await window.Vision.FilesetResolver.forVisionTasks('/assets/brand/vendor/mediapipe/wasm');
+      const make = (delegate) => window.Vision.ObjectDetector.createFromOptions(files, { baseOptions: { modelAssetPath: '/assets/brand/vendor/mediapipe/efficientdet_lite0.tflite', delegate }, runningMode: 'VIDEO', scoreThreshold: 0.45, maxResults: 6 });
+      try { S.detector = await make('GPU'); } catch { S.detector = await make('CPU'); }
+    } catch { S.detectorFailed = true; }
+    return S.detector;
+  }
+  async function detect() {
+    const det = await loadDetector(); const video = $('#video'); const c = $('#boxes'); const ctx = c.getContext('2d'); let last = -1;
+    (function loop() {
+      if (!S.camOn) { ctx.clearRect(0, 0, c.width, c.height); return; }
+      requestAnimationFrame(loop);
+      if (!det || video.readyState < 2 || video.currentTime === last) return;
+      last = video.currentTime;
+      c.width = video.videoWidth; c.height = video.videoHeight;
+      let res; try { res = det.detectForVideo(video, performance.now()); } catch { return; }
+      ctx.clearRect(0, 0, c.width, c.height); ctx.lineWidth = Math.max(2, c.width / 300); ctx.font = `${Math.max(14, c.width / 40)}px ui-monospace, monospace`;
+      S.lastSeen = [];
+      for (const d of res.detections || []) {
+        const b = d.boundingBox; const name = d.categories?.[0]?.categoryName || 'object'; S.lastSeen.push(name);
+        ctx.strokeStyle = '#ff2d55'; ctx.fillStyle = 'rgba(255,45,85,.16)';
+        ctx.fillRect(b.originX, b.originY, b.width, b.height); ctx.strokeRect(b.originX, b.originY, b.width, b.height);
+        // the canvas is mirrored with the video: write the label mirrored back
+        ctx.save(); ctx.scale(-1, 1); ctx.fillStyle = '#ff2d55';
+        const label = `${name} ${Math.round((d.categories?.[0]?.score || 0) * 100)}%`; const tw = ctx.measureText(label).width;
+        ctx.fillRect(-(b.originX + b.width), b.originY - 22, tw + 10, 22); ctx.fillStyle = '#fff'; ctx.fillText(label, -(b.originX + b.width) + 5, b.originY - 6); ctx.restore();
+      }
+      $('#seen').textContent = S.lastSeen.length ? [...new Set(S.lastSeen)].join(' · ') : '';
+    })();
+  }
+  function frame() {
+    const v = $('#video'); if (!S.camOn || !v.videoWidth) return null;
+    const c = document.createElement('canvas'); const scale = Math.min(1, 1024 / v.videoWidth); c.width = v.videoWidth * scale; c.height = v.videoHeight * scale;
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.82);
+  }
+
+  // ---- controls ----------------------------------------------------------------------
+  const talk = $('#talk'); let pressAt = 0;
+  talk.addEventListener('pointerdown', (e) => { e.preventDefault(); pressAt = Date.now(); if (S.rec) stopRec(); else startRec(); });
+  talk.addEventListener('pointerup', () => { if (S.rec && Date.now() - pressAt > 450) stopRec(); }); // held = push-to-talk
+  cv.addEventListener('click', () => { if (S.state === 'speaking') { stopSpeaking(); setState('idle'); } else if (S.rec) stopRec(); else startRec(); });
+  addEventListener('keydown', (e) => {
+    if (e.target.closest('input, select, textarea')) return;
+    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); if (S.rec) stopRec(); else startRec(); }
+    if (e.key === 'Escape') { stopSpeaking(); stopRec(); setState('idle'); }
+  });
+  $('#handsfree').onclick = async () => {
+    S.handsFree = !S.handsFree; $('#handsfree').setAttribute('aria-pressed', String(S.handsFree));
+    if (S.handsFree) { try { await mic(); setState('idle', 'listening for you'); } catch (e) { S.handsFree = false; $('#handsfree').setAttribute('aria-pressed', 'false'); toast(`No microphone: ${e.message || e}`); } }
+    else setState('idle');
+  };
+  $('#camera').onclick = () => camera(!S.camOn);
+  $('#look').onclick = () => { const img = frame(); if (!img) return; const seen = [...new Set(S.lastSeen)]; ask(seen.length ? `What do you see? (The camera spots: ${seen.join(', ')}.)` : 'What do you see?', { image: img }); };
+  $('#keyboard').onclick = () => { const open = !$('#typed').classList.contains('open'); $('#typed').classList.toggle('open', open); document.body.classList.toggle('typing', open); $('#keyboard').setAttribute('aria-pressed', String(open)); if (open) $('#typed-in').focus(); };
+  $('#typed').onsubmit = (e) => { e.preventDefault(); const v = $('#typed-in').value.trim(); if (!v || S.busy) return; $('#typed-in').value = ''; ask(v, { image: S.camOn && /\b(see|look|this|ini|itu|lihat)\b/i.test(v) ? frame() : null }); };
+  const muteIcon = () => { $('#mute').innerHTML = `<i class="fa-solid ${S.muted ? 'fa-volume-xmark' : 'fa-volume-high'}"></i>`; $('#mute').setAttribute('aria-pressed', String(S.muted)); };
+  $('#mute').onclick = () => { S.muted = !S.muted; store.set('lrm_p_muted', S.muted); if (S.muted) stopSpeaking(); muteIcon(); };
+  muteIcon();
+  $('#lang').value = store.get('lrm_p_lang', ''); $('#lang').onchange = () => store.set('lrm_p_lang', $('#lang').value);
+
+  fetch('/api/lrm/voice', { credentials: 'same-origin' }).then((r) => r.json()).then((d) => {
+    S.agent = d.agent;
+    const name = d.agent?.name || 'Personal';
+    $('#name').textContent = name.toUpperCase().slice(0, 10); $('#who').textContent = `${name} · personal assistant`; document.title = `${name} · LRMagent`;
+    if (!d.voice?.ok) toast('The voice service is starting or not reachable yet; typed questions still work.');
+    setState('idle');
+  }).catch(() => { setState('idle'); toast('Sign in to the LRMagent console first.'); });
+})();
+</script>
+</body>
+</html>

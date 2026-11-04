@@ -91,7 +91,7 @@ patch("agent/registry.py", 'name=builtin_name or "CowAgent",', f'name=builtin_na
 # the entry is merged into it (and restored if a saved menu lacks it).
 patch("static/js/core/menu.js",
       "    star: 'fa-star',",
-      "    whatsapp: 'fa-comments', vault: 'fa-gem', star: 'fa-star',")
+      "    whatsapp: 'fa-comments', vault: 'fa-gem', personal: 'fa-circle-dot', star: 'fa-star',")
 patch("static/js/core/menu.js",
       "function menuMerge(saved) {",
       """function menuMerge(saved) {
@@ -103,6 +103,7 @@ function _lrmEnsureWhatsApp(doc) {
     // Usage after Logs. Pages it replaces are hidden once, when it is first added, so
     // showing them again from the menu editor sticks.
     const pages = [
+        { after: 'chat', item: { id: 'lrm-personal', type: 'url', url: '/assets/brand/personal.html', open: 'frame', title: 'Personal', icon: 'personal', hidden: false } },
         { after: 'knowledge', hide: ['memory', 'knowledge'], item: { id: 'lrm-vault', type: 'url', url: '/assets/brand/vault.html', open: 'frame', title: 'Vault', icon: 'vault', hidden: false } },
         { after: 'skills', item: { id: 'lrm-teammates', type: 'url', url: '/teammates/', open: 'frame', title: 'Teammates', icon: 'robot', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
@@ -158,8 +159,9 @@ patch("agent/tools/__init__.py",
       "from agent.tools.transcribe.transcribe import TranscribeAudio\n"
       "from agent.tools.teammates.teammate import AskTeammate\n"
       "from agent.tools.google_tool.google_tool import GoogleTool\n"
-      "from agent.tools.whatsapp_tool.whatsapp_tool import WhatsAppTool\n", root=app)
-patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n    'WhatsAppTool',\n", root=app)
+      "from agent.tools.whatsapp_tool.whatsapp_tool import WhatsAppTool\n"
+      "from agent.tools.ask_agent.ask_agent import AskAgent\n", root=app)
+patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n    'WhatsAppTool',\n    'AskAgent',\n", root=app)
 # ---- Scheduled messages from WhatsApp chats go back to WhatsApp through the
 # gateway (deploy/agent-tools/whatsapp_relay.py, installed as channel/lrm_whatsapp_relay.py).
 patch("agent/tools/scheduler/integration.py",
@@ -203,7 +205,8 @@ patch("web_channel.py", "\nURLS = (\n",
       "from channel.web.api.lrm_activity import LrmActivityHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_google import LrmGoogleCallbackHandler, LrmGoogleHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_browser import LrmBrowserHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_tts import LrmTtsHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_tts import LrmTtsHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_voice import LrmVoiceHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
@@ -211,7 +214,8 @@ patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/lrm/google/callback', 'LrmGoogleCallbackHandler',\n"
       "    '/api/lrm/google', 'LrmGoogleHandler',\n"
       "    '/api/lrm/browser', 'LrmBrowserHandler',\n"
-      "    '/api/lrm/tts', 'LrmTtsHandler',\n")
+      "    '/api/lrm/tts', 'LrmTtsHandler',\n"
+      "    '/api/lrm/voice', 'LrmVoiceHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",
@@ -394,5 +398,5 @@ patch("bridge/agent_bridge.py",
 patch("static/js/core/menu.js",
       "        frame.setAttribute('referrerpolicy', 'no-referrer');\n",
       "        frame.setAttribute('referrerpolicy', 'no-referrer');\n"
-      "        if (/^\\/(?!\\/)/.test(String(item.url))) frame.setAttribute('allow', 'camera; clipboard-write');\n")
+      "        if (/^\\/(?!\\/)/.test(String(item.url))) frame.setAttribute('allow', 'camera; microphone; clipboard-write; autoplay');\n")
 print("LRM brand applied")
