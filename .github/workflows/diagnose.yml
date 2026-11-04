@@ -1,0 +1,32 @@
+name: Diagnose LRMagent on the VPS
+
+# Manual only. Collects container state and recent errors from the VPS. The repository
+# is public, so the report is encrypted to a key held outside GitHub before it is printed.
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VPS: ubuntu@43.152.240.47
+    steps:
+      - uses: actions/checkout@v5
+      - name: Prepare pinned SSH identity
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          test -n "$VPS_SSH_KEY"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/ln_vps"
+          cp deploy/known_hosts "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/ln_vps" "$HOME/.ssh/known_hosts"
+      - name: Collect and encrypt
+        run: |
+          ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes "$VPS" 'bash -s' < deploy/diagnose.sh > report.txt 2>&1 || true
+          openssl rand -out key.bin 32
+          echo "KEY:$(openssl pkeyutl -encrypt -pubin -inkey deploy/diagnose.pub.pem -pkeyopt rsa_padding_mode:oaep -in key.bin | base64 -w0)"
+          gzip -9c report.txt | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:key.bin | base64 -w 0 | fold -w 4000 | sed 's/^/DATA:/'
+          echo "Report: $(wc -c < report.txt) bytes"
+          rm -f report.txt key.bin
