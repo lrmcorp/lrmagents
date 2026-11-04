@@ -173,5 +173,6 @@ class LrmVoiceHandler:
 try:
     from agent import lrm_personal as _p
     _p.ensure_agent()
+    _p.ensure_preferences()
 except Exception as _e:  # never stop the console from starting
     logger.warning(f"[Personal] not created at start: {_e}")

@@ -97,7 +97,7 @@ const CHANNEL = { web: 'Console', openai_api: 'WhatsApp / API' };
 let data = null;
 
 function toast(m, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
-const when = (ts) => new Date(ts * 1000).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const when = (ts) => { const d = new Date(ts * 1000); return `${d.toLocaleDateString('en-GB').replace(/\//g, '-')} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`; };
 const where = (r) => (r.session || '').startsWith('openai:conversation:whatsapp:') ? 'WhatsApp' : (CHANNEL[r.channel] || r.channel || '—');
 
 async function api(body) {

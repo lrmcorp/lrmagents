@@ -1,3 +1,7 @@
+/* Hidden until the English text is in (applyI18n adds .lrm-i18n); shown after 1.5 s regardless. */
+html:not(.lrm-i18n) body { visibility: hidden; animation: lrm-reveal 0s linear 1.5s forwards; }
+@keyframes lrm-reveal { to { visibility: visible; } }
+
 /* LRMagent console in the OpenBot layout: a quiet sidebar holding the brand,
    search, conversations and the menu, and the page as one rounded card beside it.
    Only the logo is LRM's; colours and type follow OpenBot (Inter, neutral greys).
@@ -120,16 +124,20 @@ body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; l
 #sidebar .sidebar-item:hover .item-icon, #sidebar .sidebar-item.active .item-icon { opacity: 0.9; }
 #sidebar .sidebar-item.active { background: var(--lrm-sidebar-active) !important; color: var(--lrm-text) !important; font-weight: 550; }
 #sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.18); }
-/* Short menu like OpenBot's: new chats come from +, and the admin pages (Settings,
-   Channels) fold under More; the page you are on always stays visible. */
+/* Many chats: the chat list gets the room. The menu is hidden behind the dock's
+   "Menu" button and opens above it with every page in its sections. */
 #sidebar .sidebar-item[data-view="chat"] { display: none !important; }
-#sidebar:not(.lrm-more-open) .sidebar-item:is([data-view="config"], [data-view="channels"], [data-view="logs"],
-    [data-view="memory"], [data-view="knowledge"], [data-menu-id="lrm-usage"]):not(.active) { display: none !important; }
-#sidebar:not(.lrm-more-open) .menu-group[data-group="lrm-settings"]:not(:has(.active)) { display: none !important; }
-.lrm-more { display: flex; align-items: center; gap: 12px; width: calc(100% - 24px); margin: 0 12px 4px; padding: 8px 10px;
-    border: 0; background: none; border-radius: 9px; cursor: pointer; font: inherit; font-size: 14px; color: var(--lrm-muted); text-align: left; }
-.lrm-more:hover { background: var(--lrm-sidebar-hover); color: var(--lrm-text); }
-.lrm-more i { width: 20px; text-align: center; font-size: 12px; }
+#sidebar:not(.lrm-menu-open) #sidebar-nav { display: none !important; }
+#sidebar.lrm-menu-open #sidebar-nav { flex: 1 1 auto !important; max-height: none; border-top: 1px solid var(--lrm-line); padding-top: 10px !important; }
+#sidebar.lrm-menu-open #session-panel { flex: 0 1 22% !important; min-height: 96px; }
+.lrm-dock { display: flex; gap: 0; padding: 6px 6px 4px; border-top: 1px solid var(--lrm-line); margin-top: 4px; }
+.lrm-dock-btn { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px 6px;
+    border: 0; background: none; border-radius: 10px; cursor: pointer; color: var(--lrm-muted); font: inherit; padding-left: 0; padding-right: 0; }
+.lrm-dock-btn i { font-size: 14px; }
+.lrm-dock-btn span { font-size: 10.5px; letter-spacing: -0.01em; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.lrm-dock-btn:hover { background: var(--lrm-sidebar-hover); color: var(--lrm-text); }
+.lrm-dock-btn.active { background: var(--lrm-sidebar-active); color: var(--lrm-text); }
+.lrm-dock-btn.active span { font-weight: 600; }
 #session-list .session-empty { display: none; }
 
 .lrm-account { display: flex; align-items: center; gap: 8px; padding: 6px 12px 10px 22px; }

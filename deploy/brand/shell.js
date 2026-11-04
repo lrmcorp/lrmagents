@@ -45,24 +45,45 @@
         panel.classList.remove('hidden');
         panel.after(nav);
 
-        const more = document.createElement('button');
-        more.type = 'button';
-        more.className = 'lrm-more';
-        const setMore = (open) => {
-            sidebar.classList.toggle('lrm-more-open', open);
-            more.innerHTML = open ? '<i class="fas fa-chevron-up"></i>Less' : '<i class="fas fa-ellipsis"></i>More';
-            try { localStorage.setItem('lrm_menu_more', open ? '1' : '0'); } catch (e) { /* private mode */ }
+        // Many chats: the list takes the space. The menu is one row of the main pages
+        // plus "Menu", which opens every page in its sections (and closes on a pick).
+        const DOCK = [
+            ['lrm-personal', 'fa-circle-dot', 'Personal'], ['lrm-vault', 'fa-gem', 'Vault'], ['lrm-whatsapp', 'fa-comments', 'WhatsApp'],
+            ['agents', 'fa-people-group', 'Agents'],
+        ];
+        const itemFor = (key) => nav.querySelector(`.sidebar-item[data-menu-id="${key}"]`) || nav.querySelector(`.sidebar-item[data-view="${key}"]:not([data-menu-id])`);
+        const dock = document.createElement('div');
+        dock.className = 'lrm-dock';
+        dock.innerHTML = DOCK.map(([key, icon, label]) => `<button type="button" class="lrm-dock-btn" data-key="${key}" title="${label}" aria-label="${label}"><i class="fas ${icon}"></i><span>${label}</span></button>`).join('')
+            + '<button type="button" class="lrm-dock-btn lrm-dock-menu" title="All pages" aria-label="All pages" aria-expanded="false"><i class="fas fa-bars"></i><span>Menu</span></button>';
+        nav.after(dock);
+        const setMenu = (open) => {
+            sidebar.classList.toggle('lrm-menu-open', open);
+            $('.lrm-dock-menu', dock).setAttribute('aria-expanded', String(open));
+            $('.lrm-dock-menu i', dock).className = `fas ${open ? 'fa-xmark' : 'fa-bars'}`;
         };
-        let moreOpen = false;
-        try { moreOpen = localStorage.getItem('lrm_menu_more') === '1'; } catch (e) { /* private mode */ }
-        setMore(moreOpen);
-        more.onclick = () => {
-            const open = !sidebar.classList.contains('lrm-more-open');
-            setMore(open);
-            // the Settings section opens at the end of the menu: bring it into view
-            if (open) requestAnimationFrame(() => nav.querySelector('[data-group="lrm-settings"]')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+        setMenu(false);
+        dock.addEventListener('click', (e) => {
+            const btn = e.target.closest('.lrm-dock-btn');
+            if (!btn) return;
+            if (btn.classList.contains('lrm-dock-menu')) return setMenu(!sidebar.classList.contains('lrm-menu-open'));
+            itemFor(btn.dataset.key)?.click();
+            setMenu(false);
+        });
+        nav.addEventListener('click', (e) => { if (e.target.closest('.sidebar-item')) setMenu(false); });
+        // Light the dock button of the page on screen (the menu marks its own item active).
+        const syncDock = () => {
+            dock.querySelectorAll('.lrm-dock-btn[data-key]').forEach((b) => {
+                const item = itemFor(b.dataset.key);
+                b.hidden = !item;
+                b.classList.toggle('active', Boolean(item?.classList.contains('active')));
+            });
+            const onOther = nav.querySelector('.sidebar-item.active:not([data-view="chat"])') && !dock.querySelector('.lrm-dock-btn.active');
+            $('.lrm-dock-menu', dock).classList.toggle('active', Boolean(onOther));
         };
-        nav.after(more);
+        new MutationObserver(syncDock).observe(nav, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+        syncDock();
+        const more = dock;
 
         const account = document.createElement('div');
         account.className = 'lrm-account';

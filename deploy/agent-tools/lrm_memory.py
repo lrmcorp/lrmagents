@@ -52,7 +52,7 @@ write a note about it for the owner's knowledge vault. Reply with JSON only, no 
 
 "personal" is true when the chat is mainly about the owner's private life (family, health, money,
 relationships, home, personal plans or feelings) rather than work or the business.
-Rules: write in English even when the chat is in another language (keep names, quotes and figures as they are).
+Write dates as DD-MM-YYYY (e.g. 04-11-2026). Rules: write in English even when the chat is in another language (keep names, quotes and figures as they are).
 Be specific: names, amounts, dates, links. Leave a list empty when there is nothing for it. Never copy passwords,
 API keys, codes or other secrets. If the chat has nothing worth keeping (greetings, a test, small talk), reply
 {{"skip": true}}.
@@ -309,7 +309,7 @@ def summarise_pass():
                 state[key] = {**entry, "seq": max_seq, "at": time.time(), "skipped": True}
                 continue
             channel, where, contact = _where(session_id, channel_type)
-            when = datetime.datetime.fromtimestamp(first or last_active).strftime("%d %B %Y")
+            when = datetime.datetime.fromtimestamp(first or last_active).strftime("%d-%m-%Y")
             prompt = PROMPT.format(where=where, when=when, conversation=body)
             data = _parse(_ask_main(prompt)) or _parse(_ask_plan(prompt))
             if data is None:
@@ -344,7 +344,7 @@ def summarise_pass():
             if not rel or not os.path.exists(os.path.join(root, rel)):
                 started = datetime.datetime.fromtimestamp(first or last_active)
                 folder = os.path.join(FOLDER, started.strftime("%Y-%m"))
-                base = f"{started.strftime('%Y-%m-%d')} {_filename(title)}"
+                base = f"{started.strftime('%d-%m-%Y')} {_filename(title)}"  # the owner's date format
                 rel, n = os.path.join(folder, base + ".md"), 2
                 while os.path.exists(os.path.join(root, rel)):
                     rel, n = os.path.join(folder, f"{base} {n}.md"), n + 1

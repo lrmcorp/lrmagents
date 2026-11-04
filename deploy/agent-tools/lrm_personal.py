@@ -139,3 +139,26 @@ def refusal(executor, tool_name, arguments):
         return None
     return (f"That is {NAME}'s private space (the owner's personal assistant). Other agents can't open it. "
             f"If the owner wants something from there, they can ask {NAME}.")
+
+
+DATE_PREF = "\n## Preferences (LRMagent)\n- Dates: always write them as DD-MM-YYYY, e.g. 04-11-2026 (times as 24-hour HH:MM).\n"
+
+
+def ensure_preferences():
+    """The owner's date format, once, in every agent's owner profile (USER.md)."""
+    try:
+        for p in registry().list():
+            path = Path(p.workspace) / "USER.md"
+            try:
+                text = path.read_text(encoding="utf-8") if path.exists() else ""
+            except OSError:
+                continue
+            if "DD-MM-YYYY" in text:
+                continue
+            try:
+                with open(path, "a", encoding="utf-8") as f:
+                    f.write(DATE_PREF)
+            except OSError as e:
+                logger.warning(f"[Personal] could not add the date preference for {p.id}: {e}")
+    except Exception as e:
+        logger.warning(f"[Personal] preferences not applied: {e}")

@@ -36,13 +36,16 @@ function normPath(p) {
 const joinPath = (dir, rel) => normPath(dir ? `${dir}/${rel}` : rel);
 const fileUrl = (path) => `/api/lrm/vault?op=file&agent_id=${encodeURIComponent(S.agent || '')}&path=${encodeURIComponent(path)}`;
 const today = () => new Date().toLocaleDateString('en-CA');
+// Dates on screen are DD-MM-YYYY (the owner's format); file names keep YYYY-MM-DD so they sort.
+const dmy = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-');
+const dmyTime = (d) => `${dmy(d)} ${new Date(d).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
 function ago(t) {
   const s = Date.now() / 1000 - t;
   if (s < 60) return 'just now';
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   if (s < 86400 * 30) return `${Math.floor(s / 86400)} d ago`;
-  return new Date(t * 1000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return dmy(t * 1000);
 }
 
 // ---- state -------------------------------------------------------------------
@@ -2322,7 +2325,7 @@ function evalExpr(expr, row, skipped) {
 }
 function cellHtml(value, key) {
   if (value == null || value === '') return '<span class="muted">—</span>';
-  if (key === 'file.mtime') return esc(new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }));
+  if (key === 'file.mtime') return esc(dmy(value));
   if (key === 'file.size') return esc(value > 1024 ? `${(value / 1024).toFixed(1)} KB` : `${value} B`);
   const one = (v) => {
     const s = String(v);
@@ -2573,7 +2576,7 @@ function gitPanel() {
     }
     const [cls, label] = gitBadge(st);
     const repo = st.repo || '';
-    const when = st.status_time ? new Date(st.status_time).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+    const when = st.status_time ? dmyTime(st.status_time) : '';
     const needsKey = st.sync_status === 'FAIL' && /reach|deploy key|permission|denied/i.test(st.message || '');
     const steps = repo && (needsKey || !st.sync_status) ? `
       <ol>

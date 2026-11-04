@@ -127,13 +127,15 @@ function _lrmEnsureWhatsApp(doc) {
 function _lrmGroup(doc) {
     const sections = [
         { id: 'chat', title: '', keys: ['chat', 'artifacts'] },
-        { id: 'lrm-assistants', title: 'Assistants', keys: ['lrm-personal', 'agents', 'lrm-teammates'] },
+        { id: 'lrm-assistants', title: 'Assistants', keys: ['lrm-personal', 'agents'] },
         { id: 'lrm-knowledge', title: 'Knowledge', keys: ['lrm-vault', 'skills', 'memory', 'knowledge'] },
         { id: 'lrm-connect', title: 'Connect', keys: ['lrm-whatsapp', 'lrm-connections', 'channels'] },
         { id: 'lrm-work', title: 'Work', keys: ['tasks', 'lrm-activity', 'lrm-browser'] },
-        { id: 'lrm-settings', title: 'Settings', keys: ['config', 'lrm-usage', 'logs'] },
+        { id: 'lrm-settings', title: 'Settings', keys: ['config', 'lrm-teammates', 'lrm-usage', 'logs'] },
     ];
     const keyOf = (i) => (i.type === 'builtin' ? i.view : i.id);
+    // Teammates is where the AI plans are signed in (Codex, Claude, Gemini...): a setting.
+    for (const g of doc.groups) for (const i of g.items) if (i.id === 'lrm-teammates' && (!i.title || i.title === 'Teammates')) i.title = 'AI plans';
     const all = doc.groups.flatMap(g => g.items);
     const used = new Set();
     const groups = sections.map(sec => ({ id: sec.id, title: sec.title, items: sec.keys.map(k => all.find(i => keyOf(i) === k)).filter(Boolean) }));
@@ -420,4 +422,12 @@ patch("static/js/core/menu.js",
       "        frame.setAttribute('referrerpolicy', 'no-referrer');\n",
       "        frame.setAttribute('referrerpolicy', 'no-referrer');\n"
       "        if (/^\\/(?!\\/)/.test(String(item.url))) frame.setAttribute('allow', 'camera; microphone; clipboard-write; autoplay');\n")
+# ---- No Chinese flash on reload: the templates carry Chinese text until applyI18n()
+# swaps in English, a moment after first paint. brand.css keeps the page hidden until
+# that has run (and reveals it after 1.5 s regardless).
+patch("static/js/core/i18n.js", "function applyI18n() {\n",
+      "function applyI18n() {\n    requestAnimationFrame(() => document.documentElement.classList.add('lrm-i18n'));\n")
+# ---- Dates as DD-MM-YYYY (the owner's format) on the Tasks page.
+patch("static/js/views/tasks.js", "d.toLocaleString()",
+      "(d.toLocaleDateString('en-GB').replace(/\\//g, '-') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))", count="all")
 print("LRM brand applied")
