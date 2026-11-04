@@ -2,3 +2,4 @@
 .deploy-revision
 __pycache__/
 node_modules/
+deploy/brand/.mp-cache/

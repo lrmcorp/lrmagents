@@ -577,20 +577,22 @@ function renderTree() {
     return html;
   };
   let html = '';
-  if (S.notes.has(ROOT_FILE)) {
-    html += `<div class="tree-row${current === ROOT_FILE ? ' active' : ''}" data-path="${ROOT_FILE}" data-type="file" title="Long-term memory the agent reads every conversation">
-      <span class="chev"></span><i class="ico fa-solid fa-brain" style="color:var(--brand)"></i><span class="name">MEMORY</span></div>`;
-  }
-  const labels = { memory: ['Memory', 'fa-solid fa-clock-rotate-left', 'Daily notes and what the agent remembers'], knowledge: ['Knowledge', 'fa-solid fa-book', 'The knowledge wiki'] };
-  for (const s of SECTIONS) {
+  // The vault is yours: your notes come first, shared by every agent; each agent's own memory is one folder below.
+  const agentName = S.agents?.find((a) => a.id === S.agent)?.name || 'Agent';
+  const memoryRow = () => (S.notes.has(ROOT_FILE) ? `<div class="tree-row${current === ROOT_FILE ? ' active' : ''}" data-path="${ROOT_FILE}" data-type="file" title="Long-term memory ${esc(agentName)} reads in every conversation" style="padding-left:20px">
+      <span class="chev"></span><i class="ico fa-solid fa-brain" style="color:var(--brand)"></i><span class="name">MEMORY</span></div>` : '');
+  const labels = { memory: [`${agentName}'s memory`, 'fa-solid fa-robot', `What ${agentName} remembers: daily notes, chat summaries, long-term memory`],
+    knowledge: ['Vault', 'fa-solid fa-gem', 'Your notes: the whole vault, synced with Git and readable by every agent'] };
+  for (const s of ['knowledge', 'memory']) {
     const open = S.expanded.has(s);
     const [label, icon, title] = labels[s];
-    const badge = s === 'knowledge' && S.sharedKnowledge ? '<span class="badge" title="This agent reads the shared knowledge base">SHARED</span>' : '';
+    const badge = s === 'knowledge' ? `<span class="badge" title="${S.sharedKnowledge || S.agents?.length < 2 ? 'Every agent reads these notes' : 'This agent has its own notes'}">${S.sharedKnowledge || S.agents?.length < 2 ? 'ALL AGENTS' : 'OWN'}</span>` : '';
     html += `<div class="tree-row section${S.folder === s ? ' selected-folder' : ''}" data-path="${s}" data-type="dir" title="${esc(title)}" aria-expanded="${open}">
       <i class="fa-solid fa-chevron-right chev${open ? ' open' : ''}"></i><i class="ico ${icon}"></i><span class="name">${label}</span>${badge}
       <button class="icon-btn more" data-more title="More" tabindex="-1"><i class="fa-solid fa-ellipsis"></i></button></div>`;
     if (open) {
       const list = kids.get(s) || [];
+      if (s === 'memory') html += memoryRow();
       for (const c of list) html += row(c, 1);
       if (!list.length) html += `<div class="hint" style="padding-left:34px">Empty</div>`;
     }
@@ -1069,8 +1071,8 @@ function renderBanner() {
 
 function emptyState() {
   const recent = [...S.notes.values()].sort((a, b) => b.mtime - a.mtime).slice(0, 6);
-  return `<div class="empty-state"><i class="fa-solid fa-gem" style="font-size:34px;color:var(--brand)"></i><h2>Your agent's vault</h2>
-    <p>Everything this agent remembers: its long-term memory, daily notes and knowledge wiki. Notes link with <code>[[wikilinks]]</code> like Obsidian.</p>
+  return `<div class="empty-state"><i class="fa-solid fa-gem" style="font-size:34px;color:var(--brand)"></i><h2>Your vault</h2>
+    <p>Your notes for everything: work, ideas, references, life. Every agent can read them, and each agent's own memory sits below. Notes link with <code>[[wikilinks]]</code> like Obsidian.</p>
     <div class="actions">
       <button class="link-btn" data-act="new">Create a new note <kbd>${isMac ? '⌘' : 'Ctrl'} N</kbd></button>
       <button class="link-btn" data-act="switcher">Go to a note <kbd>${isMac ? '⌘' : 'Ctrl'} O</kbd></button>
@@ -1521,6 +1523,9 @@ function renderRight() {
   const el = $('#right-body');
   const tab = activeTab();
   document.querySelectorAll('[data-right]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.right === S.rightTab)));
+  $('#body').classList.toggle('dock-graph', S.rightTab === 'graph');
+  if (S.rightTab === 'graph') return renderDockGraph(el, tab);
+  stopDock();
   if (S.rightTab === 'calendar') { el.innerHTML = calendarHtml(); return; }
   if (!tab || tab.kind !== 'note') {
     el.innerHTML = `<div class="hint">${tab?.kind === 'graph' ? 'Click a dot to open its note. Drag to rearrange, scroll to zoom.' : 'Open a note to see its links, outline and properties.'}</div>`;
@@ -1555,7 +1560,7 @@ function renderRight() {
       <div class="side-section"><div class="side-head"><i class="fa-solid fa-circle-info"></i>File</div><div style="padding:0 8px;font-size:12px;color:var(--text-2);display:grid;gap:3px">
         <div>${esc(tab.path)}</div><div>${words.toLocaleString('en-US')} words · ${chars.toLocaleString('en-US')} characters</div>
         ${entry.mtime ? `<div>Changed ${ago(entry.mtime)}</div>` : ''}
-        <div class="muted">${tab.path === ROOT_FILE ? 'Long-term memory: the agent reads it in every conversation.' : sectionOf(tab.path) === 'memory' ? 'Agent memory: found by memory search.' : 'Knowledge wiki: found by memory search.'}</div></div></div>`;
+        <div class="muted">${tab.path === ROOT_FILE ? 'Long-term memory: the agent reads it in every conversation.' : sectionOf(tab.path) === 'memory' ? 'Agent memory: what this agent remembers; found by memory search.' : 'Your vault: every agent can find this note with memory search.'}</div></div></div>`;
   }
 }
 $('#right-body').addEventListener('click', (e) => {
@@ -1636,6 +1641,50 @@ function renderTags() {
 $('#tag-list').addEventListener('click', (e) => { const t = e.target.closest('[data-tag]'); if (t) searchFor(`tag:#${t.dataset.tag}`); });
 
 // ---- graph view -----------------------------------------------------------------------------------
+// Docked on the right (the default layout): the open note's neighbourhood, or the whole vault.
+const dock = { sim: null, key: '' };
+function stopDock() { if (dock.sim) { dock.sim.stop(); dock.sim = null; } dock.key = ''; }
+function renderDockGraph(el, tab) {
+  const center = !ui.dockWhole && tab?.kind === 'note' ? tab.path : null;
+  let linkCount = 0;
+  for (const set of S.out.values()) linkCount += set.size;
+  const key = `${center}|${S.notes.size}|${linkCount}|${ui.dockWhole ? 1 : 0}`;
+  if (dock.key === key && el.querySelector('.dock-graph-wrap')) return;
+  stopDock();
+  dock.key = key;
+  el.innerHTML = `<div class="dock-graph-head">
+      <div class="seg"><button class="seg-btn" data-dock="note" aria-pressed="${!ui.dockWhole}">This note</button><button class="seg-btn" data-dock="whole" aria-pressed="${Boolean(ui.dockWhole)}">Whole vault</button></div>
+      <span class="spacer"></span>
+      <button class="icon-btn" data-dock="topo" title="Topologies of Thoughts (full screen)"><i class="fa-solid fa-circle-nodes"></i></button>
+      <button class="icon-btn" data-dock="open" title="Open as a tab"><i class="fa-solid fa-up-right-from-square"></i></button>
+    </div><div class="graph-wrap dock-graph-wrap"><svg role="img" aria-label="Graph"></svg><div class="graph-legend"></div></div>
+    ${center ? '' : tab?.kind === 'note' || ui.dockWhole ? '' : '<div class="hint">Open a note to see its neighbourhood; this is the whole vault.</div>'}`;
+  el.querySelectorAll('[data-dock]').forEach((b) => b.addEventListener('click', () => {
+    const what = b.dataset.dock;
+    if (what === 'topo') return openTopology(center);
+    if (what === 'open') return openGraph(center);
+    ui.dockWhole = what === 'whole'; saveState(); dock.key = ''; renderRight();
+  }));
+  requestAnimationFrame(() => drawGraph({ center }, el.querySelector('.dock-graph-wrap'),
+    { settings: { ...S.graph, depth: 2, filter: '', orphans: true }, keep: (sim) => { dock.sim = sim; }, sameTab: true }));
+}
+
+// Topologies of Thoughts: the full-screen view in topology.js (mouse, touch and hand gestures).
+let topo = null;
+function openTopology(center = null) {
+  if (!window.LrmTopology) return toast('The Topologies view did not load.');
+  const { nodes, links } = graphData({ center: null }, { ...S.graph, filter: '', orphans: true, tags: false, unresolved: false });
+  const focus = center || (activeTab()?.kind === 'note' ? activeTab().path : null);
+  topo?.destroy();
+  topo = window.LrmTopology.open(document.body, {
+    nodes: nodes.map((n) => ({ id: n.id, label: n.label, group: n.group, deg: n.deg, mtime: S.notes.get(n.id)?.mtime || 0 })),
+    links: links.map((l) => ({ source: l.source, target: l.target })),
+    focus, dark: document.documentElement.classList.contains('dark'), mode: ui.topoMode || 'centralized',
+    onMode: (m) => { ui.topoMode = m; saveState(); },
+    onOpen: (id) => { topo?.destroy(); topo = null; openPath(id); },
+    onClose: () => { topo = null; },
+  });
+}
 const PALETTE = ['#0b7a5a', '#2f6fd6', '#c2410c', '#7c3aed', '#0e7490', '#b91c1c', '#a16207', '#be185d', '#4d7c0f', '#475569'];
 function groupOf(path) {
   if (path === ROOT_FILE) return 'MEMORY';
@@ -1654,8 +1703,7 @@ function openGraph(center = null) {
 }
 function stopGraph() { const pane = S.panes[S.focus]; if (pane?.sim) { pane.sim.stop(); pane.sim = null; } }
 
-function graphData(tab) {
-  const g = S.graph;
+function graphData(tab, g = S.graph) {
   const local = tab.center;
   let keep = new Set(S.notes.keys());
   if (local) {
@@ -1709,12 +1757,11 @@ function renderGraph(viewEl, tab) {
   drawGraph(tab);
 }
 
-function drawGraph(tab) {
-  stopGraph();
-  const wrap = $v('#graph');
+function drawGraph(tab, wrap = null, { settings = S.graph, keep = null, sameTab = false } = {}) {
+  if (!wrap) { stopGraph(); wrap = $v('#graph'); }
   if (!wrap || !window.d3) return;
   const d3 = window.d3;
-  const { nodes, links } = graphData(tab);
+  const { nodes, links } = graphData(tab, settings);
   const css = getComputedStyle(document.documentElement);
   const v = (n) => css.getPropertyValue(n).trim();
   const groups = [...new Set(nodes.filter((n) => n.kind === 'note').map((n) => n.group))].sort();
@@ -1724,7 +1771,8 @@ function drawGraph(tab) {
     if (n.group === 'MEMORY') return v('--brand');
     return PALETTE[groups.indexOf(n.group) % PALETTE.length];
   };
-  $v('#g-legend').innerHTML = groups.map((gr) => `<span><i style="background:${colorOf({ kind: 'note', group: gr })}"></i>${esc(gr === 'MEMORY' ? 'MEMORY.md' : gr)}</span>`).join('');
+  const legend = wrap.querySelector('.graph-legend');
+  if (legend) legend.innerHTML = groups.map((gr) => `<span><i style="background:${colorOf({ kind: 'note', group: gr })}"></i>${esc(gr === 'MEMORY' ? 'MEMORY.md' : gr)}</span>`).join('');
   const svg = d3.select(wrap).select('svg');
   svg.selectAll('*').remove();
   if (!nodes.length) {
@@ -1759,7 +1807,7 @@ function drawGraph(tab) {
     const k = d3.zoomTransform(svg.node()).k;
     label.attr('opacity', (d) => (k > 1.15 || d.deg > 6 || d.id === tab.center || nodes.length < 40 ? 1 : 0));
   }).on('click', (ev, d) => {
-    if (d.kind === 'note') openPath(d.id, { newTab: true });
+    if (d.kind === 'note') openPath(d.id, { newTab: !sameTab });
     else if (d.kind === 'tag') searchFor(`tag:${d.id}`);
     else createFromLink(d.label, null);
   });
@@ -1777,7 +1825,7 @@ function drawGraph(tab) {
     .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
     .on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
     .on('end', (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
-  S.panes[S.focus].sim = sim;
+  if (keep) keep(sim); else S.panes[S.focus].sim = sim;
 }
 
 // ---- Canvas: Obsidian's JSON Canvas boards (.canvas) ------------------------------------------------
@@ -2506,6 +2554,8 @@ const COMMANDS = [
   { name: 'Attach images or PDFs to this note', fn: () => { const t = activeTab(); if (t?.kind === 'note') uploadInto(dirname(t.path) || 'knowledge'); } },
   { name: "Open today's daily note", fn: () => dailyNote() },
   { name: 'Open graph view', key: 'G', fn: () => openGraph() },
+  { name: 'Topologies of Thoughts (full-screen graph, hand gestures)', fn: () => openTopology() },
+  { name: 'Show the graph beside notes (right sidebar)', fn: () => { setPane('right', true); S.rightTab = 'graph'; saveState(); renderRight(); } },
   { name: 'Open local graph of this note', fn: () => activeTab()?.kind === 'note' && openGraph(activeTab().path) },
   { name: 'Toggle reading / editing view', key: 'E', fn: () => setMode() },
   { name: 'Search in all notes', key: '⇧ F', fn: () => { setPane('left', true); setLeftTab('search'); $('#search-q').focus(); } },
@@ -2560,6 +2610,7 @@ $('#btn-palette').onclick = () => palette();
 $('#btn-git').onclick = () => gitPanel();
 $('#btn-daily').onclick = () => dailyNote();
 $('#btn-graph').onclick = () => openGraph();
+$('#btn-topo').onclick = () => openTopology();
 $('#btn-new-note').onclick = () => newNote();
 $('#btn-new-folder').onclick = () => newFolder();
 $('#btn-refresh').onclick = () => loadIndex();
@@ -2614,7 +2665,9 @@ async function start() {
     if (ui.leftOpen === false) setPane('left', false);
     if (ui.rightOpen === false) setPane('right', false);
   }
-  S.leftTab = ui.leftTab || 'files'; S.rightTab = ui.rightTab || 'links';
+  // Layout 2: the graph docked on the right by default (files · note · graph).
+  S.leftTab = ui.leftTab || 'files'; S.rightTab = ui.layout === 2 ? (ui.rightTab || 'graph') : 'graph';
+  ui.layout = 2;
   setLeftTab(S.leftTab);
   let data;
   try { data = await api('agents'); } catch (e) { buildPanes(); paneView().innerHTML = `<div class="empty-state"><h2>Can't open the vault</h2><p>${esc(e.message)}</p></div>`; return; }

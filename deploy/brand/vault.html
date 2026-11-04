@@ -42,6 +42,15 @@
   .body.no-left { grid-template-columns: 0 1fr var(--right-w, 280px); }
   .body.no-right { grid-template-columns: var(--left-w, 270px) 1fr 0; }
   .body.no-left.no-right { grid-template-columns: 0 1fr 0; }
+  .body.dock-graph { --right-w: clamp(320px, 34vw, 620px); }
+  .dock-graph-head { display: flex; align-items: center; gap: 6px; padding: 6px 4px 8px; }
+  .dock-graph-head .spacer { flex: 1; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg-btn { border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; padding: 4px 10px; cursor: pointer; }
+  .seg-btn[aria-pressed="true"] { background: var(--surface-2, rgba(0,0,0,.06)); color: var(--text); font-weight: 600; }
+  .dock-graph-wrap { position: relative; height: calc(100% - 46px); min-height: 320px; border-radius: 10px; }
+  #right-body:has(.dock-graph-wrap) { display: flex; flex-direction: column; height: 100%; }
+  #right-body .dock-graph-wrap { flex: 1; }
   .pane { background: var(--surface-2); min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .left { border-right: 1px solid var(--line); }
   .right { border-left: 1px solid var(--line); }
@@ -336,11 +345,12 @@
   <header class="topbar">
     <button class="icon-btn" id="toggle-left" title="Toggle file explorer" aria-pressed="true"><i class="fa-solid fa-table-columns"></i></button>
     <div class="title"><i class="fa-solid fa-gem"></i><span>Vault</span></div>
-    <select class="agent-select" id="agent" title="Whose memory to show"></select>
+    <select class="agent-select" id="agent" title="Which agent's memory to show (your vault notes are the same for every agent)"></select>
     <div class="spacer"></div>
     <button class="icon-btn" id="btn-switcher" title="Quick switcher (Ctrl/⌘ O)"><i class="fa-solid fa-magnifying-glass"></i></button>
     <button class="icon-btn" id="btn-daily" title="Open today's daily note"><i class="fa-regular fa-calendar"></i></button>
     <button class="icon-btn" id="btn-graph" title="Graph view (Ctrl/⌘ G)"><i class="fa-solid fa-diagram-project"></i></button>
+    <button class="icon-btn" id="btn-topo" title="Topologies of Thoughts"><i class="fa-solid fa-circle-nodes"></i></button>
     <button class="icon-btn" id="btn-git" title="Sync with GitHub / Obsidian"><i class="fa-brands fa-github"></i><span class="git-dot" id="git-dot" hidden></span></button>
     <button class="icon-btn" id="btn-palette" title="Command palette (Ctrl/⌘ P)"><i class="fa-solid fa-terminal"></i></button>
     <button class="icon-btn" id="toggle-right" title="Toggle backlinks and outline" aria-pressed="true"><i class="fa-solid fa-table-columns fa-flip-horizontal"></i></button>
@@ -377,7 +387,8 @@
 
     <aside class="pane right" id="right">
       <div class="pane-tabs">
-        <button class="icon-btn" data-right="links" aria-pressed="true" title="Backlinks and outgoing links"><i class="fa-solid fa-link"></i><span class="hide-sm">Links</span></button>
+        <button class="icon-btn" data-right="graph" title="Graph of this note"><i class="fa-solid fa-diagram-project"></i><span class="hide-sm">Graph</span></button>
+        <button class="icon-btn" data-right="links" title="Backlinks and outgoing links"><i class="fa-solid fa-link"></i><span class="hide-sm">Links</span></button>
         <button class="icon-btn" data-right="outline" title="Outline"><i class="fa-solid fa-list-ul"></i><span class="hide-sm">Outline</span></button>
         <button class="icon-btn" data-right="info" title="Tags and properties"><i class="fa-solid fa-circle-info"></i><span class="hide-sm">Info</span></button>
         <button class="icon-btn" data-right="calendar" title="Daily notes calendar"><i class="fa-regular fa-calendar-days"></i></button>
@@ -393,6 +404,7 @@
 <script src="/assets/vendor/d3/d3.min.js"></script>
 <script src="/assets/brand/vendor/lrm-editor.js"></script>
 <script src="/assets/brand/vendor/js-yaml.min.js"></script>
+<script src="/assets/brand/topology.js"></script>
 <script src="/assets/brand/vault.js"></script>
 </body>
 </html>

@@ -389,4 +389,10 @@ patch("bridge/agent_bridge.py",
       '        if not isinstance(raw, dict) or not raw.get("enabled"):\n            return empty\n',
       '        if not isinstance(raw, dict) or not raw.get("enabled"):\n'
       '            raw = {"enabled": True, "chain": []}  # LRMagent: the plans below may still apply\n', root=app)
+# ---- Console pages on this server (the Vault's gesture mode) may ask for the camera;
+# the browser still asks the owner. Other sites embedded in the menu get nothing new.
+patch("static/js/core/menu.js",
+      "        frame.setAttribute('referrerpolicy', 'no-referrer');\n",
+      "        frame.setAttribute('referrerpolicy', 'no-referrer');\n"
+      "        if (/^\\/(?!\\/)/.test(String(item.url))) frame.setAttribute('allow', 'camera; clipboard-write');\n")
 print("LRM brand applied")
