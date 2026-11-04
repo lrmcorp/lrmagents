@@ -37,6 +37,15 @@ jobs:
           python3 -m py_compile voice/server.py
           node --check deploy/brand/vendor/lrm-editor.js
           for f in .github/workflows/*.yml; do python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$f"; done
+          # every run: block of every workflow must be valid bash (a stray quote fails the deploy late otherwise)
+          python3 -c 'import glob, subprocess, sys, yaml
+          bad = 0
+          for f in glob.glob(".github/workflows/*.yml"):
+              for name, job in yaml.safe_load(open(f))["jobs"].items():
+                  for step in job.get("steps", []):
+                      if "run" in step and subprocess.run(["bash", "-n"], input=step["run"], text=True).returncode:
+                          print("::error::" + f + " " + name + " / " + str(step.get("name", "run")) + ": bash syntax error"); bad = 1
+          sys.exit(bad)'
       - name: Compose file
         run: |
           docker network create lnint-edge
@@ -133,7 +142,7 @@ jobs:
             if [[ -z "$MODEL_FALLBACK" ]]; then
               CHAT_FALLBACK="$(python3 -c 'import os
           models = [m.strip() for m in os.environ["OPENROUTER_MODELS"].split(",") if m.strip()]
-          # last resort: OpenRouter's auto router picks any model that is up
+          # last resort: the OpenRouter auto router picks any model that is up
           print(repr({"enabled": True, "chain": [{"provider": "custom:openrouter", "model": m} for m in models + ["openrouter/auto"]]}))')"
               export CHAT_FALLBACK
             fi
