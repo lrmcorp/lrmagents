@@ -33,5 +33,10 @@ print("personal:", pr and (pr.id, pr.name, pr.workspace))
 import os, json
 from config import get_data_root
 cfg = os.path.join(get_data_root(), "config.json")
-print("config agents:", [a.get("id") for a in json.load(open(cfg)).get("agents", [])] if os.path.exists(cfg) else "no config.json", cfg)
+for cfg in ("/app/config.json", os.path.join(get_data_root(), "config.json"), "/home/agent/.cow/config.json"):
+    if os.path.exists(cfg):
+        try:
+            print("agents in", cfg, [(a.get("id"), a.get("name")) for a in json.load(open(cfg)).get("agents", [])])
+        except Exception as e:
+            print(cfg, e)
 PY' </dev/null
