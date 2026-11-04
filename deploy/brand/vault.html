@@ -101,6 +101,29 @@
   .tab .dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); flex: none; }
   .tab .close { width: 20px; height: 20px; border-radius: 5px; font-size: 11px; }
   .view { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+  .panes { flex: 1; min-height: 0; display: flex; }
+  .pane-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; }
+  .panes.split .pane-col + .pane-col { border-left: 1px solid var(--line); }
+  .panes.split .pane-col:not(.focused) .tabbar { opacity: .75; }
+  .panes.split .pane-col.focused .tab.active { box-shadow: inset 0 2px 0 var(--brand); }
+  .pane-close { margin: 0 4px 4px auto; }
+  .tree-row.bm small { margin-left: auto; font-size: 11px; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+  .tree-row.bm.missing .name { text-decoration: line-through; color: var(--text-3); }
+  .mention { padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
+  .mention-text { font-size: 12px; color: var(--text-2); padding: 0 8px 4px; overflow-wrap: anywhere; }
+  .mention-text mark { background: var(--mark); color: inherit; }
+  .btn.mini { padding: 2px 10px; font-size: 12px; margin-left: 8px; }
+  .search-help { line-height: 2; }
+  .search-help code { font-size: 11px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  .cal { padding: 4px; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-dow { font-size: 11px; color: var(--text-3); text-align: center; padding: 2px 0; }
+  .cal-day { aspect-ratio: 1; border: 0; border-radius: 8px; background: none; cursor: pointer; font-size: 13px; color: var(--text-2); position: relative; }
+  .cal-day:hover { background: var(--hover); }
+  .cal-day.has::after { content: ''; position: absolute; bottom: 4px; left: calc(50% - 2.5px); width: 5px; height: 5px; border-radius: 50%; background: var(--brand); }
+  .cal-day.today { font-weight: 800; color: var(--text); outline: 1px solid var(--brand); }
+  .cal-day.open { background: var(--active); }
   .note-head { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); min-width: 0; }
   .crumbs { font-size: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
   .crumbs span { cursor: pointer; }
@@ -296,6 +319,8 @@
   @media (max-width: 900px) {
     .body, .body.no-left, .body.no-right, .body.no-left.no-right { grid-template-columns: minmax(0, 1fr); }
     .center { grid-column: 1; grid-row: 1; }
+    .panes.split .pane-col:not(.focused) { display: none; }
+    .panes.split .pane-col + .pane-col { border-left: 0; }
     .pane { position: fixed; top: 44px; bottom: 26px; z-index: 30; width: min(300px, 86vw); box-shadow: var(--shadow); }
     .left { left: 0; } .right { right: 0; }
     .body.no-left .left, .body.no-right .right { display: none; }
@@ -327,6 +352,7 @@
         <button class="icon-btn" data-left="files" aria-pressed="true" title="Files"><i class="fa-regular fa-folder"></i><span class="hide-sm">Files</span></button>
         <button class="icon-btn" data-left="search" title="Search (Ctrl/⌘ Shift F)"><i class="fa-solid fa-magnifying-glass"></i><span class="hide-sm">Search</span></button>
         <button class="icon-btn" data-left="tags" title="Tags"><i class="fa-solid fa-hashtag"></i><span class="hide-sm">Tags</span></button>
+        <button class="icon-btn" data-left="bookmarks" title="Bookmarks"><i class="fa-regular fa-star"></i></button>
       </div>
       <div class="pane-body" id="left-files">
         <div class="tree-actions">
@@ -342,11 +368,11 @@
         <div id="search-results"></div>
       </div>
       <div class="pane-body" id="left-tags" hidden><div id="tag-list"></div></div>
+      <div class="pane-body" id="left-bookmarks" hidden><div id="bookmark-list"></div></div>
     </aside>
 
     <main class="center">
-      <div class="tabbar" id="tabbar"></div>
-      <div class="view" id="view"></div>
+      <div class="panes" id="panes"></div>
     </main>
 
     <aside class="pane right" id="right">
@@ -354,6 +380,7 @@
         <button class="icon-btn" data-right="links" aria-pressed="true" title="Backlinks and outgoing links"><i class="fa-solid fa-link"></i><span class="hide-sm">Links</span></button>
         <button class="icon-btn" data-right="outline" title="Outline"><i class="fa-solid fa-list-ul"></i><span class="hide-sm">Outline</span></button>
         <button class="icon-btn" data-right="info" title="Tags and properties"><i class="fa-solid fa-circle-info"></i><span class="hide-sm">Info</span></button>
+        <button class="icon-btn" data-right="calendar" title="Daily notes calendar"><i class="fa-regular fa-calendar-days"></i></button>
       </div>
       <div class="pane-body" id="right-body"></div>
     </aside>

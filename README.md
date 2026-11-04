@@ -154,7 +154,11 @@ When an AI model call fails, the chat says what happened and what to do instead 
   - **Templates:** notes in `knowledge/templates` (Obsidian's Templates plugin can use the same folder). "New note from template" and "Insert template" in the command palette; `{{title}}`, `{{date}}`, `{{time}}`, `{{date:dddd, D MMMM YYYY}}`. Four starter templates on first use; "Daily note" is used for today's note.
   - **Links:** backlinks, outgoing links and outline in the right pane; clicking a link to a note that doesn't exist creates it.
   - **Graph view:** whole vault or one note's neighbourhood, coloured by folder.
-  - **Finding notes:** full-text search (`tag:#name` too), quick switcher (Ctrl/⌘ O), command palette (Ctrl/⌘ P) and today's daily note.
+  - **Finding notes:** full-text search with `"exact phrases"`, `-exclude`, `tag:#name`, `path:folder` and `file:name` (combine them); quick switcher (Ctrl/⌘ O); command palette (Ctrl/⌘ P).
+  - **Split view:** the columns button (or "Open to the right") puts a second note beside the first, each side with its own tabs; click a side to work in it. On phones only the side in use shows.
+  - **Bookmarks:** the ☆ on a note, or "Bookmark" in a file's menu; listed under the star tab on the left, reorder by dragging. Saved on the server per agent, so they follow you between devices.
+  - **Calendar:** the calendar tab on the right shows the month with a dot on each day that has a daily note; click a day to open or create it.
+  - **Unlinked mentions:** under a note's backlinks, other notes that name it (or an alias) without linking; **Link** turns that mention into a `[[link]]`.
   - **Saving:** edits save automatically. If the agent changed the same note meanwhile, you choose which version to keep. Notes the agent changes while open refresh by themselves.
   - **Renames and deletes:** renaming or moving a note rewrites the links that point to it. Deleted files go to `.trash/` in the agent's workspace, not away. `knowledge/index.md` and `log.md` are the agent's own and read-only here.
   - **Search index:** saves feed the same memory search the agent uses.

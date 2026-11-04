@@ -374,6 +374,10 @@ class LrmVaultHandler:
                 return self._search(vault, params.q)
             if params.op == "git":
                 return _ok(**git_state())
+            if params.op == "mentions":
+                return self._mentions(vault, params.path)
+            if params.op == "prefs":
+                return _ok(prefs=load_prefs(vault))
             return _fail("unknown op")
         except (VaultError, FileNotFoundError) as e:
             web.header("Content-Type", "application/json; charset=utf-8")
@@ -395,6 +399,8 @@ class LrmVaultHandler:
                 return _ok(**git_request("config", body.get("repo", "")))
             if op == "git_sync":
                 return _ok(**git_request("sync"))
+            if op == "prefs":
+                return _ok(prefs=save_prefs(vault, body.get("prefs") or {}))
             with _lock:
                 if op == "write":
                     return self._write(vault, body)
@@ -450,33 +456,80 @@ class LrmVaultHandler:
 
     @staticmethod
     def _search(vault, query):
-        terms = [t.lower() for t in str(query or "").split() if t.strip()]
-        if not terms:
+        q = parse_query(query)
+        if not (q["terms"] or q["phrases"] or q["paths"] or q["files"] or q["tags"]):
             return _ok(results=[])
+        words = q["terms"] + q["phrases"]
         results = []
         entries, _ = vault.entries()
         for e in vault.notes(entries):
             full = vault.safe(e["path"])
             if full is None or e["size"] > MAX_NOTE:
                 continue
+            low_path = e["path"].lower()
+            name = os.path.basename(low_path)[:-3]
+            if any(p not in low_path for p in q["paths"]) or any(f not in name for f in q["files"]):
+                continue
+            if q["tags"]:
+                tags = [t.lower() for t in _cached_meta(full, e["mtime"], e["size"]).get("tags", [])]
+                if not all(any(t == w or t.startswith(w + "/") for t in tags) for w in q["tags"]):
+                    continue
             try:
                 text = full.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
             haystack = (e["path"] + "\n" + text).lower()
-            if not all(t in haystack for t in terms):
+            if not all(w in haystack for w in words) or any(x in haystack for x in q["exclude"]):
                 continue
-            lines = text.splitlines()
             hits = []
-            for no, line in enumerate(lines):
-                if any(t in line.lower() for t in terms):
-                    hits.append({"line": no + 1, "text": line.strip()[:240]})
-                    if len(hits) == 3:
-                        break
-            score = sum(haystack.count(t) for t in terms) + (5 if any(t in e["path"].lower() for t in terms) else 0)
+            if words:
+                for no, line in enumerate(text.splitlines()):
+                    if any(w in line.lower() for w in words):
+                        hits.append({"line": no + 1, "text": line.strip()[:240]})
+                        if len(hits) == 3:
+                            break
+            score = sum(haystack.count(w) for w in words) + (5 if any(w in name for w in words) else 0)
             results.append({"path": e["path"], "mtime": e["mtime"], "hits": hits, "score": score})
         results.sort(key=lambda r: (-r["score"], -r["mtime"]))
-        return _ok(results=results[:50], total=len(results))
+        return _ok(results=results[:100], total=len(results), terms=words)
+
+    @staticmethod
+    def _mentions(vault, path):
+        """Where other notes mention this note's name (or an alias) as plain text, not as a link."""
+        section, rel, full = vault.resolve(path)
+        meta = _cached_meta(full, full.stat().st_mtime, full.stat().st_size) if full.is_file() else {}
+        names = sorted({n for n in [_stem(path)] + list(meta.get("aliases", [])) if len(n.strip()) >= 3}, key=len, reverse=True)
+        if not names:
+            return _ok(mentions=[])
+        pattern = re.compile(r"(?<![\w\[|/#])(" + "|".join(re.escape(n) for n in names) + r")(?![\w\]])", re.I)
+        out = []
+        entries, _ = vault.entries()
+        for e in vault.notes(entries):
+            if e["path"] == path or e["path"] in READ_ONLY:
+                continue
+            f = vault.safe(e["path"])
+            if f is None or e["size"] > MAX_NOTE:
+                continue
+            try:
+                text = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if not pattern.search(text):
+                continue
+            fence = False
+            for no, line in enumerate(text.splitlines()):
+                if line.lstrip().startswith(("```", "~~~")):
+                    fence = not fence
+                if fence or line.startswith(("---", "tags:", "aliases:")):
+                    continue
+                # Ignore names inside [[links]], [markdown](links) and `code`.
+                clean = re.sub(r"\[\[[^\]]*\]\]|\[[^\]]*\]\([^)]*\)|`[^`]*`", lambda m: " " * len(m.group(0)), line)
+                m = pattern.search(clean)
+                if m:
+                    out.append({"path": e["path"], "line": no + 1, "col": m.start(), "match": m.group(0), "text": line.strip()[:240], "mtime": e["mtime"]})
+                    if len(out) >= 60:
+                        return _ok(mentions=out)
+        return _ok(mentions=out)
 
     # ---- writes ---------------------------------------------------------
 
@@ -745,3 +798,50 @@ def _write_board(vault, section, rel, full, vpath, content, expected):
     _atomic_write(full, content)
     vault.changed({section}, [rel] if section == "knowledge" else [])
     return _ok(path=vpath, mtime=full.stat().st_mtime)
+
+
+# ---- search syntax: words, "exact phrases", -exclude, path:, file:, tag: -----------------
+
+def parse_query(query):
+    q = {"terms": [], "phrases": [], "exclude": [], "paths": [], "files": [], "tags": []}
+    for m in re.finditer(r'(-?)(?:(path|file|tag):)?("([^"]*)"|\S+)', str(query or "")):
+        neg, key, raw, quoted = m.group(1), m.group(2), m.group(3), m.group(4)
+        value = (quoted if quoted is not None else raw).lower().strip()
+        if not value:
+            continue
+        if key == "path":
+            q["paths"].append(value.strip("/"))
+        elif key == "file":
+            q["files"].append(value.removesuffix(".md"))
+        elif key == "tag":
+            q["tags"].append(value.lstrip("#"))
+        elif neg:
+            q["exclude"].append(value)
+        elif quoted is not None:
+            q["phrases"].append(value)
+        else:
+            q["terms"].append(value)
+    return q
+
+
+# ---- per-agent Vault preferences (bookmarks), kept in the agent's workspace ---------------
+
+def _prefs_path(vault):
+    return vault.ws / ".lrm-vault.json"
+
+
+def load_prefs(vault):
+    try:
+        data = json.loads(_prefs_path(vault).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_prefs(vault, changes):
+    prefs = load_prefs(vault)
+    if "bookmarks" in changes:
+        marks = [str(p) for p in (changes.get("bookmarks") or []) if isinstance(p, str)][:200]
+        prefs["bookmarks"] = list(dict.fromkeys(marks))
+    _atomic_write(_prefs_path(vault), json.dumps(prefs, ensure_ascii=False, indent=1))
+    return prefs

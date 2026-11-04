@@ -49,12 +49,23 @@ function ago(t) {
 const S = {
   agent: '', agents: [], entries: [], notes: new Map(), lc: new Map(), byStem: new Map(), byName: new Map(),
   aliases: new Map(), dirs: new Set(), out: new Map(), back: new Map(), unresolved: new Map(), tags: new Map(),
-  tabs: [], active: -1, expanded: new Set(SECTIONS), folder: 'knowledge', sharedKnowledge: false, truncated: false,
+  panes: [{ tabs: [], active: -1, ed: null, sim: null }], focus: 0, bookmarks: [], expanded: new Set(SECTIONS), folder: 'knowledge', sharedKnowledge: false, truncated: false,
   leftTab: 'files', rightTab: 'links', graph: { local: false, depth: 1, orphans: true, unresolved: false, tags: false, filter: '' },
   sim: null, loaded: false,
 };
+// The focused pane's tabs: everything that works on "the tabs" works on the pane in focus.
+Object.defineProperty(S, 'tabs', { get: () => S.panes[S.focus].tabs, set: (v) => { S.panes[S.focus].tabs = v; } });
+Object.defineProperty(S, 'active', { get: () => S.panes[S.focus].active, set: (v) => { S.panes[S.focus].active = v; } });
 const ui = store.get('lrm_vault:ui', {});
+const paneView = (i = S.focus) => document.querySelector(`.pane-col[data-pane="${i}"] .view`);
+const $v = (sel) => paneView()?.querySelector(sel) || null;
+const curEd = () => S.panes[S.focus].ed;
+// Render pane i (its active tab) as if it had focus.
+function withPane(i, fn) { const f = S.focus; S.focus = i; try { return fn(); } finally { S.focus = f; } }
+function renderAll() { buildPanes(); S.panes.forEach((_, i) => withPane(i, renderView)); }
+function buildAndDraw() { if (buildPanes()) S.panes.forEach((_, i) => withPane(i, renderView)); }
 const activeTab = () => S.tabs[S.active] || null;
+const allTabs = () => S.panes.flatMap((p) => p.tabs);
 
 // ---- API ---------------------------------------------------------------------
 async function api(op, params = {}, body = null) {
@@ -226,7 +237,7 @@ async function loadIndex({ quiet = false } = {}) {
     S.truncated = data.truncated;
     buildIndex(data.entries);
     S.loaded = true;
-    renderTree(); renderTags(); renderRight(); renderStatus();
+    renderTree(); renderTags(); renderBookmarks(); renderRight(); renderStatus();
     if (activeTab()?.kind === 'graph' && !quiet) renderView();
     if (!activeTab() && !quiet) renderView();
     await refreshOpenNotes();
@@ -237,7 +248,7 @@ const loadIndexSoon = () => { clearTimeout(indexTimer); indexTimer = setTimeout(
 
 // Notes the agent changed while they were open (and the user hasn't touched) are reloaded.
 async function refreshOpenNotes() {
-  for (const tab of S.tabs) {
+  for (const tab of allTabs()) {
     if (!isText(tab) || tab.loading || tab.conflict || tab.content !== tab.saved) continue;
     const entry = S.notes.get(tab.path) || S.entries.find((e) => e.path === tab.path);
     if (!entry || (!tab.stale && entry.mtime <= tab.mtime + 0.001)) continue;
@@ -246,12 +257,12 @@ async function refreshOpenNotes() {
       const data = await api('read', { path: tab.path });
       if (tab.content !== tab.saved) continue;
       Object.assign(tab, { content: data.content, saved: data.content, mtime: data.mtime, editable: data.editable });
-      if (tab === activeTab()) {
-        if (ed && tab.kind === 'note' && tab.mode === 'edit') ed.setDoc(data.content);
-        else if (tab.kind === 'canvas' && tab.cvBusy) { /* the board is being dragged: next refresh */ }
-        else renderView();
-        renderRight(); renderStatus();
-      }
+      S.panes.forEach((pane, i) => {
+        if (pane.tabs[pane.active] !== tab) return;
+        if (pane.ed && tab.kind === 'note' && tab.mode === 'edit') pane.ed.setDoc(data.content);
+        else if (!(tab.kind === 'canvas' && tab.cvBusy)) withPane(i, renderView);
+      });
+      if (tab === activeTab()) { renderRight(); renderStatus(); }
     } catch { /* deleted or unreadable: the index refresh shows it */ }
   }
 }
@@ -601,6 +612,8 @@ function treeMenu(path, type, x, y) {
     items.push({ icon: 'fa-solid fa-table', label: 'New table view (base)', fn: () => newBoard('base', path) });
   } else {
     items.push({ icon: 'fa-regular fa-file-lines', label: 'Open in new tab', fn: () => openPath(path, { newTab: true }) });
+    items.push({ icon: 'fa-solid fa-table-columns', label: 'Open to the right', fn: () => openSplit(path) });
+    items.push({ icon: 'fa-regular fa-star', label: S.bookmarks.includes(path) ? 'Remove bookmark' : 'Bookmark', fn: () => toggleBookmark(path) });
     if (isNote(path)) items.push({ icon: 'fa-solid fa-link', label: 'Copy [[link]]', fn: () => copy(`[[${linkName(path)}]]`) });
     if (isNote(path)) items.push({ icon: 'fa-solid fa-diagram-project', label: 'Open local graph', fn: () => openGraph(path) });
   }
@@ -691,7 +704,7 @@ async function createNote(path, content = '', { mode = 'edit', newTab = false, f
     await post('create', { path, content });
     await loadIndex({ quiet: true });
     await openPath(path, { mode, newTab });
-    if (focusTitle) { const t = $('#inline-title'); if (t) { t.focus(); t.select(); } }
+    if (focusTitle) { const t = $v('#inline-title'); if (t) { t.focus(); t.select(); } }
   } catch (e) { fail(e); }
 }
 
@@ -712,13 +725,13 @@ async function newFolder(parent = S.folder) {
   } catch (e) { fail(e); }
 }
 
-function dailyNote() {
-  const path = `memory/${today()}.md`;
+function dailyNote(day = today()) {
+  const path = `memory/${day}.md`;
   if (S.notes.has(path)) return openPath(path);
   S.expanded.add('memory');
   const tpl = S.notes.has(`${TEMPLATE_DIR}/Daily note.md`) ? `${TEMPLATE_DIR}/Daily note.md` : '';
-  if (!tpl) return createNote(path, `# ${today()}\n\n`, { mode: 'edit' });
-  return readNote(tpl).then((text) => createNote(path, fillTemplate(text, today()), { mode: 'edit' }));
+  if (!tpl || day !== today()) return createNote(path, `# ${day}\n\n`, { mode: 'edit' });
+  return readNote(tpl).then((text) => createNote(path, fillTemplate(text, day), { mode: 'edit' }));
 }
 
 async function createFromLink(name, from) {
@@ -751,16 +764,20 @@ async function movePath(path, newPath) {
   try {
     const res = await post('rename', { path, new_path: newPath, update_links: true });
     const oldStem = stem(path);
-    for (const tab of S.tabs) {
+    for (const tab of allTabs()) {
       if (tab.kind === 'graph') continue;
       if (tab.path === path) tab.path = newPath;
       else if (tab.path.startsWith(`${path}/`)) tab.path = newPath + tab.path.slice(path.length);
     }
     if (S.expanded.has(path)) S.expanded.add(newPath);
     S.expanded.add(dirname(newPath));
+    if (S.bookmarks.some((b) => b === path || b.startsWith(`${path}/`))) {
+      S.bookmarks = S.bookmarks.map((b) => (b === path ? newPath : b.startsWith(`${path}/`) ? newPath + b.slice(path.length) : b));
+      savePrefs();
+    }
     await loadIndex({ quiet: true });
     // Notes that the link update rewrote are reloaded from disk.
-    for (const tab of S.tabs) if (isText(tab)) tab.stale = true;
+    for (const tab of allTabs()) if (isText(tab)) tab.stale = true;
     await refreshOpenNotes();
     const tab = activeTab();
     if (tab?.path === newPath && isNote(newPath) && stem(newPath) !== oldStem && tab.content.startsWith(`# ${oldStem}\n`)) {
@@ -768,7 +785,7 @@ async function movePath(path, newPath) {
       tab.content = `# ${stem(newPath)}\n${tab.content.slice(oldStem.length + 3)}`;
       await saveTab(tab);
     }
-    renderTabs(); renderView();
+    renderAll();
     if (res.updated_links) toast(`Updated links in ${res.updated_links} note${res.updated_links > 1 ? 's' : ''}`);
   } catch (e) { fail(e); renderView(); }
 }
@@ -783,10 +800,15 @@ async function deletePath(path, dir = S.dirs.has(path)) {
   if (!ok) return;
   try {
     await post('delete', { path });
-    for (let i = S.tabs.length - 1; i >= 0; i--) {
-      const p = S.tabs[i].path;
-      if (p && (p === path || p.startsWith(`${path}/`))) closeTab(i, { skipSave: true });
+    for (let pi = S.panes.length - 1; pi >= 0; pi--) {
+      withPane(pi, () => {
+        for (let i = S.tabs.length - 1; i >= 0; i--) {
+          const p = S.tabs[i].path;
+          if (p && (p === path || p.startsWith(`${path}/`))) closeTab(i, { skipSave: true });
+        }
+      });
     }
+    S.bookmarks = S.bookmarks.filter((b) => b !== path && !b.startsWith(`${path}/`)); savePrefs();
     await loadIndex({ quiet: true });
     toast('Moved to trash');
   } catch (e) { fail(e); }
@@ -795,8 +817,8 @@ async function deletePath(path, dir = S.dirs.has(path)) {
 // ---- tabs --------------------------------------------------------------------------------
 function saveState() {
   store.set(`lrm_vault:${S.agent}`, {
-    tabs: S.tabs.map((t) => ({ kind: t.kind, path: t.path, mode: t.mode })),
-    active: S.active, expanded: [...S.expanded], folder: S.folder, graph: S.graph,
+    panes: S.panes.map((p) => ({ tabs: p.tabs.map((t) => ({ kind: t.kind, path: t.path, mode: t.mode, center: t.center || null })), active: p.active })),
+    focus: S.focus, expanded: [...S.expanded], folder: S.folder, graph: S.graph,
   });
   store.set('lrm_vault:ui', { ...ui, agent: S.agent, leftTab: S.leftTab, rightTab: S.rightTab });
 }
@@ -841,13 +863,14 @@ async function loadTab(tab) {
     Object.assign(tab, { content: data.content, saved: data.content, mtime: data.mtime, editable: data.editable, conflict: false });
   } catch (e) { tab.error = e.message; }
   tab.loading = false;
-  if (tab === activeTab()) { renderView(); renderRight(); renderStatus(); }
+  S.panes.forEach((pane, i) => { if (pane.tabs[pane.active] === tab) withPane(i, renderView); });
+  if (tab === activeTab()) { renderRight(); renderStatus(); }
 }
 
 function activate(i) {
   if (i === S.active) return;
   const cur = activeTab();
-  if (cur) { cur.scroll = $('.scroller')?.scrollTop || 0; flush(cur); }
+  if (cur) { cur.scroll = $v('.scroller')?.scrollTop || 0; flush(cur); }
   S.active = i;
   const tab = activeTab();
   if (tab?.path) S.folder = tab.path === ROOT_FILE ? S.folder : dirname(tab.path);
@@ -862,33 +885,82 @@ function closeTab(i, { skipSave = false } = {}) {
   S.tabs.splice(i, 1);
   if (S.active >= i) S.active = Math.max(S.tabs.length ? 0 : -1, S.active - 1);
   if (S.active >= S.tabs.length) S.active = S.tabs.length - 1;
+  if (!S.tabs.length && S.panes.length > 1) { closePane(S.focus); return; }
   saveState(); renderTabs(); renderTree(); renderView();
 }
 
 function renderTabs() {
-  $('#tabbar').innerHTML = S.tabs.map((t, i) => {
+  S.panes.forEach((pane, p) => {
+    const bar = document.querySelector(`.pane-col[data-pane="${p}"] .tabbar`);
+    if (bar) bar.innerHTML = tabsHtml(pane.tabs, pane.active) + (S.panes.length > 1 ? `<button class="icon-btn pane-close" data-pane-close="${p}" title="Close this side"><i class="fa-solid fa-xmark"></i></button>` : '');
+  });
+}
+function tabsHtml(tabs, active) {
+  return tabs.map((t, i) => {
     const name = t.kind === 'graph' ? (t.center ? `Graph: ${stem(t.center)}` : 'Graph view') : (t.path === ROOT_FILE ? 'MEMORY' : (t.kind === 'asset' ? basename(t.path) : stem(t.path.replace(/\.(canvas|base)$/i, '.md'))));
     const icon = t.kind === 'graph' ? 'fa-diagram-project' : t.kind === 'asset' ? 'fa-image' : t.kind === 'canvas' ? 'fa-object-group' : t.kind === 'base' ? 'fa-table' : 'fa-file-lines';
     const dirty = isText(t) && t.content !== t.saved;
-    return `<div class="tab${i === S.active ? ' active' : ''}" data-i="${i}" title="${esc(t.path || name)}">
+    return `<div class="tab${i === active ? ' active' : ''}" data-i="${i}" title="${esc(t.path || name)}">
       <i class="fa-regular ${icon}" style="font-size:11px;opacity:.7"></i><span class="t-name">${esc(name)}</span>${dirty ? '<span class="dirty" title="Saving…"></span>' : ''}
       <button class="icon-btn close" data-close="${i}" title="Close"><i class="fa-solid fa-xmark"></i></button></div>`;
-  }).join('') + '<button class="icon-btn" id="tab-new" title="New tab (quick switcher)" style="margin:0 0 4px 2px"><i class="fa-solid fa-plus"></i></button>';
+  }).join('') + '<button class="icon-btn tab-new" title="New tab (quick switcher)" style="margin:0 0 4px 2px"><i class="fa-solid fa-plus"></i></button>';
 }
-$('#tabbar').addEventListener('click', (e) => {
-  if (e.target.closest('#tab-new')) return quickSwitcher(true);
+
+// ---- panes: one, or two side by side (split view) ------------------------------------------------
+function buildPanes() {
+  const host = $('#panes');
+  let rebuilt = false;
+  if (host.children.length !== S.panes.length) {
+    // New pane columns: the old editors go with their DOM, every pane is drawn again.
+    S.panes.forEach((p) => { p.ed?.destroy(); p.ed = null; p.sim?.stop(); p.sim = null; });
+    host.innerHTML = S.panes.map((_, i) => `<div class="pane-col" data-pane="${i}"><div class="tabbar"></div><div class="view"></div></div>`).join('');
+    rebuilt = true;
+  }
+  host.classList.toggle('split', S.panes.length > 1);
+  host.querySelectorAll('.pane-col').forEach((el) => el.classList.toggle('focused', Number(el.dataset.pane) === S.focus && S.panes.length > 1));
+  renderTabs();
+  return rebuilt;
+}
+function focusPane(i) {
+  if (i === S.focus || !S.panes[i]) return;
+  S.focus = i;
+  buildPanes(); renderTree(); renderRight(); renderStatus(); saveState();
+}
+async function openSplit(path = activeTab()?.path) {
+  if (S.panes.length === 1) S.panes.push({ tabs: [], active: -1, ed: null, sim: null });
+  await flushAll();
+  S.focus = 1;
+  buildAndDraw();
+  if (path) await openPath(path, { newTab: true }); else quickSwitcher();
+  saveState();
+}
+function closePane(i) {
+  withPane(i, () => { flushAll(); stopGraph(); S.panes[i].ed?.destroy(); });
+  S.panes.splice(i, 1);
+  S.focus = 0;
+  renderAll(); renderTree(); renderRight(); renderStatus(); saveState();
+}
+$('#panes').addEventListener('pointerdown', (e) => {
+  const col = e.target.closest('.pane-col');
+  if (col) focusPane(Number(col.dataset.pane));
+}, true);
+$('#panes').addEventListener('click', (e) => {
+  if (!e.target.closest('.tabbar')) return;
+  if (e.target.closest('.tab-new')) return quickSwitcher(true);
+  const paneClose = e.target.closest('[data-pane-close]');
+  if (paneClose) return closePane(Number(paneClose.dataset.paneClose));
   const close = e.target.closest('[data-close]');
   if (close) { closeTab(Number(close.dataset.close)); return; }
   const tab = e.target.closest('.tab');
   if (tab) activate(Number(tab.dataset.i));
 });
-$('#tabbar').addEventListener('auxclick', (e) => { const tab = e.target.closest('.tab'); if (tab && e.button === 1) closeTab(Number(tab.dataset.i)); });
+$('#panes').addEventListener('auxclick', (e) => { const tab = e.target.closest('.tabbar .tab'); if (tab && e.button === 1) closeTab(Number(tab.dataset.i)); });
 
 // ---- saving --------------------------------------------------------------------------------
 let saveTimer = null;
 function scheduleSave(tab) { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveTab(tab), 900); }
 async function flush(tab) { if (isText(tab) && tab.content !== tab.saved && !tab.conflict) { clearTimeout(saveTimer); await saveTab(tab); } }
-async function flushAll() { clearTimeout(saveTimer); for (const t of S.tabs) await flush(t); }
+async function flushAll() { clearTimeout(saveTimer); for (const t of allTabs()) await flush(t); }
 
 async function saveTab(tab, { force = false } = {}) {
   if (!isText(tab) || !tab.editable || (tab.conflict && !force)) return;
@@ -908,7 +980,7 @@ async function saveTab(tab, { force = false } = {}) {
   renderTabs(); renderStatus();
 }
 window.addEventListener('beforeunload', (e) => {
-  if (S.tabs.some((t) => isText(t) && t.content !== t.saved)) { flushAll(); e.preventDefault(); e.returnValue = ''; }
+  if (allTabs().some((t) => isText(t) && t.content !== t.saved)) { flushAll(); e.preventDefault(); e.returnValue = ''; }
 });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
 
@@ -925,7 +997,7 @@ function setMode(mode) {
 function toggleSourceMode() {
   ui.sourceMode = !ui.sourceMode;
   saveState();
-  ed?.setLivePreview(!ui.sourceMode);
+  S.panes.forEach((p) => p.ed?.setLivePreview(!ui.sourceMode));
   toast(ui.sourceMode ? 'Source mode: all Markdown visible' : 'Live preview: formatting shown as you write');
 }
 
@@ -935,9 +1007,10 @@ function crumbs(path) {
 }
 
 function renderView() {
-  const view = $('#view');
+  const view = paneView();
+  if (!view) return;
   const tab = activeTab();
-  if (ed) { ed.destroy(); ed = null; }
+  if (curEd()) { curEd().destroy(); S.panes[S.focus].ed = null; }
   if (!tab || tab.kind !== 'graph') stopGraph();
   if (!tab) { view.innerHTML = emptyState(); renderRight(); renderStatus(); return; }
   if (tab.kind === 'graph') { renderGraph(view, tab); renderRight(); renderStatus(); return; }
@@ -953,6 +1026,8 @@ function renderView() {
     ${tab.kind === 'note' ? `${tab.editable ? '' : '<!--'}<button class="icon-btn" data-act="mode" title="${tab.mode === 'edit' ? 'Reading view' : 'Edit'} (Ctrl/⌘ E)"><i class="fa-solid ${tab.mode === 'edit' ? 'fa-book-open' : 'fa-pen'}"></i></button>${tab.editable ? '' : '-->'}
     ${tab.mode === 'edit' ? '<button class="icon-btn" data-act="find" title="Find and replace (Ctrl/⌘ F, Ctrl/⌘ H)"><i class="fa-solid fa-magnifying-glass"></i></button><button class="icon-btn" data-act="source" title="Live preview or source mode"><i class="fa-solid fa-code"></i></button>' : ''}
     <button class="icon-btn" data-act="graph" title="Local graph"><i class="fa-solid fa-diagram-project"></i></button>` : ''}
+    <button class="icon-btn" data-act="bookmark" title="${S.bookmarks.includes(tab.path) ? 'Remove bookmark' : 'Bookmark'}"><i class="fa-${S.bookmarks.includes(tab.path) ? 'solid' : 'regular'} fa-star"></i></button>
+    <button class="icon-btn hide-sm" data-act="split" title="${S.panes.length > 1 ? 'Close the split' : 'Open beside (split view)'}"><i class="fa-solid ${S.panes.length > 1 ? 'fa-window-maximize' : 'fa-table-columns'}"></i></button>
     <button class="icon-btn" data-act="more" title="More"><i class="fa-solid fa-ellipsis-vertical"></i></button></div>`;
   if (tab.kind === 'asset') {
     const body = isImage(tab.path) ? `<img src="${esc(fileUrl(tab.path))}" alt="${esc(basename(tab.path))}" style="max-width:100%;border-radius:10px">`
@@ -973,16 +1048,16 @@ function renderView() {
     <input class="inline-title" id="inline-title" value="${esc(tab.path === ROOT_FILE ? 'MEMORY' : stem(tab.path))}" ${readonlyTitle ? 'readonly' : ''} spellcheck="false" aria-label="Note name">
     ${body}</div></div>`;
   renderBanner();
-  if ($('#editor')) mountEditor(tab);
-  const reading = $('#reading');
+  if ($v('#editor')) mountEditor(tab);
+  const reading = $v('#reading');
   if (reading) { highlightCode(reading); fillRich(reading); fillEmbeds(reading, 0); }
-  $('.scroller').scrollTop = tab.scroll || 0;
+  $v('.scroller').scrollTop = tab.scroll || 0;
   tab.scroll = 0;
   renderRight(); renderStatus();
 }
 
 function renderBanner() {
-  const tab = activeTab(); const el = $('#banner');
+  const tab = activeTab(); const el = $v('#banner');
   if (!el || tab?.kind !== 'note') return;
   if (tab.conflict) {
     el.innerHTML = `<div class="banner warn"><i class="fa-solid fa-code-merge"></i><span>This note changed on disk (probably the agent) while you were editing. Your edits aren't saved yet.</span>
@@ -1015,21 +1090,20 @@ function scrollToHeading(heading) {
     if (at >= 0) caretToLine(at + 1);
     return;
   }
-  const el = document.getElementById(`h-${slug(heading)}`);
+  const el = $v(`#h-${CSS.escape(slug(heading))}`);
   if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); el.animate([{ background: 'var(--mark)' }, { background: 'transparent' }], { duration: 1500 }); }
 }
 
-function caretToLine(line) { ed?.gotoLine(line); }
+function caretToLine(line) { curEd()?.gotoLine(line); }
 
 // ---- the editor: CodeMirror live preview (vendor/lrm-editor.js) ----------------------------
-let ed = null;
 function mountEditor(tab) {
-  const host = $('#editor');
+  const host = $v('#editor');
   if (!window.LrmEditor) {
     host.innerHTML = '<div class="banner warn">The editor did not load. Reload the page.</div>';
     return;
   }
-  ed = window.LrmEditor.create(host, {
+  const editor = window.LrmEditor.create(host, {
     doc: tab.content,
     livePreview: ui.sourceMode !== true,
     readOnly: !tab.editable,
@@ -1053,7 +1127,7 @@ function mountEditor(tab) {
     onChange: (text) => {
       tab.content = text;
       scheduleSave(tab);
-      if (!$('.tab.active .dirty')) renderTabs();
+      if (!document.querySelector(`.pane-col[data-pane="${S.focus}"] .tab.active .dirty`)) renderTabs();
       renderStatusSoon(); renderRightSoon();
     },
     onSave: () => saveTab(tab),
@@ -1066,7 +1140,8 @@ function mountEditor(tab) {
     openTag: (tag) => searchFor(`tag:#${tag}`),
     onFiles: (files) => attachFiles(files, tab.path),
   });
-  if (tab.focusEditor) { tab.focusEditor = false; ed.focus(); }
+  S.panes[S.focus].ed = editor;
+  if (tab.focusEditor) { tab.focusEditor = false; editor.focus(); }
 }
 
 // ---- formulas (KaTeX) and diagrams (Mermaid), loaded the first time a note needs them -------
@@ -1193,7 +1268,7 @@ async function insertTemplate() {
   pickTemplate(async (path) => {
     const text = fillTemplate(await readNote(path), stem(tab.path));
     if (tab.mode !== 'edit') { tab.mode = 'edit'; renderView(); }
-    ed?.insert(text);
+    curEd()?.insert(text);
   });
 }
 async function newFromTemplate() {
@@ -1230,13 +1305,15 @@ function reveal(path) {
   document.querySelector(`.tree-row[data-path="${CSS.escape(path)}"]`)?.scrollIntoView({ block: 'center' });
 }
 
-const view = $('#view');
+const view = $('#panes');
 view.addEventListener('click', async (e) => {
   const tab = activeTab();
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act) {
     if (act === 'mode') return setMode();
-    if (act === 'find') return ed?.find();
+    if (act === 'find') return curEd()?.find();
+    if (act === 'bookmark') return toggleBookmark(tab.path);
+    if (act === 'split') return S.panes.length > 1 ? closePane(S.focus === 0 ? 1 : 0) : openSplit(tab.path);
     if (act === 'source') return toggleSourceMode();
     if (act === 'graph') return openGraph(tab.path);
     if (act === 'more') { const r = e.target.closest('[data-act]').getBoundingClientRect(); return noteMenu(r.right - 190, r.bottom + 4); }
@@ -1310,6 +1387,114 @@ function rankNotes(query, limit = 50) {
   }
   return out.sort((a, b) => b.score - a.score || (S.notes.get(b.path).mtime - S.notes.get(a.path).mtime)).slice(0, limit);
 }
+// ---- bookmarks (saved on the server per agent) ----------------------------------------------------
+async function loadPrefs() {
+  try { S.bookmarks = (await api('prefs')).prefs.bookmarks || []; } catch { S.bookmarks = []; }
+  renderBookmarks();
+}
+let prefsT = null;
+function savePrefs() {
+  renderBookmarks();
+  clearTimeout(prefsT);
+  prefsT = setTimeout(() => post('prefs', { prefs: { bookmarks: S.bookmarks } }).catch(fail), 300);
+}
+function toggleBookmark(path = activeTab()?.path) {
+  if (!path) return;
+  const had = S.bookmarks.includes(path);
+  S.bookmarks = had ? S.bookmarks.filter((b) => b !== path) : [...S.bookmarks, path];
+  savePrefs();
+  toast(had ? 'Bookmark removed' : 'Bookmarked');
+  renderAll();
+}
+function renderBookmarks() {
+  const el = $('#bookmark-list');
+  if (!el) return;
+  el.innerHTML = S.bookmarks.length ? S.bookmarks.map((p, i) => {
+    const icon = isCanvas(p) ? 'fa-regular fa-object-group' : isBase(p) ? 'fa-solid fa-table' : 'fa-regular fa-file-lines';
+    const missing = !S.lc.has(p.toLowerCase());
+    return `<div class="tree-row bm${missing ? ' missing' : ''}" data-bm="${esc(p)}" draggable="true" data-i="${i}"><i class="ico ${icon}"></i><span class="name">${esc(p === ROOT_FILE ? 'MEMORY' : basename(p).replace(/\.(md|canvas|base)$/i, ''))}</span><small class="muted">${esc(dirname(p))}</small>
+      <button class="icon-btn more" data-unbm="${esc(p)}" title="Remove bookmark"><i class="fa-solid fa-xmark"></i></button></div>`;
+  }).join('') : '<div class="hint">No bookmarks yet. Use the ☆ button on a note, or the command palette.</div>';
+}
+
+$('#bookmark-list').addEventListener('click', (e) => {
+  const un = e.target.closest('[data-unbm]');
+  if (un) { e.stopPropagation(); S.bookmarks = S.bookmarks.filter((b) => b !== un.dataset.unbm); savePrefs(); renderAll(); return; }
+  const row = e.target.closest('[data-bm]');
+  if (row && S.lc.has(row.dataset.bm.toLowerCase())) { openPath(row.dataset.bm, { newTab: mod(e) }); if (small()) setPane('left', false); }
+});
+let bmDrag = null;
+$('#bookmark-list').addEventListener('dragstart', (e) => { bmDrag = Number(e.target.closest('[data-bm]')?.dataset.i); });
+$('#bookmark-list').addEventListener('dragover', (e) => { if (bmDrag != null) e.preventDefault(); });
+$('#bookmark-list').addEventListener('drop', (e) => {
+  const row = e.target.closest('[data-bm]');
+  if (bmDrag == null || !row) return;
+  e.preventDefault();
+  const to = Number(row.dataset.i);
+  const [item] = S.bookmarks.splice(bmDrag, 1);
+  S.bookmarks.splice(to, 0, item);
+  bmDrag = null; savePrefs();
+});
+
+// ---- unlinked mentions: notes that name this one without linking to it -------------------------------
+let mentionList = [];
+async function loadMentions(tab) {
+  const box = $('#mentions');
+  try {
+    const { mentions } = await api('mentions', { path: tab.path });
+    if (activeTab() !== tab || S.rightTab !== 'links') return;
+    const linked = S.back.get(tab.path) || new Set();
+    mentionList = mentions.filter((m) => !linked.has(m.path)).map((m) => ({ ...m, target: tab.path }));
+    $('#mention-count').textContent = mentionList.length;
+    box.querySelector('.hint')?.remove();
+    box.insertAdjacentHTML('beforeend', mentionList.map((m, i) => `<div class="mention"><a class="side-item" data-open="${esc(m.path)}">${esc(stem(m.path))} <small>line ${m.line}</small></a>
+      <div class="mention-text">${esc(m.text).replace(new RegExp(m.match.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), (x) => `<mark>${x}</mark>`)}</div>
+      ${S.notes.get(m.path)?.readonly ? '' : `<button class="btn mini" data-link-mention="${i}">Link</button>`}</div>`).join('') || '<div class="hint">None: no other note names this one without linking it.</div>');
+  } catch (e) { if (box) box.querySelector('.hint').textContent = e.message; }
+}
+async function linkMention(i) {
+  const m = mentionList[i];
+  if (!m) return;
+  try {
+    const data = await api('read', { path: m.path });
+    const lines = data.content.split('\n');
+    const line = lines[m.line - 1] ?? '';
+    if (line.slice(m.col, m.col + m.match.length).toLowerCase() !== m.match.toLowerCase()) throw new Error('That note changed; refresh and try again');
+    const name = linkName(m.target);
+    const link = m.match === stem(m.target) ? `[[${name}]]` : `[[${name}|${m.match}]]`;
+    lines[m.line - 1] = line.slice(0, m.col) + link + line.slice(m.col + m.match.length);
+    await post('write', { path: m.path, content: lines.join('\n'), expected_mtime: data.mtime });
+    toast(`Linked in ${stem(m.path)}`);
+    await loadIndex({ quiet: true });
+    renderRight();
+  } catch (e) { fail(e); }
+}
+
+// ---- calendar of daily notes (memory/YYYY-MM-DD.md) --------------------------------------------------
+function calendarHtml() {
+  const now = new Date();
+  const base = S.calMonth ?? 0;
+  const first = new Date(now.getFullYear(), now.getMonth() + base, 1);
+  const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+  const lead = (first.getDay() + 6) % 7; // weeks start on Monday
+  const iso = (d) => `${first.getFullYear()}-${String(first.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push('<span></span>');
+  for (let d = 1; d <= days; d++) {
+    const day = iso(d);
+    const has = S.notes.has(`memory/${day}.md`);
+    const isToday = day === today();
+    const open = activeTab()?.path === `memory/${day}.md`;
+    cells.push(`<button class="cal-day${has ? ' has' : ''}${isToday ? ' today' : ''}${open ? ' open' : ''}" data-day="${day}" title="${has ? 'Open' : 'Create'} the note for ${day}">${d}</button>`);
+  }
+  const count = [...S.notes.keys()].filter((p) => p.startsWith(`memory/${iso(1).slice(0, 7)}`)).length;
+  return `<div class="cal"><div class="cal-head"><button class="icon-btn" data-month="${base - 1}" title="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+    <b>${first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}</b>
+    <button class="icon-btn" data-month="${base + 1}" title="Next month"><i class="fa-solid fa-chevron-right"></i></button></div>
+    <div class="cal-grid">${['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map((x) => `<span class="cal-dow">${x}</span>`).join('')}${cells.join('')}</div>
+    <div class="hint">${count} daily note${count === 1 ? '' : 's'} this month. Click a day to open it, or to create it.${base ? ' <button class="link-btn" data-month="0">Today</button>' : ''}</div></div>`;
+}
+
 // ---- right pane: backlinks, outgoing, outline, info -------------------------------------------
 function headingsOf(text) {
   const out = []; let fence = false;
@@ -1336,6 +1521,7 @@ function renderRight() {
   const el = $('#right-body');
   const tab = activeTab();
   document.querySelectorAll('[data-right]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.right === S.rightTab)));
+  if (S.rightTab === 'calendar') { el.innerHTML = calendarHtml(); return; }
   if (!tab || tab.kind !== 'note') {
     el.innerHTML = `<div class="hint">${tab?.kind === 'graph' ? 'Click a dot to open its note. Drag to rearrange, scroll to zoom.' : 'Open a note to see its links, outline and properties.'}</div>`;
     return;
@@ -1349,7 +1535,11 @@ function renderRight() {
         ${back.map((p) => item(p)).join('') || '<div class="hint">No notes link here yet.</div>'}</div>
       <div class="side-section"><div class="side-head"><i class="fa-solid fa-arrow-right-from-bracket"></i>Outgoing links<span class="count">${out.length + missing.length}</span></div>
         ${out.map((p) => item(p)).join('')}${missing.map((n) => `<a class="side-item unresolved" data-create-link="${esc(n)}" title="Not created yet: click to create">${esc(n)} <small>not created</small></a>`).join('')}
-        ${out.length + missing.length ? '' : '<div class="hint">This note links nowhere.</div>'}</div>`;
+        ${out.length + missing.length ? '' : '<div class="hint">This note links nowhere.</div>'}</div>
+      <div class="side-section" id="mentions"><div class="side-head"><i class="fa-solid fa-quote-left"></i>Unlinked mentions<span class="count" id="mention-count"></span></div><div class="hint">Looking…</div></div>`;
+    loadMentions(tab);
+  } else if (S.rightTab === 'calendar') {
+    el.innerHTML = calendarHtml();
   } else if (S.rightTab === 'outline') {
     const hs = headingsOf(tab.content);
     const min = Math.min(...hs.map((h) => h.level));
@@ -1369,6 +1559,12 @@ function renderRight() {
   }
 }
 $('#right-body').addEventListener('click', (e) => {
+  const day = e.target.closest('[data-day]');
+  if (day) { dailyNote(day.dataset.day); return; }
+  const month = e.target.closest('[data-month]');
+  if (month) { S.calMonth = Number(month.dataset.month); renderRight(); return; }
+  const linkIt = e.target.closest('[data-link-mention]');
+  if (linkIt) { linkMention(Number(linkIt.dataset.linkMention)); return; }
   const open = e.target.closest('[data-open]');
   if (open) return openPath(open.dataset.open, { newTab: mod(e) });
   const create = e.target.closest('[data-create-link]');
@@ -1396,7 +1592,7 @@ function renderStatus() {
 // ---- search & tags (left pane) -----------------------------------------------------------------
 function setLeftTab(name) {
   S.leftTab = name;
-  for (const n of ['files', 'search', 'tags']) $(`#left-${n}`).hidden = n !== name;
+  for (const n of ['files', 'search', 'tags', 'bookmarks']) $(`#left-${n}`).hidden = n !== name;
   document.querySelectorAll('[data-left]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.left === name)));
   saveState();
 }
@@ -1409,23 +1605,20 @@ async function runSearch() {
   const q = $('#search-q').value.trim();
   const out = $('#search-results');
   const seq = ++searchSeq;
-  if (!q) { out.innerHTML = '<div class="hint">Search every note\'s text. Use <code>tag:#name</code> for tags.</div>'; return; }
-  const tagQ = /^tag:#?(\S+)$/i.exec(q);
-  if (tagQ) {
-    const want = tagQ[1].toLowerCase();
-    const hits = [...S.notes.values()].filter((e) => (e.tags || []).some((t) => t.toLowerCase() === want || t.toLowerCase().startsWith(`${want}/`)));
-    out.innerHTML = `<div class="hint">${hits.length} note${hits.length === 1 ? '' : 's'} tagged #${esc(tagQ[1])}</div>` + hits.sort((a, b) => b.mtime - a.mtime).map((e) =>
-      `<div class="result" data-open="${esc(e.path)}"><div class="r-title">${esc(stem(e.path))}</div><div class="r-path">${esc(e.path)}</div></div>`).join('');
+  if (!q) {
+    out.innerHTML = `<div class="hint search-help">Search every note's text. Combine:<br>
+      <code>meeting budi</code> both words · <code>"exact phrase"</code> · <code>-draft</code> leave out<br>
+      <code>tag:#project</code> · <code>path:knowledge/clients</code> · <code>file:alpha</code> (note name)</div>`;
     return;
   }
   out.innerHTML = '<div class="hint">Searching…</div>';
   try {
     const data = await api('search', { q });
     if (seq !== searchSeq) return;
-    const terms = q.toLowerCase().split(/\s+/).filter(Boolean).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const re = new RegExp(`(${terms.join('|')})`, 'gi');
-    const mark = (s) => esc(s).replace(re, '<mark>$1</mark>');
-    out.innerHTML = `<div class="hint">${data.total} result${data.total === 1 ? '' : 's'}${data.total > 50 ? ' (showing 50)' : ''}</div>` + data.results.map((r) =>
+    const terms = (data.terms || []).filter(Boolean).map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const re = terms.length ? new RegExp(`(${terms.join('|')})`, 'gi') : null;
+    const mark = (s) => (re ? esc(s).replace(re, '<mark>$1</mark>') : esc(s));
+    out.innerHTML = `<div class="hint">${data.total} result${data.total === 1 ? '' : 's'}${data.total > 100 ? ' (showing 100)' : ''}</div>` + data.results.map((r) =>
       `<div class="result" data-open="${esc(r.path)}" data-line="${r.hits[0]?.line || 0}"><div class="r-title">${mark(r.path === ROOT_FILE ? 'MEMORY' : stem(r.path))}</div><div class="r-path">${esc(r.path)}</div>
         ${r.hits.map((h) => `<div class="r-hit">${mark(h.text)}</div>`).join('')}</div>`).join('');
   } catch (e) { out.innerHTML = `<div class="hint">${esc(e.message)}</div>`; }
@@ -1459,7 +1652,7 @@ function openGraph(center = null) {
   S.active += 1;
   saveState(); renderTabs(); renderView();
 }
-function stopGraph() { if (S.sim) { S.sim.stop(); S.sim = null; } }
+function stopGraph() { const pane = S.panes[S.focus]; if (pane?.sim) { pane.sim.stop(); pane.sim = null; } }
 
 function graphData(tab) {
   const g = S.graph;
@@ -1518,7 +1711,7 @@ function renderGraph(viewEl, tab) {
 
 function drawGraph(tab) {
   stopGraph();
-  const wrap = $('#graph');
+  const wrap = $v('#graph');
   if (!wrap || !window.d3) return;
   const d3 = window.d3;
   const { nodes, links } = graphData(tab);
@@ -1531,7 +1724,7 @@ function drawGraph(tab) {
     if (n.group === 'MEMORY') return v('--brand');
     return PALETTE[groups.indexOf(n.group) % PALETTE.length];
   };
-  $('#g-legend').innerHTML = groups.map((gr) => `<span><i style="background:${colorOf({ kind: 'note', group: gr })}"></i>${esc(gr === 'MEMORY' ? 'MEMORY.md' : gr)}</span>`).join('');
+  $v('#g-legend').innerHTML = groups.map((gr) => `<span><i style="background:${colorOf({ kind: 'note', group: gr })}"></i>${esc(gr === 'MEMORY' ? 'MEMORY.md' : gr)}</span>`).join('');
   const svg = d3.select(wrap).select('svg');
   svg.selectAll('*').remove();
   if (!nodes.length) {
@@ -1584,7 +1777,7 @@ function drawGraph(tab) {
     .on('start', (ev, d) => { if (!ev.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
     .on('drag', (ev, d) => { d.fx = ev.x; d.fy = ev.y; })
     .on('end', (ev, d) => { if (!ev.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
-  S.sim = sim;
+  S.panes[S.focus].sim = sim;
 }
 
 // ---- Canvas: Obsidian's JSON Canvas boards (.canvas) ------------------------------------------------
@@ -1614,6 +1807,8 @@ async function newBoard(kind, folder = S.folder) {
 
 function boardHead(tab, extra = '') {
   return `<div class="note-head"><div class="crumbs">${crumbs(tab.path)}</div>${extra}
+    <button class="icon-btn" data-act="bookmark" title="Bookmark"><i class="fa-${S.bookmarks.includes(tab.path) ? 'solid' : 'regular'} fa-star"></i></button>
+    <button class="icon-btn hide-sm" data-act="split" title="${S.panes.length > 1 ? 'Close the split' : 'Open beside (split view)'}"><i class="fa-solid ${S.panes.length > 1 ? 'fa-window-maximize' : 'fa-table-columns'}"></i></button>
     <button class="icon-btn" data-act="more" title="More"><i class="fa-solid fa-ellipsis-vertical"></i></button></div>`;
 }
 
@@ -1634,7 +1829,7 @@ function renderCanvas(view, tab) {
   view.innerHTML = `${boardHead(tab)}<div class="cv" id="cv" tabindex="0"><div class="cv-world" id="cv-world"><svg class="cv-edges" id="cv-edges"><defs>
     <marker id="cv-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs></svg></div>
     ${tools}<div class="cv-hint">${data.nodes.length ? '' : 'Double-click to add a card. Drag a card\'s side dot onto another card to connect them.'}</div></div>`;
-  const root = $('#cv'); const world = $('#cv-world'); const svg = $('#cv-edges');
+  const root = $v('#cv'); const world = $v('#cv-world'); const svg = $v('#cv-edges');
   let sel = null; // {type: 'node'|'edge', id}
   let saveT = null;
   const save = () => {
@@ -2306,7 +2501,7 @@ const COMMANDS = [
   { name: 'New canvas', fn: () => newBoard('canvas') },
   { name: 'New table view (base)', fn: () => newBoard('base') },
   { name: 'Insert template', fn: () => insertTemplate() },
-  { name: 'Find and replace in this note', key: 'H', fn: () => { const t = activeTab(); if (t?.kind === 'note' && t.editable && t.mode !== 'edit') { t.mode = 'edit'; renderView(); } ed?.find(); } },
+  { name: 'Find and replace in this note', key: 'H', fn: () => { const t = activeTab(); if (t?.kind === 'note' && t.editable && t.mode !== 'edit') { t.mode = 'edit'; renderView(); } curEd()?.find(); } },
   { name: 'Toggle live preview / source mode', fn: () => toggleSourceMode() },
   { name: 'Attach images or PDFs to this note', fn: () => { const t = activeTab(); if (t?.kind === 'note') uploadInto(dirname(t.path) || 'knowledge'); } },
   { name: "Open today's daily note", fn: () => dailyNote() },
@@ -2319,6 +2514,10 @@ const COMMANDS = [
   { name: 'Delete this note', fn: () => activeTab()?.path && deletePath(activeTab().path) },
   { name: 'Copy link to this note', fn: () => activeTab()?.path && copy(`[[${linkName(activeTab().path)}]]`) },
   { name: 'Reveal this note in the file explorer', fn: () => activeTab()?.path && reveal(activeTab().path) },
+  { name: 'Bookmark this note (or remove it)', fn: () => toggleBookmark() },
+  { name: 'Open this note to the right (split view)', fn: () => openSplit() },
+  { name: 'Close the split view', fn: () => S.panes.length > 1 && closePane(S.focus === 0 ? 1 : 0) },
+  { name: 'Open the calendar', fn: () => { setPane('right', true); S.rightTab = 'calendar'; saveState(); renderRight(); } },
   { name: 'Toggle left sidebar', fn: () => setPane('left') },
   { name: 'Toggle right sidebar', fn: () => setPane('right') },
   { name: 'Close this tab', fn: () => S.active >= 0 && closeTab(S.active) },
@@ -2386,20 +2585,28 @@ async function switchAgent(id) {
   stopGraph();
   S.agent = id;
   const saved = store.get(`lrm_vault:${id}`, {});
-  S.tabs = (saved.tabs || []).filter((t) => t && (t.kind === 'graph' || t.path)).map((t) => Object.assign(newTabObj(t.kind, t.path, t.mode), t.kind === 'graph' ? { center: null } : {}));
-  S.active = Math.min(saved.active ?? -1, S.tabs.length - 1);
-  if (S.active < 0 && S.tabs.length) S.active = 0;
+  S.panes.forEach((p) => p.ed?.destroy());
+  const panes = (saved.panes || [{ tabs: saved.tabs || [], active: saved.active ?? -1 }]).slice(0, 2);
+  S.panes = panes.map((p) => {
+    const tabs = (p.tabs || []).filter((t) => t && (t.kind === 'graph' || t.path)).map((t) => Object.assign(newTabObj(t.kind, t.path, t.mode), t.kind === 'graph' ? { center: t.center || null } : {}));
+    return { tabs, active: tabs.length ? Math.min(Math.max(p.active ?? 0, 0), tabs.length - 1) : -1, ed: null, sim: null };
+  }).filter((p, i) => i === 0 || p.tabs.length);
+  S.focus = Math.min(saved.focus || 0, S.panes.length - 1);
   S.expanded = new Set(saved.expanded || SECTIONS);
   S.folder = saved.folder || 'knowledge';
   Object.assign(S.graph, saved.graph || {}, { filter: '' });
   saveState();
-  renderTabs();
+  buildPanes();
+  loadPrefs();
   await loadIndex();
   // Tabs whose note is gone are dropped; the rest load their text.
-  S.tabs = S.tabs.filter((t) => t.kind === 'graph' || S.lc.has(t.path.toLowerCase()));
-  S.active = Math.min(Math.max(S.active, S.tabs.length ? 0 : -1), S.tabs.length - 1);
-  renderTabs(); renderTree(); renderView();
-  for (const t of S.tabs) if (isText(t)) loadTab(t);
+  for (const pane of S.panes) {
+    pane.tabs = pane.tabs.filter((t) => t.kind === 'graph' || S.lc.has(t.path.toLowerCase()));
+    pane.active = Math.min(Math.max(pane.active, pane.tabs.length ? 0 : -1), pane.tabs.length - 1);
+  }
+  if (S.panes.length > 1 && !S.panes[1].tabs.length) { S.panes.length = 1; S.focus = 0; }
+  renderAll(); renderTree();
+  for (const pane of S.panes) for (const t of pane.tabs) if (isText(t)) loadTab(t);
 }
 
 async function start() {
@@ -2410,7 +2617,7 @@ async function start() {
   S.leftTab = ui.leftTab || 'files'; S.rightTab = ui.rightTab || 'links';
   setLeftTab(S.leftTab);
   let data;
-  try { data = await api('agents'); } catch (e) { $('#view').innerHTML = `<div class="empty-state"><h2>Can't open the vault</h2><p>${esc(e.message)}</p></div>`; return; }
+  try { data = await api('agents'); } catch (e) { buildPanes(); paneView().innerHTML = `<div class="empty-state"><h2>Can't open the vault</h2><p>${esc(e.message)}</p></div>`; return; }
   S.agents = data.agents;
   let preferred = ui.agent;
   try { preferred = preferred || localStorage.getItem('cow_active_agent'); } catch { /* ignore */ }
@@ -2425,6 +2632,6 @@ async function start() {
   gitDot();
   setInterval(gitDot, 60000);
   // Agents write to their memory all the time: pick up their changes while the page is open.
-  setInterval(() => { if (document.visibilityState === 'visible' && !S.tabs.some((t) => t.saving)) loadIndex({ quiet: true }); }, 15000);
+  setInterval(() => { if (document.visibilityState === 'visible' && !allTabs().some((t) => t.saving)) loadIndex({ quiet: true }); }, 15000);
 }
 start();
