@@ -8,8 +8,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY server.py .
-RUN useradd -u 998 -m voice && mkdir -p /models && chown voice:voice /models
-USER voice
+RUN useradd -u 998 -m lrmvoice && mkdir -p /models && chown lrmvoice:lrmvoice /models
+USER lrmvoice
 ENV MODELS=/models PORT=8095 HF_HUB_DISABLE_TELEMETRY=1 OMP_NUM_THREADS=2
 EXPOSE 8095
 CMD ["python", "server.py"]
