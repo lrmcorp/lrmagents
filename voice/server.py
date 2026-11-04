@@ -163,14 +163,28 @@ def encode(samples, rate, fmt):
     return proc.stdout, "audio/ogg; codecs=opus"
 
 
-def transcribe(data, lang=None):
+def decode(data):
+    """Any recording (webm/opus from Chrome, mp4/aac from Safari, ogg, wav) -> 16 kHz mono float32.
+
+    ffmpeg does the decoding: faster-whisper's own decoder (PyAV) changes its API between
+    releases, and a browser recording should never fail on that."""
+    import numpy as np
     with tempfile.NamedTemporaryFile(suffix=".audio") as f:
         f.write(data)
         f.flush()
-        with _stt_lock:
-            segments, info = whisper().transcribe(f.name, language=lang or None, vad_filter=True, beam_size=1,
-                                                  initial_prompt="LRMagent, Lorium, Reyner, Liando Reyfort Management.")
-            text = " ".join(s.text.strip() for s in segments).strip()
+        proc = subprocess.run(["ffmpeg", "-v", "error", "-nostdin", "-i", f.name, "-f", "s16le", "-ac", "1", "-ar", "16000", "pipe:1"],
+                              capture_output=True, timeout=120)
+    if proc.returncode != 0 or not proc.stdout:
+        raise ValueError("could not read that recording: " + proc.stderr.decode(errors="replace")[:160].strip())
+    return np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
+
+
+def transcribe(data, lang=None):
+    audio = decode(data)
+    with _stt_lock:
+        segments, info = whisper().transcribe(audio, language=lang or None, vad_filter=True, beam_size=1,
+                                              initial_prompt="LRMagent, Lorium, Reyner, Liando Reyfort Management.")
+        text = " ".join(s.text.strip() for s in segments).strip()
     language = {"ms": "id", "jw": "id"}.get(info.language, info.language)
     return {"text": text, "language": language, "duration": round(info.duration, 2)}
 

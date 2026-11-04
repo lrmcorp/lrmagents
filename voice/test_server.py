@@ -16,5 +16,19 @@ class Tests(unittest.TestCase):
         self.assertEqual(server.chunks("你好。今天好吗？"), ["你好。 今天好吗？"])
 
 
+    def test_decode(self):
+        import shutil
+        import subprocess
+        if not shutil.which("ffmpeg"):
+            self.skipTest("no ffmpeg")
+        for fmt, codec, extra in (("mp4", "aac", ["-movflags", "frag_keyframe+empty_moov"]), ("webm", "libopus", [])):  # Safari, Chrome
+            wav = subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", codec, *extra, "-f", fmt, "pipe:1"],
+                                 capture_output=True, check=True).stdout
+            audio = server.decode(wav)
+            self.assertTrue(14000 < len(audio) < 18000, (fmt, len(audio)))
+        with self.assertRaises(ValueError):
+            server.decode(b"not audio")
+
+
 if __name__ == "__main__":
     unittest.main()
