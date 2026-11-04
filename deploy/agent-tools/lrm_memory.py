@@ -33,7 +33,7 @@ PASS_EVERY = 10 * 60
 MAX_PER_PASS = 12
 MAX_CHARS = 40_000
 FOLDER = "chats"
-SKIP_PREFIXES = ("openai:conversation:lrm-brief:", "openai:conversation:lrm-report:", "lrm-memory:")
+SKIP_PREFIXES = ("openai:conversation:lrm-brief:", "openai:conversation:lrm-report:", "openai:conversation:lrm-review:", "lrm-memory:")
 WHATSAPP = "openai:conversation:whatsapp:"
 
 PROMPT = """You keep the owner's memory for LRMagent (Liando Reyfort Management). Read the conversation below and

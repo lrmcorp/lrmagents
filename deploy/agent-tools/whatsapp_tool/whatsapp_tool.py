@@ -44,7 +44,8 @@ class WhatsAppTool(BaseTool):
         "which one, the owner's numbers), 'send' (send a WhatsApp message now). For 'send', 'to' is 'me' for the owner "
         "(e.g. 'send me a WhatsApp', 'text me the summary') or a phone number with country code; only numbers that "
         "already wrote to the agent or are approved can be messaged. Use this whenever the owner asks to send or receive "
-        "something on WhatsApp; for a message at a later time use the scheduler instead."
+        "something on WhatsApp; for a message at a later time use the scheduler instead. Write WhatsApp messages and reports as "
+        "a short bold title (*Title*) and bullet points with the facts: no greeting, no filler, no closing line."
     )
     params: dict = {
         "type": "object",

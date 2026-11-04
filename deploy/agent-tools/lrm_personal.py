@@ -141,11 +141,22 @@ def refusal(executor, tool_name, arguments):
             f"If the owner wants something from there, they can ask {NAME}.")
 
 
-DATE_PREF = "\n## Preferences (LRMagent)\n- Dates: always write them as DD-MM-YYYY, e.g. 04-11-2026 (times as 24-hour HH:MM).\n"
+PREFS_MARK = "<!-- lrm-prefs -->"
+PREFS = PREFS_MARK + """
+## Preferences (LRMagent)
+- Dates: always DD-MM-YYYY, e.g. 04-11-2026 (times as 24-hour HH:MM).
+- WhatsApp messages and reports: a short bold title line, then bullet points with the facts. No greetings,
+  no filler, no closing lines. Only add a sentence when a point needs it.
+- The vault is the source of truth: before relying on something you remember (memory, daily notes, chat
+  summaries), check it against the vault (memory_search covers it; read the note). If memory and the vault
+  disagree, the vault wins: it is what the owner approved. Say so when your memory was out of date.
+- Finished results go to the vault only through vault_update (Lorium checks, the owner approves).
+""" + PREFS_MARK + "\n"
 
 
 def ensure_preferences():
-    """The owner's date format, once, in every agent's owner profile (USER.md)."""
+    """The owner's standing preferences in every agent's owner profile (USER.md), kept current."""
+    import re as _re
     try:
         for p in registry().list():
             path = Path(p.workspace) / "USER.md"
@@ -153,12 +164,14 @@ def ensure_preferences():
                 text = path.read_text(encoding="utf-8") if path.exists() else ""
             except OSError:
                 continue
-            if "DD-MM-YYYY" in text:
-                continue
-            try:
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(DATE_PREF)
-            except OSError as e:
-                logger.warning(f"[Personal] could not add the date preference for {p.id}: {e}")
+            # replace an earlier block (and the first, date-only version) with the current one
+            new = _re.sub(_re.escape(PREFS_MARK) + r".*?" + _re.escape(PREFS_MARK) + r"\n?", "", text, flags=_re.S)
+            new = new.replace("\n## Preferences (LRMagent)\n- Dates: always write them as DD-MM-YYYY, e.g. 04-11-2026 (times as 24-hour HH:MM).\n", "")
+            new = new.rstrip() + "\n\n" + PREFS
+            if new != text:
+                try:
+                    path.write_text(new, encoding="utf-8")
+                except OSError as e:
+                    logger.warning(f"[Personal] could not update the preferences for {p.id}: {e}")
     except Exception as e:
         logger.warning(f"[Personal] preferences not applied: {e}")

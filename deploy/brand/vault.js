@@ -2561,6 +2561,59 @@ async function gitDot() {
   } catch { /* ignore */ }
 }
 
+// ---- Vault updates: what agents propose, Lorium checked, waiting for the owner --------------
+async function updatesDot() {
+  try {
+    const r = await fetch('/api/lrm/vault-updates', { credentials: 'same-origin' });
+    const d = await r.json();
+    const n = (d.pending || []).length;
+    const el = $('#upd-count'); el.hidden = !n; el.textContent = n;
+    return d;
+  } catch { return null; }
+}
+function diffHtml(diff) {
+  return diff.split('\n').map((l) => `<span class="${l.startsWith('+') ? 'add' : l.startsWith('-') ? 'del' : ''}">${esc(l)}</span>`).join('\n');
+}
+async function updatesPanel() {
+  const d = await updatesDot();
+  if (!d) return toast('Could not load the updates.');
+  const card = (u) => `<div class="upd" data-id="${esc(u.id)}">
+      <h4>${esc(u.title)}</h4>
+      <div class="meta">${esc(u.path)} · ${u.exists ? 'updates an existing note' : 'new note'} · from ${esc(u.agent_name)}${u.agent_name !== d.reviewer ? `, checked by ${esc(d.reviewer)}` : ''}</div>
+      ${u.summary ? `<div>${esc(u.summary)}</div>` : ''}${u.review_note ? `<div class="muted">Note from ${esc(d.reviewer)}: ${esc(u.review_note)}</div>` : ''}
+      ${u.sources?.length ? `<div class="muted">Sources: ${u.sources.map(esc).join(', ')}</div>` : ''}
+      <pre>${u.exists && u.diff ? diffHtml(u.diff) : esc(u.content)}</pre>
+      <div class="row"><button class="btn primary" data-a="approve">Approve and save</button><button class="btn" data-a="edit">Edit first</button><button class="btn danger" data-a="reject">Reject</button></div>
+    </div>`;
+  const reviewing = (d.reviewing || []).map((u) => `<li>${esc(u.title)} <small class="muted">from ${esc(u.agent_name)}</small></li>`).join('');
+  const { overlay, close } = modal(`<div class="msg"><h3>Vault updates</h3>
+      <div class="muted" style="margin-bottom:12px">Agents propose, ${esc(d.reviewer)} checks, you approve. Nothing reaches the vault before that.</div>
+      ${(d.pending || []).map(card).join('') || '<div class="muted" style="margin:10px 0 16px">Nothing is waiting for you.</div>'}
+      ${reviewing ? `<div class="side-head" style="margin-top:8px">With ${esc(d.reviewer)} for checking</div><ul>${reviewing}</ul>` : ''}</div>
+      <div class="btns"><button class="btn" data-a="close">Close</button></div>`);
+  overlay.querySelector('.modal').classList.add('wide');
+  overlay.addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-a]'); if (!b) return;
+    if (b.dataset.a === 'close') return close();
+    const box = b.closest('.upd'); const id = box?.dataset.id; if (!id) return;
+    const u = d.pending.find((x) => x.id === id);
+    if (b.dataset.a === 'edit') {
+      box.querySelector('pre').outerHTML = `<textarea>${esc(u.content)}</textarea>`;
+      b.textContent = 'Editing'; b.disabled = true; return;
+    }
+    const content = box.querySelector('textarea')?.value;
+    try {
+      const r = await fetch('/api/lrm/vault-updates', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, decision: b.dataset.a, content }) });
+      const res = await r.json(); if (!r.ok) throw new Error(res.error || r.status);
+      box.remove(); toast(b.dataset.a === 'approve' ? `Saved: ${u.path}` : 'Rejected');
+      if (b.dataset.a === 'approve') { await loadIndex({ quiet: true }); openPath(u.path); }
+      updatesDot();
+      if (!overlay.querySelector('.upd')) close();
+    } catch (err) { toast(`Could not ${b.dataset.a}: ${err.message}`); }
+  });
+}
+
 function gitPanel() {
   const { overlay, close } = modal('<div class="git" id="git-body">Loading…</div>');
   overlay.querySelector('.modal').style.width = 'min(640px, calc(100vw - 32px))';
@@ -2695,6 +2748,9 @@ $('#toggle-right').onclick = () => setPane('right');
 $('#btn-switcher').onclick = () => quickSwitcher();
 $('#btn-palette').onclick = () => palette();
 $('#btn-git').onclick = () => gitPanel();
+$('#btn-updates').onclick = () => updatesPanel();
+updatesDot();
+setInterval(updatesDot, 60000);
 $('#btn-daily').onclick = () => dailyNote();
 $('#btn-graph').onclick = () => openGraph();
 $('#btn-topo').onclick = () => openTopology();

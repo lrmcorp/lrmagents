@@ -351,10 +351,10 @@ def calendar_create(title, start, end="", description="", location="", attendees
 BRIEF_PROMPT = (
     "Prepare my morning brief for today, {date}. Use the google tool: today's calendar (calendar_list) and important unread "
     "mail from the last day (gmail_search with 'is:unread newer_than:1d -category:promotions -category:social'). "
-    "Use the scheduler tool to list reminders and tasks due today. Then write it for WhatsApp: a one-line greeting, "
-    "*Today* (each meeting with time and place), *Mail* (who wants what, at most 6, most important first), "
-    "*Reminders*, and one suggestion of what to do first. Plain, short, no more than 20 lines. If something could not be "
-    "read, say so in one line and carry on."
+    "Use the scheduler tool to list reminders and tasks due today. Then write it for WhatsApp as a title and points only: "
+    "first line *Brief · DD-MM-YYYY*, then *Today* (each meeting: time, what, where), *Mail* (who wants what, at most 6, "
+    "most important first), *Reminders*, *First* (the one thing to do first). Bullet points, no greeting, no filler, "
+    "no closing line, no more than 20 lines. If something could not be read, one point saying so."
 )
 
 

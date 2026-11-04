@@ -291,6 +291,10 @@ def gate(executor, tool_name, arguments, tool_call_id):
         private = personal_refusal(executor, tool_name, arguments)
         if private:
             return private
+        from agent.lrm_vault_flow import refusal as vault_refusal
+        private = vault_refusal(executor, tool_name, arguments)
+        if private:
+            return private
         if tool_name == "browser":
             waited = _wait_for_browser(executor, tool_call_id)
             if waited:

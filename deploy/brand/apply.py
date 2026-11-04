@@ -168,6 +168,7 @@ patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conven
 ## Recall with few tokens
 
 - Search before reading: `memory_search` covers memory and this vault and returns short snippets. Then read only the page, or the lines, you need.
+- Never write knowledge/ files yourself: put finished results into the vault with `vault_update` (action propose, the full note). Lorium checks every proposal and the owner approves it; to update a note, propose its complete new version with the latest information.
 - Never read the whole vault, or long pages end to end, to answer a question.
 
 ## Core Operations""", root=app)
@@ -183,8 +184,9 @@ patch("agent/tools/__init__.py",
       "from agent.tools.teammates.teammate import AskTeammate\n"
       "from agent.tools.google_tool.google_tool import GoogleTool\n"
       "from agent.tools.whatsapp_tool.whatsapp_tool import WhatsAppTool\n"
-      "from agent.tools.ask_agent.ask_agent import AskAgent\n", root=app)
-patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n    'WhatsAppTool',\n    'AskAgent',\n", root=app)
+      "from agent.tools.ask_agent.ask_agent import AskAgent\n"
+      "from agent.tools.vault_update.vault_update import VaultUpdate\n", root=app)
+patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n    'WhatsAppTool',\n    'AskAgent',\n    'VaultUpdate',\n", root=app)
 # ---- Scheduled messages from WhatsApp chats go back to WhatsApp through the
 # gateway (deploy/agent-tools/whatsapp_relay.py, installed as channel/lrm_whatsapp_relay.py).
 patch("agent/tools/scheduler/integration.py",
@@ -230,7 +232,8 @@ patch("web_channel.py", "\nURLS = (\n",
       "from channel.web.api.lrm_browser import LrmBrowserHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_tts import LrmTtsHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_voice import LrmVoiceHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_chats import LrmChatsHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_chats import LrmChatsHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_vault_updates import LrmVaultUpdatesHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
@@ -240,7 +243,8 @@ patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/lrm/browser', 'LrmBrowserHandler',\n"
       "    '/api/lrm/tts', 'LrmTtsHandler',\n"
       "    '/api/lrm/voice', 'LrmVoiceHandler',\n"
-      "    '/api/lrm/chats', 'LrmChatsHandler',\n")
+      "    '/api/lrm/chats', 'LrmChatsHandler',\n"
+      "    '/api/lrm/vault-updates', 'LrmVaultUpdatesHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",

@@ -247,6 +247,15 @@
   .suggest .opt.sel { background: var(--active); }
   .suggest .opt small { display: block; color: var(--text-3); font-size: 11px; }
   #btn-git { position: relative; }
+  #btn-updates { position: relative; width: auto; padding: 0 9px; gap: 6px; display: inline-flex; align-items: center; }
+  .upd-count { min-width: 17px; height: 17px; border-radius: 9px; background: #e5484d; color: #fff; font-size: 10.5px; font-weight: 700; display: inline-grid; place-items: center; padding: 0 4px; }
+  .upd { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 0 0 12px; background: var(--surface); }
+  .upd h4 { margin: 0 0 4px; font-size: 15px; } .upd .meta { font-size: 12px; color: var(--text-2); margin-bottom: 8px; }
+  .upd pre { max-height: 260px; overflow: auto; background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 12px; white-space: pre-wrap; margin: 6px 0; }
+  .upd pre .add { color: #15803d; } .upd pre .del { color: #b91c1c; text-decoration: line-through; opacity: .8; }
+  .upd textarea { width: 100%; min-height: 220px; font: 12.5px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--surface); color: var(--text); }
+  .upd .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .modal.wide { width: min(860px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; }
   .git-dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
   .git-dot.ok { background: #12a06e; } .git-dot.bad { background: var(--danger); } .git-dot.busy { background: #d4a017; }
   .git { padding: 18px; display: grid; gap: 12px; max-height: 80vh; overflow: auto; font-size: 14px; }
@@ -354,6 +363,7 @@
     <button class="icon-btn" id="btn-daily" title="Open today's daily note"><i class="fa-regular fa-calendar"></i></button>
     <button class="icon-btn" id="btn-graph" title="Graph view (Ctrl/⌘ G)"><i class="fa-solid fa-diagram-project"></i></button>
     <button class="icon-btn" id="btn-topo" title="Topologies of Thoughts: full-screen graph with hand gestures"><i class="fa-solid fa-circle-nodes"></i><span class="hide-sm">Topologies</span></button>
+    <button class="icon-btn" id="btn-updates" title="Vault updates waiting for your approval"><i class="fa-solid fa-inbox"></i><span class="hide-sm">Updates</span><span class="upd-count" id="upd-count" hidden></span></button>
     <button class="icon-btn" id="btn-git" title="Sync with GitHub / Obsidian"><i class="fa-brands fa-github"></i><span class="git-dot" id="git-dot" hidden></span></button>
     <button class="icon-btn" id="btn-palette" title="Command palette (Ctrl/⌘ P)"><i class="fa-solid fa-terminal"></i></button>
     <button class="icon-btn" id="toggle-right" title="Toggle backlinks and outline" aria-pressed="true"><i class="fa-solid fa-table-columns fa-flip-horizontal"></i></button>
