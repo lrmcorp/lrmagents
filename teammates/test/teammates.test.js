@@ -50,3 +50,12 @@ test('explain: plain reasons', () => {
   assert.match(explain('429 usage limit reached', t), /usage limit/);
   assert.match(explain('weird', t), /log on the Teammates page/);
 });
+
+test('plans as chat models: owner-only sessions', async () => {
+  const { allowedSession, PLAN_MODELS } = await import('../src/chat.js');
+  assert.equal(PLAN_MODELS['claude-code'], 'claude');
+  assert.equal((await allowedSession('')).ok, false);
+  assert.equal((await allowedSession('web-session-1')).ok, true);
+  assert.equal((await allowedSession('openai:conversation:lrm-brief:default:2026-11-04')).ok, true);
+  assert.equal((await allowedSession('openai:conversation:api-caller')).ok, false);
+});

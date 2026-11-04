@@ -297,4 +297,31 @@ patch("core/_common.py",
 patch("agent/chat/service.py",
       '                url = data.get("url") or ""\n',
       '                url = data.get("url") or (data.get("path") if channel_type == "openai_api" else "") or ""\n', root=app)
+# ---- Your plans as chat models: the teammates service answers chat requests on the
+# owner's signed-in plans (agent/lrm_plans.py). It is a virtual custom provider that
+# never lands in config, listed in the model picker while a plan is signed in, and
+# each request names its chat so the CLI keeps one session per conversation.
+patch("models/custom_provider.py",
+      '    if not providers or not provider_id:\n        return None\n    for p in providers:',
+      '    if provider_id == "lrmplans":\n        from agent.lrm_plans import provider as _lrm_plans\n        return _lrm_plans()\n'
+      '    if not providers or not provider_id:\n        return None\n    for p in providers:', root=app)
+patch("api/sessions.py",
+      '    except Exception as e:\n        logger.debug(f"[WebChannel] custom providers unavailable: {e}")\n\n    return catalog\n',
+      '    except Exception as e:\n        logger.debug(f"[WebChannel] custom providers unavailable: {e}")\n\n'
+      '    try:\n        from agent.lrm_plans import catalog_group as _lrm_plans_group\n'
+      '        _plans = _lrm_plans_group()\n        if _plans:\n            catalog.append(_plans)\n'
+      '    except Exception as e:\n        logger.debug(f"[WebChannel] your plans unavailable: {e}")\n\n    return catalog\n')
+patch("models/openai/openai_http_client.py",
+      '        if extra_headers:\n            headers.update(extra_headers)\n        return headers\n',
+      '        if extra_headers:\n            headers.update(extra_headers)\n'
+      '        from agent.lrm_plans import headers_for as _lrm_plans_headers\n'
+      '        headers.update(_lrm_plans_headers(url))\n        return headers\n', root=app)
+patch("agent/protocol/agent_stream.py",
+      '        _active_token = _ACTIVE_RUN_MODELS.set(_active_models | {_model_key})\n',
+      '        _active_token = _ACTIVE_RUN_MODELS.set(_active_models | {_model_key})\n'
+      '        from agent.lrm_plans import begin_run as _lrm_plans_begin, end_run as _lrm_plans_end\n'
+      '        _lrm_plans_token = _lrm_plans_begin(self.model)\n', root=app)
+patch("agent/protocol/agent_stream.py",
+      '        finally:\n            _ACTIVE_RUN_MODELS.reset(_active_token)\n',
+      '        finally:\n            _ACTIVE_RUN_MODELS.reset(_active_token)\n            _lrm_plans_end(_lrm_plans_token)\n', root=app)
 print("LRM brand applied")

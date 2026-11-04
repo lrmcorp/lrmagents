@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import pty from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { Jobs, RUN_AS } from './jobs.js';
+import { MODEL_OF, PLAN_MODELS, handleCompletion } from './chat.js';
 import { HOME, TEAMMATES, byId, childEnv, defaultModel, status } from './teammates.js';
 
 const PORT = Number(process.env.PORT || 8090);
@@ -72,11 +73,11 @@ function send(res, code, body, type = 'application/json; charset=utf-8') {
   res.end(data);
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 64 * 1024) {
   let size = 0; const parts = [];
   for await (const part of req) {
     size += part.length;
-    if (size > 64 * 1024) throw Object.assign(new Error('body too large'), { status: 413 });
+    if (size > limit) throw Object.assign(new Error('body too large'), { status: 413 });
     parts.push(part);
   }
   try { return parts.length ? JSON.parse(Buffer.concat(parts).toString('utf8')) : {}; } catch { throw Object.assign(new Error('invalid JSON'), { status: 400 }); }
@@ -112,6 +113,22 @@ async function route(req, res) {
   const p = url.pathname;
 
   if (p === '/teammates/health') return send(res, 200, { ok: true, running: jobs.list(200).filter((j) => j.status === 'running').length });
+
+  // The signed-in plans as an OpenAI-compatible model provider ("Your plans" in LRMagent).
+  if (p.startsWith('/teammates/v1/')) {
+    if (!internalCaller(req)) return send(res, 403, { error: { message: 'internal endpoint' } });
+    if (p === '/teammates/v1/models' && req.method === 'GET') {
+      const rows = (await teammateRows()).filter((t) => t.signedIn && MODEL_OF[t.id]);
+      return send(res, 200, { object: 'list', data: rows.map((t) => ({ id: MODEL_OF[t.id], object: 'model', owned_by: t.maker, name: `${t.name} · ${t.plan}` })) });
+    }
+    if (p === '/teammates/v1/chat/completions' && req.method === 'POST') {
+      const body = await readJson(req, 8 << 20);
+      const row = (await teammateRows()).find((t) => t.id === PLAN_MODELS[body.model]);
+      if (row && !row.signedIn) return send(res, 409, { error: { message: `${row.name} is not signed in yet. Sign in once on the Teammates page (console menu → Teammates).` } });
+      return handleCompletion(req, res, body, settings);
+    }
+    return send(res, 404, { error: { message: 'not found' } });
+  }
 
   if (p.startsWith('/teammates/internal/')) {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
