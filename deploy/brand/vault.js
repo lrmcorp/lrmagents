@@ -242,11 +242,8 @@ async function refreshOpenNotes() {
       if (tab.content !== tab.saved) continue;
       Object.assign(tab, { content: data.content, saved: data.content, mtime: data.mtime, editable: data.editable });
       if (tab === activeTab()) {
-        const ta = $('#editor');
-        if (ta && tab.mode === 'edit') {
-          const [a, b] = [ta.selectionStart, ta.selectionEnd];
-          ta.value = data.content; ta.setSelectionRange(a, b); autosize(ta);
-        } else renderView();
+        if (ed && tab.mode === 'edit') ed.setDoc(data.content);
+        else renderView();
         renderRight(); renderStatus();
       }
     } catch { /* deleted or unreadable: the index refresh shows it */ }
@@ -308,11 +305,55 @@ md.renderer.rules.wikilink = (tokens, idx, opts, env) => {
       const width = /^\d+(x\d+)?$/.test(m.alias) ? ` width="${esc(m.alias.split('x')[0])}"` : '';
       return `<img src="${esc(fileUrl(target))}" alt="${esc(m.alias && !width ? m.alias : basename(target))}"${width} loading="lazy">`;
     }
-    if (/\.pdf$/i.test(target)) return `<a class="internal" href="${esc(fileUrl(target))}" target="_blank" rel="noopener">${esc(basename(target))}</a>`;
+    if (/\.pdf$/i.test(target)) return `<iframe class="pdf-embed" src="${esc(fileUrl(target))}" title="${esc(basename(target))}"></iframe>`;
     if (isNote(target)) return `<span class="embed" data-embed="${esc(target)}" data-heading="${esc(m.heading)}"></span>`;
   }
   const label = m.alias || [m.name, m.heading].filter(Boolean).join(' › ');
   return `<a href="#" class="internal${target ? '' : ' unresolved'}" data-href="${esc(target || m.name)}"${target ? '' : ' data-create="1"'} data-heading="${esc(m.heading)}">${esc(label)}</a>`;
+};
+
+// $math$ and $$math$$ (KaTeX), ```mermaid diagrams: drawn after rendering by fillRich().
+md.inline.ruler.after('escape', 'math_inline', (state, silent) => {
+  const src = state.src; const start = state.pos;
+  if (src[start] !== '$' || src[start + 1] === '$' || /\s/.test(src[start + 1] || ' ')) return false;
+  if (start > 0 && src[start - 1] === '\\') return false;
+  let end = start + 1;
+  while ((end = src.indexOf('$', end)) !== -1 && src[end - 1] === '\\') end++;
+  if (end === -1 || /\s/.test(src[end - 1]) || /\d/.test(src[end + 1] || '') || src.slice(start, end).includes('\n')) return false;
+  if (!silent) { const t = state.push('math_inline', '', 0); t.content = src.slice(start + 1, end); }
+  state.pos = end + 1;
+  return true;
+});
+md.block.ruler.before('fence', 'math_block', (state, startLine, endLine, silent) => {
+  const first = state.src.slice(state.bMarks[startLine] + state.tShift[startLine], state.eMarks[startLine]);
+  if (!first.startsWith('$$')) return false;
+  const one = /^\$\$(.+)\$\$\s*$/.exec(first);
+  let line = startLine; let body = '';
+  if (one) body = one[1];
+  else {
+    const parts = [first.slice(2)];
+    for (line = startLine + 1; line < endLine; line++) {
+      const text = state.src.slice(state.bMarks[line] + state.tShift[line], state.eMarks[line]);
+      if (text.trimEnd().endsWith('$$')) { parts.push(text.trimEnd().slice(0, -2)); break; }
+      parts.push(text);
+    }
+    if (line >= endLine) return false;
+    body = parts.join('\n');
+  }
+  if (silent) return true;
+  const t = state.push('math_block', 'div', 0);
+  t.content = body.trim(); t.map = [startLine, line + 1];
+  state.line = line + 1;
+  return true;
+}, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
+md.renderer.rules.math_inline = (tokens, idx) => `<span data-rich="math" data-src="${esc(tokens[idx].content)}">${esc(tokens[idx].content)}</span>`;
+md.renderer.rules.math_block = (tokens, idx) => `<div class="math-block" data-rich="mathblock" data-src="${esc(tokens[idx].content)}"></div>\n`;
+const renderFence = md.renderer.rules.fence;
+md.renderer.rules.fence = (tokens, idx, opts, env, self) => {
+  const info = (tokens[idx].info || '').trim().toLowerCase();
+  if (info === 'mermaid') return `<div class="mermaid-block" data-rich="mermaid" data-src="${esc(tokens[idx].content)}"></div>\n`;
+  if (info === 'math' || info === 'latex') return `<div class="math-block" data-rich="mathblock" data-src="${esc(tokens[idx].content)}"></div>\n`;
+  return renderFence(tokens, idx, opts, env, self);
 };
 
 // #tags
@@ -465,6 +506,7 @@ async function fillEmbeds(root, depth) {
       const { html } = renderMarkdown(text, path, { depth: depth + 1, readonly: true, heading: el.dataset.heading });
       el.innerHTML = `${title}<div class="md">${html}</div>`;
       highlightCode(el);
+      fillRich(el);
       await fillEmbeds(el, depth + 1);
     } catch (e) { el.innerHTML = `${title}<div class="muted">${esc(e.message)}</div>`; }
   }
@@ -545,6 +587,8 @@ function treeMenu(path, type, x, y) {
   if (dir) {
     items.push({ icon: 'fa-regular fa-pen-to-square', label: 'New note', fn: () => newNote(path) });
     items.push({ icon: 'fa-regular fa-folder-open', label: 'New folder', fn: () => newFolder(path) });
+    items.push({ icon: 'fa-solid fa-paperclip', label: 'Upload images or PDFs…', fn: () => uploadInto(path) });
+    items.push({ icon: 'fa-regular fa-copy', label: 'New note from template…', fn: () => { S.folder = path; newFromTemplate(); } });
   } else {
     items.push({ icon: 'fa-regular fa-file-lines', label: 'Open in new tab', fn: () => openPath(path, { newTab: true }) });
     if (isNote(path)) items.push({ icon: 'fa-solid fa-link', label: 'Copy [[link]]', fn: () => copy(`[[${linkName(path)}]]`) });
@@ -558,6 +602,13 @@ function treeMenu(path, type, x, y) {
     items.push({ icon: 'fa-regular fa-trash-can', label: 'Delete', danger: true, fn: () => deletePath(path, dir) });
   }
   showMenu(x, y, items);
+}
+
+function uploadInto(folder) {
+  const input = document.createElement('input');
+  input.type = 'file'; input.multiple = true; input.accept = 'image/*,application/pdf';
+  input.onchange = () => { if (input.files.length) attachFiles([...input.files], '', folder); };
+  input.click();
 }
 
 function copy(text) {
@@ -598,13 +649,19 @@ $('#tree').addEventListener('dragstart', (e) => {
 $('#tree').addEventListener('dragover', (e) => {
   const rowEl = e.target.closest('.tree-row[data-type=dir]');
   document.querySelectorAll('.tree-row.drop').forEach((r) => r.classList.remove('drop'));
-  if (!rowEl || !dragPath || rowEl.dataset.path === dirname(dragPath) || `${rowEl.dataset.path}/`.startsWith(`${dragPath}/`)) return;
+  const files = !dragPath && [...(e.dataTransfer?.types || [])].includes('Files');
+  if (!rowEl || (!files && (!dragPath || rowEl.dataset.path === dirname(dragPath) || `${rowEl.dataset.path}/`.startsWith(`${dragPath}/`)))) return;
   e.preventDefault();
   rowEl.classList.add('drop');
 });
 $('#tree').addEventListener('dragend', () => { dragPath = null; document.querySelectorAll('.tree-row.drop').forEach((r) => r.classList.remove('drop')); });
 $('#tree').addEventListener('drop', (e) => {
   const rowEl = e.target.closest('.tree-row[data-type=dir]');
+  if (rowEl && !dragPath && e.dataTransfer?.files?.length) {
+    e.preventDefault();
+    attachFiles([...e.dataTransfer.files], '', rowEl.dataset.path);
+    return;
+  }
   if (!rowEl || !dragPath) return;
   e.preventDefault();
   const from = dragPath; dragPath = null;
@@ -649,7 +706,9 @@ function dailyNote() {
   const path = `memory/${today()}.md`;
   if (S.notes.has(path)) return openPath(path);
   S.expanded.add('memory');
-  return createNote(path, `# ${today()}\n\n`, { mode: 'edit' });
+  const tpl = S.notes.has(`${TEMPLATE_DIR}/Daily note.md`) ? `${TEMPLATE_DIR}/Daily note.md` : '';
+  if (!tpl) return createNote(path, `# ${today()}\n\n`, { mode: 'edit' });
+  return readNote(tpl).then((text) => createNote(path, fillTemplate(text, today()), { mode: 'edit' }));
 }
 
 async function createFromLink(name, from) {
@@ -853,6 +912,13 @@ function setMode(mode) {
   saveState(); renderView();
 }
 
+function toggleSourceMode() {
+  ui.sourceMode = !ui.sourceMode;
+  saveState();
+  ed?.setLivePreview(!ui.sourceMode);
+  toast(ui.sourceMode ? 'Source mode: all Markdown visible' : 'Live preview: formatting shown as you write');
+}
+
 function crumbs(path) {
   const parts = path.split('/');
   return parts.map((p, i) => `<span data-folder="${esc(parts.slice(0, i + 1).join('/'))}">${esc(i === parts.length - 1 && isNote(p) ? stem(p) : p)}</span>`).join(' / ');
@@ -861,6 +927,7 @@ function crumbs(path) {
 function renderView() {
   const view = $('#view');
   const tab = activeTab();
+  if (ed) { ed.destroy(); ed = null; }
   if (!tab || tab.kind !== 'graph') stopGraph();
   if (!tab) { view.innerHTML = emptyState(); renderRight(); renderStatus(); return; }
   if (tab.kind === 'graph') { renderGraph(view, tab); renderRight(); renderStatus(); return; }
@@ -870,6 +937,7 @@ function renderView() {
     <button class="icon-btn" data-act="fwd" title="Forward (Alt →)" ${fwd ? '' : 'disabled style="opacity:.35"'}><i class="fa-solid fa-arrow-right"></i></button>
     <div class="crumbs">${crumbs(tab.path)}</div>
     ${tab.kind === 'note' ? `${tab.editable ? '' : '<!--'}<button class="icon-btn" data-act="mode" title="${tab.mode === 'edit' ? 'Reading view' : 'Edit'} (Ctrl/⌘ E)"><i class="fa-solid ${tab.mode === 'edit' ? 'fa-book-open' : 'fa-pen'}"></i></button>${tab.editable ? '' : '-->'}
+    ${tab.mode === 'edit' ? '<button class="icon-btn" data-act="find" title="Find and replace (Ctrl/⌘ F, Ctrl/⌘ H)"><i class="fa-solid fa-magnifying-glass"></i></button><button class="icon-btn" data-act="source" title="Live preview or source mode"><i class="fa-solid fa-code"></i></button>' : ''}
     <button class="icon-btn" data-act="graph" title="Local graph"><i class="fa-solid fa-diagram-project"></i></button>` : ''}
     <button class="icon-btn" data-act="more" title="More"><i class="fa-solid fa-ellipsis-vertical"></i></button></div>`;
   if (tab.kind === 'asset') {
@@ -882,7 +950,7 @@ function renderView() {
   let body;
   if (tab.loading) body = '<div class="muted">Loading…</div>';
   else if (tab.error) body = `<div class="banner warn"><i class="fa-solid fa-triangle-exclamation"></i>${esc(tab.error)}</div>`;
-  else if (tab.mode === 'edit') body = `<textarea class="editor" id="editor" spellcheck="true" placeholder="Start writing…  [[ to link a note, # for tags"></textarea>`;
+  else if (tab.mode === 'edit') body = '<div class="editor" id="editor"></div>';
   else {
     const { props, html } = renderMarkdown(tab.content, tab.path, { readonly: !tab.editable });
     body = `${propsHtml(props)}<div class="md" id="reading">${html || `<p class="muted">This note is empty.${tab.editable ? ' Press Ctrl/⌘ E to write.' : ''}</p>`}</div>`;
@@ -891,10 +959,9 @@ function renderView() {
     <input class="inline-title" id="inline-title" value="${esc(tab.path === ROOT_FILE ? 'MEMORY' : stem(tab.path))}" ${readonlyTitle ? 'readonly' : ''} spellcheck="false" aria-label="Note name">
     ${body}</div></div>`;
   renderBanner();
-  const ta = $('#editor');
-  if (ta) { ta.value = tab.content; autosize(ta); }
+  if ($('#editor')) mountEditor(tab);
   const reading = $('#reading');
-  if (reading) { highlightCode(reading); fillEmbeds(reading, 0); }
+  if (reading) { highlightCode(reading); fillRich(reading); fillEmbeds(reading, 0); }
   $('.scroller').scrollTop = tab.scroll || 0;
   tab.scroll = 0;
   renderRight(); renderStatus();
@@ -924,7 +991,6 @@ function emptyState() {
     ${recent.length ? `<div style="margin-top:22px;text-align:left"><div class="side-head">Recently changed</div>${recent.map((n) => `<a class="side-item" data-open="${esc(n.path)}">${esc(n.path === ROOT_FILE ? 'MEMORY' : stem(n.path))} <small>· ${esc(dirname(n.path) || 'vault')} · ${ago(n.mtime)}</small></a>`).join('')}</div>` : ''}</div>`;
 }
 
-function autosize(ta) { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 4}px`; }
 
 function scrollToHeading(heading) {
   const tab = activeTab();
@@ -939,16 +1005,192 @@ function scrollToHeading(heading) {
   if (el) { el.scrollIntoView({ block: 'start', behavior: 'smooth' }); el.animate([{ background: 'var(--mark)' }, { background: 'transparent' }], { duration: 1500 }); }
 }
 
-function caretToLine(line) {
-  const ta = $('#editor');
-  if (!ta) return;
-  const lines = ta.value.split('\n');
-  const pos = lines.slice(0, Math.max(0, line - 1)).reduce((n, l) => n + l.length + 1, 0);
-  ta.focus({ preventScroll: true });
-  ta.setSelectionRange(pos, pos);
-  const y = caretXY(ta).y;
-  const scroller = $('.scroller');
-  scroller.scrollTop += y - scroller.getBoundingClientRect().top - scroller.clientHeight / 3;
+function caretToLine(line) { ed?.gotoLine(line); }
+
+// ---- the editor: CodeMirror live preview (vendor/lrm-editor.js) ----------------------------
+let ed = null;
+function mountEditor(tab) {
+  const host = $('#editor');
+  if (!window.LrmEditor) {
+    host.innerHTML = '<div class="banner warn">The editor did not load. Reload the page.</div>';
+    return;
+  }
+  ed = window.LrmEditor.create(host, {
+    doc: tab.content,
+    livePreview: ui.sourceMode !== true,
+    readOnly: !tab.editable,
+    placeholder: 'Start writing…  [[ links a note, # adds a tag, paste an image to attach it',
+    suggest: (q) => {
+      const notes = rankNotes(q, 12).map((it) => ({ label: it.alias || it.name, detail: `${it.alias ? `${it.name} · ` : ''}${dirname(it.path) || 'vault'}`, insert: linkName(it.path) + (it.alias ? `|${it.alias}` : '') }));
+      const lq = q.toLowerCase();
+      const files = lq ? [...S.lc.values()].filter((p) => !isNote(p) && basename(p).toLowerCase().includes(lq)).slice(0, 6)
+        .map((p) => ({ label: basename(p), detail: dirname(p), insert: basename(p) })) : [];
+      return [...notes, ...files];
+    },
+    tags: () => [...S.tags.keys()],
+    resolve: (name) => resolveLink(name, tab.path),
+    fileUrl: (src, resolved) => {
+      if (resolved) return fileUrl(src);
+      if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) return /^https?:/i.test(src) ? src : null;
+      const target = resolveLink(src, tab.path, true);
+      return target ? fileUrl(target) : null;
+    },
+    render: renderRich,
+    onChange: (text) => {
+      tab.content = text;
+      scheduleSave(tab);
+      if (!$('.tab.active .dirty')) renderTabs();
+      renderStatusSoon(); renderRightSoon();
+    },
+    onSave: () => saveTab(tab),
+    openLink: (href, { md: mdLink, newTab }) => {
+      const [name, heading = ''] = href.split('#');
+      const target = name ? resolveLink(name, tab.path, mdLink) : tab.path;
+      if (target) openPath(target, { newTab, heading });
+      else createFromLink(name, tab.path);
+    },
+    openTag: (tag) => searchFor(`tag:#${tag}`),
+    onFiles: (files) => attachFiles(files, tab.path),
+  });
+  if (tab.focusEditor) { tab.focusEditor = false; ed.focus(); }
+}
+
+// ---- formulas (KaTeX) and diagrams (Mermaid), loaded the first time a note needs them -------
+const loading = {};
+function loadScript(src) {
+  return (loading[src] ||= new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.src = src; el.onload = resolve; el.onerror = () => reject(new Error(`Could not load ${src}`));
+    document.head.appendChild(el);
+  }));
+}
+function loadCss(href) {
+  if (loading[href]) return;
+  loading[href] = true;
+  const el = document.createElement('link'); el.rel = 'stylesheet'; el.href = href;
+  document.head.appendChild(el);
+}
+let mermaidTheme = '';
+async function mermaidReady() {
+  await loadScript('/assets/brand/vendor/mermaid.min.js');
+  const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'default';
+  if (theme !== mermaidTheme) {
+    window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme, fontFamily: 'Inter, system-ui, sans-serif' });
+    mermaidTheme = theme;
+  }
+  return window.mermaid;
+}
+let mermaidSeq = 0;
+function renderRich(kind, source, el) {
+  if (kind === 'mermaid') {
+    el.textContent = 'Drawing diagram…';
+    mermaidReady().then((m) => m.render(`lrm-mermaid-${++mermaidSeq}`, source))
+      .then(({ svg }) => { el.innerHTML = svg; })
+      .catch((e) => { el.innerHTML = `<pre class="rich-error">Diagram error: ${esc(String(e.message || e).split('\n')[0])}</pre>`; document.querySelectorAll('[id^="dlrm-mermaid-"]').forEach((n) => n.remove()); });
+    return;
+  }
+  loadCss('/assets/brand/vendor/katex/katex.min.css');
+  el.textContent = source;
+  loadScript('/assets/brand/vendor/katex/katex.min.js').then(() => {
+    window.katex.render(source, el, { displayMode: kind === 'mathblock', throwOnError: false, strict: 'ignore' });
+  }).catch(() => {});
+}
+function fillRich(root) {
+  root.querySelectorAll('[data-rich]:not([data-done])').forEach((el) => {
+    el.dataset.done = '1';
+    renderRich(el.dataset.rich, el.dataset.src, el);
+  });
+}
+
+// ---- attachments: pasted or dropped images and PDFs ---------------------------------------------
+const ATTACH = /\.(png|jpe?g|gif|webp|svg|pdf)$/i;
+async function attachFiles(files, notePath, folder = null) {
+  const out = [];
+  for (const file of files) {
+    let name = file.name || '';
+    if (!name || name === 'image.png') {
+      const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+      name = `Pasted image ${stamp}.${(file.type.split('/')[1] || 'png').replace('jpeg', 'jpg').replace('svg+xml', 'svg')}`;
+    }
+    if (!ATTACH.test(name)) { toast(`${file.name || 'That file'}: only images and PDFs can be attached`, true); continue; }
+    if (file.size > 15 * 1024 * 1024) { toast(`${name} is larger than 15 MB`, true); continue; }
+    const data = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(',')[1] || '');
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(file);
+    });
+    try {
+      const res = await post('upload', { note: notePath || '', folder: folder || '', name, data });
+      out.push(res.path);
+    } catch (e) { fail(e); }
+  }
+  if (!out.length) return '';
+  await loadIndex({ quiet: true });
+  toast(out.length > 1 ? `Attached ${out.length} files` : `Attached ${basename(out[0])}`);
+  return out.map((p) => `![[${basename(p)}]]`).join('\n');
+}
+
+// ---- templates: notes in knowledge/templates, with {{title}}, {{date}}, {{time}} ---------------
+const TEMPLATE_DIR = 'knowledge/templates';
+const STARTER_TEMPLATES = {
+  'Meeting notes': '---\ntags: [meeting]\ndate: {{date}}\nattendees: []\n---\n\n# {{title}}\n\n## Agenda\n- \n\n## Notes\n\n## Decisions\n- \n\n## Action items\n- [ ] \n',
+  'Project': '---\ntags: [project]\nstatus: active\nowner: \ndue: \n---\n\n# {{title}}\n\n## Goal\n\n## Plan\n- [ ] \n\n## Links\n- \n\n## Log\n- {{date}}: started\n',
+  'Client': '---\ntags: [client]\ncompany: \ncontact: \nphone: \nemail: \nstatus: lead\n---\n\n# {{title}}\n\n## About\n\n## Needs\n\n## History\n- {{date}}: \n\n## Next step\n- [ ] \n',
+  'Daily note': '# {{date:dddd, D MMMM YYYY}}\n\n## Plan\n- [ ] \n\n## Notes\n\n## Done\n- \n',
+};
+function fillTemplate(text, title) {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const fmt = (f) => f.replace(/YYYY|MMMM|MM|M|dddd|DD|D|HH|mm/g, (k) => ({
+    YYYY: now.getFullYear(), MMMM: MONTHS[now.getMonth()], MM: pad(now.getMonth() + 1), M: now.getMonth() + 1,
+    dddd: DAYS[now.getDay()], DD: pad(now.getDate()), D: now.getDate(), HH: pad(now.getHours()), mm: pad(now.getMinutes()),
+  })[k]);
+  return text.replace(/\{\{\s*(title|date|time)(?::([^}]+))?\s*\}\}/g, (_, key, f) => (
+    key === 'title' ? title : key === 'date' ? fmt(f || 'YYYY-MM-DD') : fmt(f || 'HH:mm')));
+}
+const templates = () => [...S.notes.keys()].filter((p) => p.startsWith(`${TEMPLATE_DIR}/`)).sort();
+async function readNote(path) { return (await api('read', { path })).content; }
+async function ensureTemplates() {
+  if (templates().length) return true;
+  const ok = await ask({ title: 'No templates yet', text: `Create four starter templates (Meeting notes, Project, Client, Daily note) in <b>${TEMPLATE_DIR}</b>? You can edit them like any note.`, ok: 'Create them' });
+  if (!ok) return false;
+  try {
+    await post('create', { path: TEMPLATE_DIR, kind: 'folder' }).catch(() => {});
+    for (const [name, text] of Object.entries(STARTER_TEMPLATES)) await post('create', { path: `${TEMPLATE_DIR}/${name}.md`, content: text }).catch(() => {});
+    await loadIndex({ quiet: true });
+    return true;
+  } catch (e) { fail(e); return false; }
+}
+function pickTemplate(onPick) {
+  picker({
+    placeholder: 'Choose a template…',
+    footer: `<span>Templates live in <b>${TEMPLATE_DIR}</b></span>`,
+    items: (q) => templates().map((p) => ({ path: p, html: esc(stem(p)), score: fuzzy(q, stem(p)) })).filter((x) => x.score > 0).sort((a, b) => b.score - a.score),
+    onPick: (it) => onPick(it.path),
+  });
+}
+async function insertTemplate() {
+  const tab = activeTab();
+  if (tab?.kind !== 'note' || !tab.editable) return toast('Open a note you can edit first', true);
+  if (!(await ensureTemplates())) return;
+  pickTemplate(async (path) => {
+    const text = fillTemplate(await readNote(path), stem(tab.path));
+    if (tab.mode !== 'edit') { tab.mode = 'edit'; renderView(); }
+    ed?.insert(text);
+  });
+}
+async function newFromTemplate() {
+  if (!(await ensureTemplates())) return;
+  pickTemplate(async (path) => {
+    const name = await ask({ title: `New note from “${stem(path)}”`, value: stem(path) === 'Meeting notes' ? `Meeting ${today()}` : '', ok: 'Create' });
+    if (!name) return;
+    let folder = S.folder && (SECTIONS.includes(S.folder) || S.dirs.has(S.folder)) && !S.folder.startsWith(TEMPLATE_DIR) ? S.folder : 'knowledge';
+    const target = uniquePath(folder, name.replace(/[\\/<>:"|?*#^[\]]/g, ' ').trim() || 'Untitled');
+    createNote(target, fillTemplate(await readNote(path), stem(target)), { mode: 'edit' });
+  });
 }
 
 function noteMenu(x, y) {
@@ -980,6 +1222,8 @@ view.addEventListener('click', async (e) => {
   const act = e.target.closest('[data-act]')?.dataset.act;
   if (act) {
     if (act === 'mode') return setMode();
+    if (act === 'find') return ed?.find();
+    if (act === 'source') return toggleSourceMode();
     if (act === 'graph') return openGraph(tab.path);
     if (act === 'more') { const r = e.target.closest('[data-act]').getBoundingClientRect(); return noteMenu(r.right - 190, r.bottom + 4); }
     if (act === 'back' && tab.history.length) { tab.fwd.push(tab.path); return openPath(tab.history.pop(), { fromHistory: true }); }
@@ -1031,68 +1275,7 @@ view.addEventListener('focusout', (e) => {
   movePath(tab.path, `${dirname(tab.path)}/${name}.md`);
 });
 
-// ---- the editor ----------------------------------------------------------------------------
-view.addEventListener('input', (e) => {
-  if (e.target.id !== 'editor') return;
-  const tab = activeTab();
-  tab.content = e.target.value;
-  autosize(e.target);
-  scheduleSave(tab);
-  if (!$('.tab.active .dirty')) renderTabs();
-  renderStatusSoon(); renderRightSoon();
-  updateSuggest(e.target);
-});
-view.addEventListener('keydown', (e) => {
-  if (e.target.id !== 'editor') return;
-  const ta = e.target;
-  if (suggest && handleSuggestKey(e, ta)) return;
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const { selectionStart: s, value } = ta;
-    const lineStart = value.lastIndexOf('\n', s - 1) + 1;
-    if (e.shiftKey) {
-      if (value[lineStart] === '\t') { ta.setSelectionRange(lineStart, lineStart + 1); insertText(ta, ''); ta.setSelectionRange(s - 1, s - 1); }
-    } else if (/^\s*([-*+]|\d+[.)])\s/.test(value.slice(lineStart))) {
-      const off = s - lineStart; ta.setSelectionRange(lineStart, lineStart); insertText(ta, '\t'); ta.setSelectionRange(lineStart + off + 1, lineStart + off + 1);
-    } else insertText(ta, '\t');
-    return;
-  }
-  if (e.key === 'Enter' && !e.shiftKey && !mod(e) && ta.selectionStart === ta.selectionEnd) {
-    const s = ta.selectionStart; const value = ta.value;
-    const lineStart = value.lastIndexOf('\n', s - 1) + 1;
-    const line = value.slice(lineStart, s);
-    const m = /^(\s*(?:>\s*)*)([-*+]|(\d+)([.)]))(\s+)(\[[ xX]\]\s+)?/.exec(line);
-    if (!m) return;
-    e.preventDefault();
-    if (line.trim() === m[0].trim()) { ta.setSelectionRange(lineStart, s); insertText(ta, ''); return; } // empty item ends the list
-    const bullet = m[3] ? `${Number(m[3]) + 1}${m[4]}` : m[2];
-    insertText(ta, `\n${m[1]}${bullet}${m[5]}${m[6] ? '[ ] ' : ''}`);
-  }
-});
-function insertText(ta, text) {
-  ta.focus();
-  if (!document.execCommand(text ? 'insertText' : 'delete', false, text)) {
-    ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
-  }
-}
-
-// Caret position on screen, for the [[ link suggester.
-function caretXY(ta) {
-  const div = document.createElement('div');
-  const cs = getComputedStyle(ta);
-  for (const p of ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'paddingTop', 'paddingLeft', 'paddingRight', 'tabSize']) div.style[p] = cs[p];
-  Object.assign(div.style, { position: 'absolute', visibility: 'hidden', whiteSpace: 'pre-wrap', overflowWrap: 'break-word', width: `${ta.clientWidth}px`, top: '0', left: '-9999px' });
-  div.textContent = ta.value.slice(0, ta.selectionStart);
-  const span = document.createElement('span'); span.textContent = '​'; div.appendChild(span);
-  document.body.appendChild(div);
-  const r = ta.getBoundingClientRect();
-  const xy = { x: r.left + span.offsetLeft, y: r.top + span.offsetTop + parseFloat(cs.lineHeight || '20') };
-  div.remove();
-  return xy;
-}
-
-let suggest = null;
+// ---- finding notes by name -----------------------------------------------------------------
 function fuzzy(query, text) {
   const q = query.toLowerCase(); const t = text.toLowerCase();
   if (!q) return 1;
@@ -1113,49 +1296,6 @@ function rankNotes(query, limit = 50) {
   }
   return out.sort((a, b) => b.score - a.score || (S.notes.get(b.path).mtime - S.notes.get(a.path).mtime)).slice(0, limit);
 }
-function updateSuggest(ta) {
-  const before = ta.value.slice(Math.max(0, ta.selectionStart - 120), ta.selectionStart);
-  const m = /!?\[\[([^\]\n|#]*)$/.exec(before);
-  if (!m) { closeSuggest(); return; }
-  const items = rankNotes(m[1], 12);
-  if (!items.length && !m[1]) { closeSuggest(); return; }
-  if (!suggest) { suggest = { el: document.createElement('div'), sel: 0 }; suggest.el.className = 'suggest'; document.body.appendChild(suggest.el); }
-  suggest.items = items; suggest.query = m[1]; suggest.sel = Math.min(suggest.sel, Math.max(0, items.length - 1));
-  suggest.el.innerHTML = items.length ? items.map((it, i) => `<div class="opt${i === suggest.sel ? ' sel' : ''}" data-i="${i}">${esc(it.alias || it.name)}<small>${esc(it.alias ? `${it.name} · ` : '')}${esc(dirname(it.path) || 'vault')}</small></div>`).join('')
-    : `<div class="opt" style="cursor:default">No note named “${esc(m[1])}” yet<small>Finish with ]] to link it; clicking the link creates it</small></div>`;
-  const { x, y } = caretXY(ta);
-  suggest.el.style.left = `${Math.max(4, Math.min(x, innerWidth - 310))}px`;
-  suggest.el.style.top = `${y + 260 > innerHeight ? Math.max(4, y - 290) : y + 4}px`;
-  suggest.el.onmousedown = (e) => { const o = e.target.closest('[data-i]'); if (o) { e.preventDefault(); pickSuggest(ta, Number(o.dataset.i)); } };
-}
-function closeSuggest() { suggest?.el.remove(); suggest = null; }
-function pickSuggest(ta, i) {
-  const it = suggest?.items[i];
-  if (!it) return closeSuggest();
-  const q = suggest.query;
-  const after = ta.value.slice(ta.selectionStart, ta.selectionStart + 2);
-  const link = linkName(it.path) + (it.alias ? `|${it.alias}` : '');
-  ta.setSelectionRange(ta.selectionStart - q.length, ta.selectionStart);
-  insertText(ta, link + (after === ']]' ? '' : ']]'));
-  if (after === ']]') ta.setSelectionRange(ta.selectionStart + 2, ta.selectionStart + 2);
-  closeSuggest();
-}
-function handleSuggestKey(e, ta) {
-  if (!suggest.items.length) { if (e.key === 'Escape') { closeSuggest(); return true; } return false; }
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    suggest.sel = (suggest.sel + (e.key === 'ArrowDown' ? 1 : -1) + suggest.items.length) % suggest.items.length;
-    suggest.el.querySelectorAll('.opt').forEach((o, i) => o.classList.toggle('sel', i === suggest.sel));
-    suggest.el.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
-    return true;
-  }
-  if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickSuggest(ta, suggest.sel); return true; }
-  if (e.key === 'Escape') { e.preventDefault(); closeSuggest(); return true; }
-  return false;
-}
-view.addEventListener('focusout', (e) => { if (e.target.id === 'editor') setTimeout(closeSuggest, 150); });
-view.addEventListener('scroll', closeSuggest, true);
-
 // ---- right pane: backlinks, outgoing, outline, info -------------------------------------------
 function headingsOf(text) {
   const out = []; let fence = false;
@@ -1566,6 +1706,11 @@ const COMMANDS = [
   { name: 'Open quick switcher', key: 'O', fn: () => quickSwitcher() },
   { name: 'Create new note', key: 'N', fn: () => newNote() },
   { name: 'Create new folder', fn: () => newFolder() },
+  { name: 'New note from template', fn: () => newFromTemplate() },
+  { name: 'Insert template', fn: () => insertTemplate() },
+  { name: 'Find and replace in this note', key: 'H', fn: () => { const t = activeTab(); if (t?.kind === 'note' && t.editable && t.mode !== 'edit') { t.mode = 'edit'; renderView(); } ed?.find(); } },
+  { name: 'Toggle live preview / source mode', fn: () => toggleSourceMode() },
+  { name: 'Attach images or PDFs to this note', fn: () => { const t = activeTab(); if (t?.kind === 'note') uploadInto(dirname(t.path) || 'knowledge'); } },
   { name: "Open today's daily note", fn: () => dailyNote() },
   { name: 'Open graph view', key: 'G', fn: () => openGraph() },
   { name: 'Open local graph of this note', fn: () => activeTab()?.kind === 'note' && openGraph(activeTab().path) },

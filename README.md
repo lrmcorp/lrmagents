@@ -146,7 +146,10 @@ When an AI model call fails, the chat says what happened and what to do instead 
 - The agent's knowledge base (`knowledge/`) is kept as an **Obsidian-compatible vault**: YAML properties on every page, `[[wikilinks]]` between pages, and a `## Related` section, with `index.md` as the map of content. Older relative Markdown links keep working.
 - **Vault page** (console sidebar → Vault, in place of Memory and Knowledge, which you can show again with the menu editor): each agent's `MEMORY.md`, daily notes (`memory/`) and knowledge wiki in one Obsidian-style workspace.
   - **Explorer:** file tree with new note/folder, rename, move (drag onto a folder) and delete.
-  - **Notes:** tabs; reading and editing views (Ctrl/⌘ E); `[[` link suggestions; properties, callouts, embeds (`![[note]]`, images), `#tags`, highlights and clickable tasks.
+  - **Notes:** tabs; reading view and an Obsidian-style **live preview** editor (Ctrl/⌘ E; CodeMirror 6, the editor Obsidian uses): Markdown is hidden except on the line you are editing, so headings, bold, links, `[[wikilinks]]`, `#tags`, highlights, checkboxes, bullets, images, formulas and diagrams look finished as you type. A `</>` button switches to source mode. `[[` and `#` suggest notes and tags; lists continue on Enter; **find and replace** with Ctrl/⌘ F / H.
+  - **Formulas and diagrams:** `$…$` and `$$…$$` math (KaTeX) and ```` ```mermaid ```` diagrams render in both views.
+  - **Attachments:** paste or drop images and PDFs into a note (or onto a folder, or "Upload images or PDFs…" in its menu); they go to `attachments/` in that section and are linked as `![[file]]`. PDFs embed as a viewer. Up to 15 MB each.
+  - **Templates:** notes in `knowledge/templates` (Obsidian's Templates plugin can use the same folder). "New note from template" and "Insert template" in the command palette; `{{title}}`, `{{date}}`, `{{time}}`, `{{date:dddd, D MMMM YYYY}}`. Four starter templates on first use; "Daily note" is used for today's note.
   - **Links:** backlinks, outgoing links and outline in the right pane; clicking a link to a note that doesn't exist creates it.
   - **Graph view:** whole vault or one note's neighbourhood, coloured by folder.
   - **Finding notes:** full-text search (`tag:#name` too), quick switcher (Ctrl/⌘ O), command palette (Ctrl/⌘ P) and today's daily note.

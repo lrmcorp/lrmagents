@@ -42,6 +42,7 @@ RUN set -eux; \
     static=/app/channel/web/static; \
     mkdir -p "$static/brand"; \
     cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html "$static/brand/"; \
+    cp -r /tmp/brand/vendor "$static/brand/vendor"; \
     cp /tmp/brand/img/logo.jpg "$static/logo.jpg"; \
     cp /tmp/brand/img/favicon.ico "$static/favicon.ico"; \
     chmod -R a+rX "$static"; \

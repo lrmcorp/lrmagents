@@ -364,6 +364,8 @@ class LrmVaultHandler:
                     return self._rename(vault, body)
                 if op == "delete":
                     return self._delete(vault, body)
+                if op == "upload":
+                    return self._upload(vault, body)
             return _fail("unknown op")
         except (VaultError, FileNotFoundError, FileExistsError) as e:
             return _fail(e)
@@ -401,7 +403,8 @@ class LrmVaultHandler:
             raise FileNotFoundError("file not found")
         web.header("Content-Type", kind)
         web.header("X-Content-Type-Options", "nosniff")
-        web.header("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'")
+        if kind == "image/svg+xml":  # an SVG opened on its own must not run scripts
+            web.header("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'")
         web.header("Cache-Control", "private, max-age=60")
         return full.read_bytes()
 
@@ -556,6 +559,40 @@ class LrmVaultHandler:
                     updated += 1
         vault.changed(touched, knowledge_paths, renamed)
         return _ok(path=new, updated_links=updated)
+
+    @staticmethod
+    def _upload(vault, body):
+        """An image or PDF pasted or dropped into a note: saved in <section>/attachments/ (or a chosen folder)."""
+        import base64
+        import binascii
+        name = re.sub(r"[^\w .()\-]", "_", os.path.basename(str(body.get("name") or "")).strip()).strip(". ") or "file"
+        ext = os.path.splitext(name)[1].lower()
+        if ext not in ASSET_TYPES:
+            raise VaultError("Only images (PNG, JPG, GIF, WebP, SVG) and PDFs can be attached.")
+        try:
+            data = base64.b64decode(str(body.get("data") or ""), validate=True)
+        except (binascii.Error, ValueError):
+            raise VaultError("The file did not arrive intact; try again.")
+        if not data or len(data) > 15 * 1024 * 1024:
+            raise VaultError("Attachments can be up to 15 MB.")
+        folder = str(body.get("folder") or "").strip("/")
+        if not folder:
+            note = str(body.get("note") or "")
+            section = note.split("/")[0] if note.split("/")[0] in SECTIONS else "memory" if note == ROOT_FILE else "knowledge"
+            folder = f"{section}/attachments"
+        section, rel, full_dir = vault.resolve(folder, allow_section_root=True)
+        if section == "root":
+            raise VaultError("Choose a folder inside memory or knowledge.")
+        full_dir.mkdir(parents=True, exist_ok=True)
+        stem_, n = os.path.splitext(name)[0], 1
+        target = full_dir / name
+        while target.exists():
+            target = full_dir / f"{stem_} {n}{ext}"
+            n += 1
+        tmp = target.with_name(f".{target.name}.part")
+        tmp.write_bytes(data)
+        os.replace(tmp, target)
+        return _ok(path=f"{folder}/{target.name}", size=len(data))
 
     @staticmethod
     def _delete(vault, body):

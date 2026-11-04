@@ -1,0 +1,4 @@
+# Build context: keep the editor's sources and installs out of the image.
+deploy/brand/editor/node_modules
+**/node_modules
+.git
