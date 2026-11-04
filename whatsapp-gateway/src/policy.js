@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // 'allowlist': only listed numbers. 'open': anyone. 'disabled': nobody.
   dmPolicy: 'pairing',
   allowFrom: [],
+  ownerNumbers: [],
   // 'mention': answer in groups only when the linked number is @mentioned or
   // replied to, and only from allowed senders. 'off': ignore groups.
   groupPolicy: 'off',
@@ -49,6 +50,8 @@ export function normalizeSettings(raw = {}) {
   return {
     dmPolicy: pick(raw.dmPolicy, ['pairing', 'allowlist', 'open', 'disabled'], DEFAULT_SETTINGS.dmPolicy),
     allowFrom: [...new Set((raw.allowFrom ?? []).map(digits).filter((n) => n.length >= 6))],
+    // The owner's own phones besides the linked one: treated like "Message yourself".
+    ownerNumbers: [...new Set((raw.ownerNumbers ?? []).map(digits).filter((n) => n.length >= 6))],
     groupPolicy: pick(raw.groupPolicy, ['mention', 'off'], DEFAULT_SETTINGS.groupPolicy),
     // Quick messages in a row are answered together, after this much quiet (0: each on its own).
     batchMs: [0, 2500, 5000].includes(Number(raw.batchMs)) ? Number(raw.batchMs) : 2500,
@@ -167,7 +170,7 @@ export function decide({ key, message, settings, myJids, selfChat }) {
   if (key?.fromMe) return { action: 'ignore', reason: 'from-me' };
 
   const phone = senderPhone(key);
-  const allowed = phone && settings.allowFrom.includes(phone);
+  const allowed = phone && (settings.allowFrom.includes(phone) || (settings.ownerNumbers ?? []).includes(phone));
 
   if (isGroup) {
     if (settings.groupPolicy !== 'mention') return { action: 'ignore', reason: 'groups-off' };

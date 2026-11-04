@@ -146,6 +146,17 @@ def _where(session_id, channel):
 # ---- asking a model ----------------------------------------------------------------------
 
 def _ask_main(prompt):
+    # Name this job so the plans fallback accepts it (owner work, like the brief).
+    from types import SimpleNamespace
+    from agent import lrm_plans
+    token = lrm_plans.begin_run(SimpleNamespace(session_id=f"lrm-memory:{datetime.date.today().isoformat()}"))
+    try:
+        return _ask_main_inner(prompt)
+    finally:
+        lrm_plans.end_run(token)
+
+
+def _ask_main_inner(prompt):
     from agent.memory.summarizer import MemoryFlushManager
     from agent.protocol.models import LLMRequest
     from bridge.agent_bridge import AgentLLMModel

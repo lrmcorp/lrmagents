@@ -70,6 +70,7 @@ class Account {
   constructor(agentId) {
     this.agentId = agentId;
     this.batches = new Map();
+    this.lidPhone = new Map(); // LID chat -> phone number, to recognise the owner's numbers
     this.dir = path.join(DATA_DIR, agentId);
     this.authDir = path.join(this.dir, 'auth');
     this.status = 'unlinked'; // unlinked | starting | qr | connected | reconnecting | logged_out
@@ -253,8 +254,20 @@ class Account {
     this.enqueue(sock, { ...last, message: { conversation: text }, batched: true });
   }
 
+  // The owner: the linked number's own chat, or one of the owner's own numbers.
+  isOwner(chat, sock = this.sock) {
+    if (!chat || chat.endsWith('@g.us')) return false;
+    if (sock?.user && isOwnChat(chat, [sock.user.id, sock.user.lid])) return true;
+    const phone = phoneOf(chat) || this.lidPhone.get(chat);
+    return Boolean(phone) && this.settings.ownerNumbers.includes(phone);
+  }
+
   enqueue(sock, msg) {
     const chat = msg.key?.remoteJid || '';
+    if (chat.endsWith('@lid') && !msg.key?.fromMe) {
+      const phone = senderPhone(msg.key);
+      if (phone) this.lidPhone.set(chat, phone);
+    }
     // Several quick texts in a row become one request, so the agent answers the whole thought.
     if (this.settings.batchMs && !msg.batched && !msg.approvalChecked && msg.message && !this.sentIds.has(msg.key?.id) && batchable(msg.message)
         && !approvalReply(messageText(msg.message)) && !chat.endsWith('@g.us')) {
@@ -268,7 +281,8 @@ class Account {
     // Media or anything else first sends the waiting texts, in order.
     if (!msg.batched && this.batches.has(chat)) this.flushBatch(sock, chat);
     // An approval answer must not wait behind the very task that is waiting for it.
-    const reply = msg.message && isSelfChat(msg.key, [sock.user?.id, sock.user?.lid]) && !this.sentIds.has(msg.key.id)
+    const fromOwner = isSelfChat(msg.key, [sock.user?.id, sock.user?.lid]) || (!msg.key?.fromMe && this.isOwner(chat, sock));
+    const reply = msg.message && fromOwner && !this.sentIds.has(msg.key.id)
       ? approvalReply(messageText(msg.message)) : null;
     if (reply && !this.seen.has(msg.key.id) && !msg.approvalChecked) {
       // Only a code that is actually waiting is taken as an answer; anything else
@@ -314,8 +328,8 @@ class Account {
       }
       return;
     }
-    // The owner's own "Message yourself" chat is never throttled.
-    if (!selfChat) {
+    // The owner's own chats are never throttled.
+    if (!selfChat && !this.isOwner(chat, sock)) {
       const rate = this.limiter.check(chat);
       if (rate === 'drop') return;
       if (rate === 'warn') {
@@ -362,7 +376,7 @@ class Account {
       unreact();
       log.error({ agent: this.agentId, err: error.message }, 'agent call failed');
       const reason = error.reason || (error.name === 'TimeoutError' ? 'The agent took too long to answer and the request was stopped.' : '');
-      const own = isOwnChat(chat, [sock.user?.id, sock.user?.lid]);
+      const own = this.isOwner(chat, sock);
       // The owner sees why; contacts get the polite line and the owner is told (at most every 30 minutes).
       await this.send(sock, chat, own && reason ? `⚠️ ${reason}` : ERROR_REPLY, msg);
       if (!own && reason && sock.user?.id && Date.now() - (this.lastFailureNotice || 0) > 30 * 60_000) {
@@ -501,8 +515,8 @@ export class Accounts {
 
   // Whether `chat` is the linked number's own chat ("Message yourself"), i.e. its owner.
   isOwnerChat(agentId, chat) {
-    const sock = this.byAgent.get(agentId)?.sock;
-    return Boolean(sock?.user) && isOwnChat(chat, [sock.user.id, sock.user.lid]);
+    const account = this.byAgent.get(agentId);
+    return Boolean(account?.sock?.user) && account.isOwner(chat, account.sock);
   }
 
   get(agentId, create = false) {
@@ -582,7 +596,9 @@ export class Accounts {
     const accounts = [this.get(agentId), ...this.byAgent.values()].filter((a) => a && a.status === 'connected' && a.sock?.user);
     const account = accounts[0];
     if (!account) throw Object.assign(new Error('no WhatsApp number is linked'), { status: 503 });
-    await this.deliver(account.agentId, `${bareJid(account.sock.user.id)}@s.whatsapp.net`, text);
+    // To the owner's own phone when one is set (they may not watch the linked phone), else "Message yourself".
+    const mine = account.settings.ownerNumbers[0];
+    await this.deliver(account.agentId, mine ? `${mine}@s.whatsapp.net` : `${bareJid(account.sock.user.id)}@s.whatsapp.net`, text);
   }
 
   async deliver(agentId, chat, text) {
@@ -590,7 +606,7 @@ export class Accounts {
     if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });
     if (!/@(s\.whatsapp\.net|g\.us|lid)$/.test(chat)) throw Object.assign(new Error('not a WhatsApp chat id'), { status: 400 });
     const own = [account.sock.user?.id, account.sock.user?.lid].some((jid) => jid && bareJid(jid) === bareJid(chat));
-    const approved = account.settings.allowFrom.includes(phoneOf(chat));
+    const approved = account.settings.allowFrom.includes(phoneOf(chat)) || account.isOwner(chat, account.sock);
     if (!own && !approved && !account.knownChats.has(chat)) {
       throw Object.assign(new Error('this chat never wrote to the agent; refusing to start a conversation'), { status: 403 });
     }

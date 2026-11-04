@@ -12,7 +12,7 @@ const settings = (raw) => normalizeSettings(raw);
 
 test('settings fall back to safe defaults', () => {
   assert.deepEqual(normalizeSettings({ dmPolicy: 'weird', allowFrom: ['+62 812-0000-0000', 'x'] }), {
-    dmPolicy: 'pairing', allowFrom: ['6281200000000'], groupPolicy: 'off', batchMs: 2500, voiceReplies: false,
+    dmPolicy: 'pairing', allowFrom: ['6281200000000'], ownerNumbers: [], groupPolicy: 'off', batchMs: 2500, voiceReplies: false,
   });
 });
 
@@ -162,4 +162,11 @@ test('batchable and documents', () => {
   const doc = { documentWithCaptionMessage: { message: { documentMessage: { fileName: 'a.pdf', caption: 'read this' } } } };
   assert.equal(mediaKind(doc), 'document');
   assert.equal(decide({ key: { remoteJid: '6280000000001@s.whatsapp.net', id: 'd', fromMe: true }, message: doc, settings: settings({}), myJids: ME, selfChat: true }).media, 'document');
+});
+
+test('owner numbers are normalised and allowed to talk', () => {
+  const s = normalizeSettings({ ownerNumbers: ['+62 812-3333-4444', 'x'] });
+  assert.deepEqual(s.ownerNumbers, ['6281233334444']);
+  const key = { remoteJid: '6281233334444@s.whatsapp.net', fromMe: false, id: 'o1' };
+  assert.equal(decide({ key, message: { conversation: 'hi' }, settings: s, myJids: ['6280000000000@s.whatsapp.net'] }).action, 'answer');
 });
