@@ -131,7 +131,9 @@ class LrmVoiceHandler:
 
     def POST(self):
         _require_auth()
-        op = web.input(op="").op
+        # The query string only: web.input() would parse the body, and audio is not form text.
+        from urllib.parse import parse_qs
+        op = (parse_qs(web.ctx.env.get("QUERY_STRING", "")).get("op") or [""])[0]
         started = time.time()
         try:
             if op == "stt":
