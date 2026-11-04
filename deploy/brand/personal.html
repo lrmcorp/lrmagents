@@ -161,8 +161,9 @@
     const src = S.ctx.createMediaStreamSource(S.stream);
     S.analyser = S.ctx.createAnalyser(); S.analyser.fftSize = 1024; src.connect(S.analyser);
     const buf = new Uint8Array(S.analyser.fftSize);
-    let loud = 0; let quiet = 0;
+    let loud = 0; let quiet = 0; const mine = S.analyser;
     (function meter() {
+      if (S.analyser !== mine) return;
       requestAnimationFrame(meter);
       S.analyser.getByteTimeDomainData(buf);
       let sum = 0; for (const v of buf) sum += ((v - 128) / 128) ** 2;
@@ -184,11 +185,27 @@
     S.chunks = []; const type = pickType();
     S.rec = new MediaRecorder(S.stream, type ? { mimeType: type } : undefined);
     S.rec.ondataavailable = (e) => { if (e.data.size) S.chunks.push(e.data); };
-    S.rec.onstop = () => { const blob = new Blob(S.chunks, { type: S.rec?.mimeType || type || 'audio/webm' }); S.rec = null; $('#talk').classList.remove('on'); $('#talk-l').textContent = 'Talk'; if (blob.size > 2500) heard(blob); else setState('idle'); };
+    session('play-and-record');
+    S.rec.onstop = () => { releaseMic(); const blob = new Blob(S.chunks, { type: S.rec?.mimeType || type || 'audio/webm' }); S.rec = null; $('#talk').classList.remove('on'); $('#talk-l').textContent = 'Talk'; if (blob.size > 2500) heard(blob); else setState('idle'); };
     S.rec.start(); S.recAt = Date.now();
     $('#talk').classList.add('on'); $('#talk-l').textContent = 'Stop'; setState('listening');
   }
   function stopRec() { if (S.rec && S.rec.state !== 'inactive') S.rec.stop(); }
+  // An open microphone keeps iPhones in call mode, where speech plays from the quiet
+  // earpiece. Outside hands-free the microphone is closed after each recording.
+  function releaseMic() {
+    if (S.handsFree || !S.stream) return;
+    S.stream.getTracks().forEach((t) => t.stop()); S.stream = null; S.analyser = null; S.level = 0;
+  }
+  // iPhones only play sound that a tap started: unlock the player on every tap, then the
+  // answer can play when it arrives. A media element also plays with the silent switch on.
+  const player = new Audio(); player.playsInline = true; player.setAttribute('playsinline', '');
+  const SILENT = 'data:audio/wav;base64,UklGRkQDAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YSADAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+  function unlock() {
+    try { S.ctx = S.ctx || new (window.AudioContext || window.webkitAudioContext)(); if (S.ctx.state === 'suspended') S.ctx.resume(); } catch { /* no Web Audio */ }
+    if (!S.unlocked && !S.speaking) { player.src = SILENT; player.play().then(() => { S.unlocked = true; }).catch(() => {}); }
+  }
+  function session(type) { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch { /* not Safari */ } }
 
   async function heard(blob) {
     S.busy = true; setState('thinking', 'understanding');
@@ -225,31 +242,37 @@
     return r.arrayBuffer();
   }
   async function speak(text, lang) {
-    S.ctx = S.ctx || new (window.AudioContext || window.webkitAudioContext)();
-    if (S.ctx.state === 'suspended') await S.ctx.resume();
+    releaseMic(); session('playback');
     const token = {}; S.speaking = token; setState('speaking');
     const parts = sentences(text); let next = tts(parts[0], lang);
     try {
       for (let i = 0; i < parts.length; i++) {
-        const buf = await S.ctx.decodeAudioData(await next);
+        const wav = await next;
         if (i + 1 < parts.length) next = tts(parts[i + 1], lang);
         if (S.speaking !== token) return;
-        await play(buf, token);
+        await play(wav, token);
       }
-    } catch (e) { toast(`Voice unavailable: ${e.message}`); }
-    if (S.speaking === token) { S.speaking = null; setState('idle'); }
+    } catch (e) {
+      if (S.speaking === token) toast(e?.name === 'NotAllowedError' ? 'The browser blocked the voice. Tap the orb once, then ask again.' : `Voice unavailable: ${e.message}`);
+    }
+    if (S.speaking === token) { S.speaking = null; S.out = 0; setState('idle'); }
   }
-  function play(buf, token) {
-    return new Promise((resolve) => {
-      const src = S.ctx.createBufferSource(); src.buffer = buf;
-      const an = S.ctx.createAnalyser(); an.fftSize = 512; src.connect(an); an.connect(S.ctx.destination);
-      const data = new Uint8Array(an.fftSize); token.src = src;
-      (function meter() { if (S.speaking !== token) return; an.getByteTimeDomainData(data); let s = 0; for (const v of data) s += ((v - 128) / 128) ** 2; S.out = S.out * 0.6 + Math.min(1, Math.sqrt(s / data.length) * 5) * 0.4; requestAnimationFrame(meter); })();
-      src.onended = () => { S.out = 0; resolve(); };
-      src.start();
+  function play(wav, token) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+      const done = () => { URL.revokeObjectURL(url); player.onended = player.onerror = null; S.out = 0; resolve(); };
+      player.onended = done; player.onerror = () => done();
+      token.stop = () => { player.pause(); done(); };
+      player.src = url;
+      player.play().then(() => {
+        S.unlocked = true;
+        // the orb moves with the voice (a media element has no level meter on every phone)
+        const t0 = performance.now();
+        (function meter() { if (S.speaking !== token || player.paused) return; const t = (performance.now() - t0) / 1000; S.out = 0.35 + 0.25 * Math.abs(Math.sin(t * 7.3)) + 0.15 * Math.abs(Math.sin(t * 13.1)); requestAnimationFrame(meter); })();
+      }).catch((e) => { URL.revokeObjectURL(url); player.onended = player.onerror = null; reject(e); });
     });
   }
-  function stopSpeaking() { if (S.speaking?.src) try { S.speaking.src.stop(); } catch { /* ended */ } S.speaking = null; S.out = 0; }
+  function stopSpeaking() { const t = S.speaking; S.speaking = null; S.out = 0; if (t?.stop) t.stop(); }
 
   // ---- HUD panels --------------------------------------------------------------------
   function chart(labels, values) {
@@ -334,25 +357,26 @@
 
   // ---- controls ----------------------------------------------------------------------
   const talk = $('#talk'); let pressAt = 0;
-  talk.addEventListener('pointerdown', (e) => { e.preventDefault(); pressAt = Date.now(); if (S.rec) stopRec(); else startRec(); });
+  talk.addEventListener('pointerdown', (e) => { e.preventDefault(); unlock(); pressAt = Date.now(); if (S.rec) stopRec(); else startRec(); });
   talk.addEventListener('pointerup', () => { if (S.rec && Date.now() - pressAt > 450) stopRec(); }); // held = push-to-talk
-  cv.addEventListener('click', () => { if (S.state === 'speaking') { stopSpeaking(); setState('idle'); } else if (S.rec) stopRec(); else startRec(); });
+  cv.addEventListener('click', () => { unlock(); if (S.state === 'speaking') { stopSpeaking(); setState('idle'); } else if (S.rec) stopRec(); else startRec(); });
   addEventListener('keydown', (e) => {
     if (e.target.closest('input, select, textarea')) return;
-    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); if (S.rec) stopRec(); else startRec(); }
+    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); unlock(); if (S.rec) stopRec(); else startRec(); }
     if (e.key === 'Escape') { stopSpeaking(); stopRec(); setState('idle'); }
   });
   $('#handsfree').onclick = async () => {
+    unlock();
     S.handsFree = !S.handsFree; $('#handsfree').setAttribute('aria-pressed', String(S.handsFree));
     if (S.handsFree) { try { await mic(); setState('idle', 'listening for you'); } catch (e) { S.handsFree = false; $('#handsfree').setAttribute('aria-pressed', 'false'); toast(`No microphone: ${e.message || e}`); } }
     else setState('idle');
   };
   $('#camera').onclick = () => camera(!S.camOn);
-  $('#look').onclick = () => { const img = frame(); if (!img) return; const seen = [...new Set(S.lastSeen)]; ask(seen.length ? `What do you see? (The camera spots: ${seen.join(', ')}.)` : 'What do you see?', { image: img }); };
+  $('#look').onclick = () => { unlock(); const img = frame(); if (!img) return; const seen = [...new Set(S.lastSeen)]; ask(seen.length ? `What do you see? (The camera spots: ${seen.join(', ')}.)` : 'What do you see?', { image: img }); };
   $('#keyboard').onclick = () => { const open = !$('#typed').classList.contains('open'); $('#typed').classList.toggle('open', open); document.body.classList.toggle('typing', open); $('#keyboard').setAttribute('aria-pressed', String(open)); if (open) $('#typed-in').focus(); };
-  $('#typed').onsubmit = (e) => { e.preventDefault(); const v = $('#typed-in').value.trim(); if (!v || S.busy) return; $('#typed-in').value = ''; ask(v, { image: S.camOn && /\b(see|look|this|ini|itu|lihat)\b/i.test(v) ? frame() : null }); };
+  $('#typed').onsubmit = (e) => { e.preventDefault(); unlock(); const v = $('#typed-in').value.trim(); if (!v || S.busy) return; $('#typed-in').value = ''; ask(v, { image: S.camOn && /\b(see|look|this|ini|itu|lihat)\b/i.test(v) ? frame() : null }); };
   const muteIcon = () => { $('#mute').innerHTML = `<i class="fa-solid ${S.muted ? 'fa-volume-xmark' : 'fa-volume-high'}"></i>`; $('#mute').setAttribute('aria-pressed', String(S.muted)); };
-  $('#mute').onclick = () => { S.muted = !S.muted; store.set('lrm_p_muted', S.muted); if (S.muted) stopSpeaking(); muteIcon(); };
+  $('#mute').onclick = () => { unlock(); S.muted = !S.muted; store.set('lrm_p_muted', S.muted); if (S.muted) stopSpeaking(); muteIcon(); };
   muteIcon();
   $('#lang').value = store.get('lrm_p_lang', ''); $('#lang').onchange = () => store.set('lrm_p_lang', $('#lang').value);
 
