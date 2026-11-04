@@ -324,4 +324,20 @@ patch("agent/protocol/agent_stream.py",
 patch("agent/protocol/agent_stream.py",
       '        finally:\n            _ACTIVE_RUN_MODELS.reset(_active_token)\n',
       '        finally:\n            _ACTIVE_RUN_MODELS.reset(_active_token)\n            _lrm_plans_end(_lrm_plans_token)\n', root=app)
+# ---- Skills from GitHub also accept what skill directories publish: an
+# `npx skills add owner/repo` line or a skills.sh link (agent/lrm_skills.py).
+patch("api/skills.py",
+      '    if source == "github":\n        if value.startswith(',
+      '    if source == "github":\n        from agent.lrm_skills import github_spec as _lrm_github_spec\n'
+      '        value = _lrm_github_spec(value)\n        if value.startswith(')
+patch("api/skills.py",
+      '                spec = (body.get("spec") or name).strip()\n',
+      '                spec = (body.get("spec") or name).strip()\n'
+      '                from agent.lrm_skills import github_spec as _lrm_github_spec\n'
+      '                spec = _lrm_github_spec(spec)\n')
+patch("static/js/core/i18n.js", "skill_value_github: 'Repository or folder URL'",
+      "skill_value_github: 'Repository, folder URL or npx command'")
+patch("static/js/core/i18n.js", "skill_hint_github: 'A repository URL, a folder URL (/tree/branch/path), or owner/repo'",
+      "skill_hint_github: 'A repository URL, a folder URL (/tree/branch/path), owner/repo, a skills.sh link, or an npx skills add command'")
+patch("static/js/views/skills.js", "https://github.com/owner/repo/tree/main/skills/my-skill", "https://github.com/owner/repo  ·  npx skills add owner/repo")
 print("LRM brand applied")
