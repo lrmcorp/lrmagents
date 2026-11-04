@@ -187,7 +187,12 @@ async function turn(t, folder, { input, messages, tools }, settings) {
   if (!first && r.code !== 0 && r.quick) r = await run(t, { dir, prompt: opening() + input, model, resume: false, lastFile: t.id === 'codex' ? lastFile : '' });
   let text = '';
   try { text = fs.readFileSync(lastFile, 'utf8').trim(); fs.rmSync(lastFile, { force: true }); } catch { /* not codex */ }
-  if (r.code !== 0) throw Object.assign(new Error(explain(r.out, t)), { status: 502 });
+  if (r.code !== 0) {
+    // 429 for a spent plan and 401 for a lost sign-in: LRMagent moves straight to the
+    // next model on those, where a 502 would be retried on this plan three times first.
+    const why = explain(r.out, t);
+    throw Object.assign(new Error(why), { status: /usage limit/.test(why) ? 429 : /not signed in/.test(why) ? 401 : 502 });
+  }
   if (!text) text = r.out.trim();
   fs.writeFileSync(started, new Date().toISOString());
   if (catalogue) fs.writeFileSync(toolsFile, toolHash);
