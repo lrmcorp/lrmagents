@@ -98,6 +98,11 @@ async function route(req, res) {
       return send(res, error.status || 503, { error: error.message });
     }
   }
+  // For LRMagent's whatsapp tool (owner only on that side): linked numbers and owner numbers.
+  if (url.pathname === '/whatsapp/internal/status') {
+    if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
+    return send(res, 200, { accounts: accounts.internalStatus() });
+  }
   // For the teammates tool: only the owner's own chat may use the paid plans.
   if (url.pathname === '/whatsapp/internal/owner') {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });

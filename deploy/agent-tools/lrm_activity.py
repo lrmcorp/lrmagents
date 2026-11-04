@@ -147,6 +147,10 @@ def risk(tool, args, mode, refs=None):
         if action == "calendar_create" and args.get("attendees"):
             return "sends calendar invitations"
         return "changes your Gmail or calendar" if mode == "always" and action in ("gmail_draft", "calendar_create") else ""
+    if tool == "whatsapp" and str(args.get("action", "")) == "send":
+        if str(args.get("to", "me")).strip().lower() not in ("me", "owner", "myself", "self"):
+            return "sends a WhatsApp message to someone else"
+        return ""
     if mode == "always" and tool in ("write", "edit", "evolution_undo"):
         return "changes a file"
     return ""

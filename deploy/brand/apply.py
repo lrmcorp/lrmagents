@@ -157,8 +157,9 @@ patch("agent/tools/__init__.py",
       "from agent.tools.model_switch.model_switch import ModelSwitch\n"
       "from agent.tools.transcribe.transcribe import TranscribeAudio\n"
       "from agent.tools.teammates.teammate import AskTeammate\n"
-      "from agent.tools.google_tool.google_tool import GoogleTool\n", root=app)
-patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n", root=app)
+      "from agent.tools.google_tool.google_tool import GoogleTool\n"
+      "from agent.tools.whatsapp_tool.whatsapp_tool import WhatsAppTool\n", root=app)
+patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n    'WhatsAppTool',\n", root=app)
 # ---- Scheduled messages from WhatsApp chats go back to WhatsApp through the
 # gateway (deploy/agent-tools/whatsapp_relay.py, installed as channel/lrm_whatsapp_relay.py).
 patch("agent/tools/scheduler/integration.py",

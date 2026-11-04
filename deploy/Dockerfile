@@ -28,6 +28,7 @@ COPY deploy/agent-tools/lrm_plans.py /app/agent/lrm_plans.py
 COPY deploy/agent-tools/lrm_skills.py /app/agent/lrm_skills.py
 COPY deploy/agent-tools/lrm_memory.py /app/agent/lrm_memory.py
 COPY deploy/agent-tools/google_tool /app/agent/tools/google_tool/
+COPY deploy/agent-tools/whatsapp_tool /app/agent/tools/whatsapp_tool/
 COPY deploy/agent-tools/lrm_google_api.py /app/channel/web/api/lrm_google.py
 # Watchable browser: live view and take-over API (page copied with the brand files).
 COPY deploy/agent-tools/lrm_browser_api.py /app/channel/web/api/lrm_browser.py

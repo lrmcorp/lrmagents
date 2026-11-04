@@ -514,6 +514,13 @@ export class Accounts {
   }
 
   // Whether `chat` is the linked number's own chat ("Message yourself"), i.e. its owner.
+  internalStatus() {
+    return [...this.byAgent.values()].map((a) => ({
+      agent: a.agentId, status: a.status, phone: a.sock?.user ? phoneOf(`${bareJid(a.sock.user.id)}@s.whatsapp.net`) : '',
+      ownerNumbers: a.settings.ownerNumbers, approved: a.settings.allowFrom.length,
+    }));
+  }
+
   isOwnerChat(agentId, chat) {
     const account = this.byAgent.get(agentId);
     return Boolean(account?.sock?.user) && account.isOwner(chat, account.sock);

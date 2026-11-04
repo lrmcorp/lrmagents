@@ -73,25 +73,105 @@ function run(t, { dir, prompt, model, resume, lastFile }) {
   });
 }
 
-// One chat turn on a plan. Returns { text } or throws { status, message }.
-export async function chatTurn(modelName, messages, session, settings) {
+// ---- LRMagent's tools, offered to the CLI ------------------------------------------
+// The CLI can't call LRMagent's tools directly, so they are listed in the prompt and the
+// CLI asks for them with <lrm_tool>{...}</lrm_tool>; those become OpenAI tool_calls, and
+// the results come back in the next request as role "tool" messages.
+
+function toolCatalogue(tools) {
+  const lines = [];
+  for (const entry of tools || []) {
+    const fn = entry?.function || entry;
+    if (!fn?.name) continue;
+    const props = fn.parameters?.properties || {};
+    const required = new Set(fn.parameters?.required || []);
+    const params = Object.entries(props).map(([k, v]) => {
+      const kind = v?.enum ? v.enum.map((e) => JSON.stringify(e)).join('|') : (v?.type || 'any');
+      const note = v?.description ? ` - ${String(v.description).replace(/\s+/g, ' ').slice(0, 140)}` : '';
+      return `    ${k}${required.has(k) ? '' : '?'}: ${kind}${note}`;
+    });
+    lines.push(`- ${fn.name}: ${String(fn.description || '').replace(/\s+/g, ' ').slice(0, 400)}${params.length ? '\n' + params.join('\n') : ''}`);
+  }
+  return lines.join('\n');
+}
+
+const TOOL_RULES = `LRMagent has its own tools, listed below. They act on LRMagent itself: its WhatsApp number, memory and
+knowledge vault, the owner's Google account, reminders (scheduler), the browser, files it sends, and more.
+Use them whenever the request involves those things; your own shell runs in a separate folder that is not
+LRMagent's workspace. To call LRMagent tools, reply with ONLY one or more lines like
+<lrm_tool>{"name": "whatsapp", "arguments": {"action": "send", "to": "me", "text": "Hi!"}}</lrm_tool>
+and nothing else. The results arrive in the next message; then continue, call more tools, or answer.
+
+LRMagent tools:
+`;
+
+function parseToolCalls(text, names) {
+  const calls = [];
+  const rest = text.replace(/<lrm_tool>\s*([\s\S]*?)\s*<\/lrm_tool>/g, (whole, raw) => {
+    try {
+      const data = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+      const name = String(data.name || data.tool || '');
+      if (names.has(name)) {
+        calls.push({ id: `call_${crypto.randomBytes(6).toString('hex')}`, type: 'function',
+          function: { name, arguments: JSON.stringify(data.arguments ?? data.args ?? {}) } });
+        return '';
+      }
+    } catch { /* leave it in the text */ }
+    return whole;
+  });
+  return { calls, rest: rest.trim() };
+}
+
+function clip(text, limit) {
+  text = String(text || '');
+  return text.length > limit ? `${text.slice(0, limit)} […${text.length - limit} more characters]` : text;
+}
+
+// What the CLI has not seen yet: everything after the last assistant message.
+function newInput(messages) {
+  const list = messages || [];
+  let i = list.length;
+  while (i > 0 && list[i - 1]?.role !== 'assistant') i -= 1;
+  const fresh = list.slice(i).filter((m) => m?.role === 'user' || m?.role === 'tool');
+  const parts = fresh.map((m) => (m.role === 'tool'
+    ? `Result of LRMagent tool ${m.name || ''} (${m.tool_call_id || ''}):\n${clip(textOf(m.content), 12_000)}`
+    : textOf(m.content)));
+  return parts.filter((p) => p && p.trim()).join('\n\n').trim();
+}
+
+// For a CLI session that starts in the middle of a conversation (a fallback, a reset):
+// the recent conversation, so it knows what is going on.
+function history(messages) {
+  const list = (messages || []).filter((m) => m?.role === 'user' || m?.role === 'assistant');
+  let i = list.length;
+  while (i > 0 && list[i - 1]?.role !== 'assistant') i -= 1;
+  const earlier = list.slice(0, i).slice(-16).map((m) => `${m.role === 'user' ? 'Owner' : 'Assistant'}: ${clip(textOf(m.content), 2000)}`);
+  return earlier.length ? `Conversation so far:\n${earlier.join('\n\n')}\n\n` : '';
+}
+
+// One chat turn on a plan. Returns { text, toolCalls } or throws { status, message }.
+export async function chatTurn(modelName, messages, session, settings, tools = []) {
   const id = PLAN_MODELS[modelName];
   const t = id && byId(id);
   if (!t) throw Object.assign(new Error(`Unknown plan model "${modelName}". Choose one of Your plans in the model list.`), { status: 404 });
   const allowed = await allowedSession(session);
   if (!allowed.ok) throw Object.assign(new Error(allowed.why), { status: 403 });
-  const last = [...(messages || [])].reverse().find((m) => m?.role === 'user');
-  const question = textOf(last?.content).trim();
-  if (!question) throw Object.assign(new Error('There was no message to answer.'), { status: 400 });
-
+  const input = newInput(messages);
+  if (!input) throw Object.assign(new Error('There was no message to answer.'), { status: 400 });
   const folder = `chat-${crypto.createHash('sha256').update(session).digest('hex').slice(0, 16)}`;
-  return serial(`${t.id}/${folder}`, () => turn(t, folder, question, settings));
+  return serial(`${t.id}/${folder}`, () => turn(t, folder, { input, messages, tools }, settings));
 }
 
-async function turn(t, folder, question, settings) {
+async function turn(t, folder, { input, messages, tools }, settings) {
   const dir = prepareFolder(t, folder, RUN_AS.uid, RUN_AS.gid);
   const started = path.join(dir, '.lrm-chat-started');
+  const toolsFile = path.join(dir, '.lrm-chat-tools');
   const first = !fs.existsSync(started);
+  const catalogue = toolCatalogue(tools);
+  const toolHash = crypto.createHash('sha256').update(catalogue).digest('hex').slice(0, 16);
+  let knownHash = '';
+  try { knownHash = fs.readFileSync(toolsFile, 'utf8').trim(); } catch { /* first time */ }
+  const names = new Set((tools || []).map((e) => (e?.function || e)?.name).filter(Boolean));
   let model = settings.model(t.id);
   if (!model && t.provider) model = await defaultModel(t, RUN_AS);
   const lastDir = path.join(HOME, '.lrm-last');
@@ -99,20 +179,26 @@ async function turn(t, folder, question, settings) {
   if (RUN_AS.uid != null) fs.chownSync(lastDir, RUN_AS.uid, RUN_AS.gid);
   const lastFile = path.join(lastDir, `chat-${crypto.randomBytes(6).toString('hex')}.txt`);
 
-  const prompt = first ? PREAMBLE + question : question;
+  const toolPart = (fresh) => (catalogue && (fresh || toolHash !== knownHash) ? `${TOOL_RULES}${catalogue}\n\n` : '');
+  const opening = () => `${PREAMBLE}${toolPart(true)}${history(messages)}`;
+  const prompt = first ? opening() + input : toolPart(false) + input;
   let r = await run(t, { dir, prompt, model, resume: !first, lastFile: t.id === 'codex' ? lastFile : '' });
-  if (!first && r.code !== 0 && r.quick) r = await run(t, { dir, prompt: PREAMBLE + question, model, resume: false, lastFile: t.id === 'codex' ? lastFile : '' });
+  if (!first && r.code !== 0 && r.quick) r = await run(t, { dir, prompt: opening() + input, model, resume: false, lastFile: t.id === 'codex' ? lastFile : '' });
   let text = '';
   try { text = fs.readFileSync(lastFile, 'utf8').trim(); fs.rmSync(lastFile, { force: true }); } catch { /* not codex */ }
   if (r.code !== 0) throw Object.assign(new Error(explain(r.out, t)), { status: 502 });
   if (!text) text = r.out.trim();
   fs.writeFileSync(started, new Date().toISOString());
-  return { text: text || '(No reply.)' };
+  if (catalogue) fs.writeFileSync(toolsFile, toolHash);
+  const { calls, rest } = names.size ? parseToolCalls(text, names) : { calls: [], rest: text };
+  return { text: rest || (calls.length ? '' : '(No reply.)'), toolCalls: calls };
 }
 
-function completion(model, text) {
+function completion(model, { text, toolCalls }) {
+  const message = { role: 'assistant', content: text || (toolCalls.length ? null : '') };
+  if (toolCalls.length) message.tool_calls = toolCalls;
   return { id: `chatcmpl-${crypto.randomBytes(8).toString('hex')}`, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model,
-    choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+    choices: [{ index: 0, message, finish_reason: toolCalls.length ? 'tool_calls' : 'stop' }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } };
 }
 
@@ -120,12 +206,13 @@ function completion(model, text) {
 export async function handleCompletion(req, res, body, settings) {
   const session = String(req.headers['x-lrm-session'] || '');
   const model = String(body.model || '');
+  const tools = Array.isArray(body.tools) && body.tool_choice !== 'none' ? body.tools : [];
   const fail = (e) => ({ error: { message: e.message, type: 'lrm_plan_error', code: e.status || 500 } });
   if (!body.stream) {
     try {
-      const { text } = await chatTurn(model, body.messages, session, settings);
+      const answer = await chatTurn(model, body.messages, session, settings, tools);
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify(completion(model, text)));
+      return res.end(JSON.stringify(completion(model, answer)));
     } catch (e) {
       res.writeHead(e.status || 500, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify(fail(e)));
@@ -136,21 +223,23 @@ export async function handleCompletion(req, res, body, settings) {
   try {
     const allowed = PLAN_MODELS[model] ? await allowedSession(session) : { ok: false, why: `Unknown plan model "${model}".` };
     if (!allowed.ok) throw Object.assign(new Error(allowed.why), { status: PLAN_MODELS[model] ? 403 : 404 });
-    ready = chatTurn(model, body.messages, session, settings);
+    ready = chatTurn(model, body.messages, session, settings, tools);
   } catch (e) {
     res.writeHead(e.status || 500, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(fail(e)));
   }
+  ready.catch(() => {}); // handled below; never an unhandled rejection meanwhile
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
   const id = `chatcmpl-${crypto.randomBytes(8).toString('hex')}`;
   const chunk = (delta, finish = null) => res.write(`data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`);
   chunk({ role: 'assistant' });
   const ping = setInterval(() => res.write(': working\n\n'), 15_000);
   try {
-    const { text } = await ready;
+    const { text, toolCalls } = await ready;
     clearInterval(ping);
-    chunk({ content: text });
-    chunk({}, 'stop');
+    if (text) chunk({ content: text });
+    toolCalls.forEach((call, index) => chunk({ tool_calls: [{ index, ...call }] }));
+    chunk({}, toolCalls.length ? 'tool_calls' : 'stop');
   } catch (e) {
     clearInterval(ping);
     res.write(`data: ${JSON.stringify(fail(e))}\n\n`);
