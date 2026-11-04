@@ -34,56 +34,47 @@
         plus.onclick = (e) => { if (typeof onNewChatButton === 'function') onNewChatButton(e); };
         brand.appendChild(plus);
 
-        const search = document.createElement('label');
-        search.className = 'lrm-search';
-        search.innerHTML = '<i class="fas fa-magnifying-glass"></i><input type="search" placeholder="Search..." aria-label="Search conversations">';
-        brand.after(search);
-        search.querySelector('input').addEventListener('input', filterSessions);
-
-        // Conversations: the stock panel, always open, in the sidebar.
-        search.after(panel);
+        // The sidebar is the menu. "Chats" (top of it) opens the conversation list as a page
+        // in the main area: the console's own list, with its search, pin, rename and delete.
+        const chats = document.createElement('section');
+        chats.className = 'lrm-chats';
+        chats.hidden = true;
+        chats.innerHTML = `<div class="lrm-chats-head"><h1>Chats</h1>
+            <button type="button" class="lrm-chats-new"><i class="fas fa-plus"></i>New chat</button>
+            <button type="button" class="lrm-icon-btn lrm-chats-close" title="Close (Esc)" aria-label="Close"><i class="fas fa-xmark"></i></button></div>
+            <label class="lrm-search"><i class="fas fa-magnifying-glass"></i><input type="search" placeholder="Search chats..." aria-label="Search chats"></label>`;
+        ($('#content-area') || $('#main-content') || document.body).appendChild(chats);
+        chats.appendChild(panel);
         panel.classList.remove('hidden');
-        panel.after(nav);
+        $('input', chats).addEventListener('input', filterSessions);
 
-        // Many chats: the list takes the space. The menu is one row of the main pages
-        // plus "Menu", which opens every page in its sections (and closes on a pick).
-        const DOCK = [
-            ['lrm-personal', 'fa-circle-dot', 'Personal'], ['lrm-vault', 'fa-gem', 'Vault'], ['lrm-whatsapp', 'fa-comments', 'WhatsApp'],
-            ['agents', 'fa-people-group', 'Agents'],
-        ];
-        const itemFor = (key) => nav.querySelector(`.sidebar-item[data-menu-id="${key}"]`) || nav.querySelector(`.sidebar-item[data-view="${key}"]:not([data-menu-id])`);
-        const dock = document.createElement('div');
-        dock.className = 'lrm-dock';
-        dock.innerHTML = DOCK.map(([key, icon, label]) => `<button type="button" class="lrm-dock-btn" data-key="${key}" title="${label}" aria-label="${label}"><i class="fas ${icon}"></i><span>${label}</span></button>`).join('')
-            + '<button type="button" class="lrm-dock-btn lrm-dock-menu" title="All pages" aria-label="All pages" aria-expanded="false"><i class="fas fa-bars"></i><span>Menu</span></button>';
-        nav.after(dock);
-        const setMenu = (open) => {
-            sidebar.classList.toggle('lrm-menu-open', open);
-            $('.lrm-dock-menu', dock).setAttribute('aria-expanded', String(open));
-            $('.lrm-dock-menu i', dock).className = `fas ${open ? 'fa-xmark' : 'fa-bars'}`;
+        const chatsItem = document.createElement('a');
+        chatsItem.className = 'sidebar-item lrm-chats-item';
+        chatsItem.setAttribute('role', 'button');
+        chatsItem.innerHTML = '<i class="fas fa-message item-icon"></i><span class="sidebar-label">Chats</span>';
+        brand.after(chatsItem);
+        chatsItem.after(nav);
+
+        const setChats = (open) => {
+            chats.hidden = !open;
+            chatsItem.classList.toggle('active', open);
+            document.body.classList.toggle('lrm-chats-open', open);
+            if (open) {
+                if (typeof loadSessionList === 'function') loadSessionList();
+                // phones: the sidebar slides over the page; close it to show the list
+                if (window.innerWidth < 1024 && typeof closeSidebar === 'function') closeSidebar(); else $('input', chats).focus({ preventScroll: true });
+            }
         };
-        setMenu(false);
-        dock.addEventListener('click', (e) => {
-            const btn = e.target.closest('.lrm-dock-btn');
-            if (!btn) return;
-            if (btn.classList.contains('lrm-dock-menu')) return setMenu(!sidebar.classList.contains('lrm-menu-open'));
-            itemFor(btn.dataset.key)?.click();
-            setMenu(false);
-        });
-        nav.addEventListener('click', (e) => { if (e.target.closest('.sidebar-item')) setMenu(false); });
-        // Light the dock button of the page on screen (the menu marks its own item active).
-        const syncDock = () => {
-            dock.querySelectorAll('.lrm-dock-btn[data-key]').forEach((b) => {
-                const item = itemFor(b.dataset.key);
-                b.hidden = !item;
-                b.classList.toggle('active', Boolean(item?.classList.contains('active')));
-            });
-            const onOther = nav.querySelector('.sidebar-item.active:not([data-view="chat"])') && !dock.querySelector('.lrm-dock-btn.active');
-            $('.lrm-dock-menu', dock).classList.toggle('active', Boolean(onOther));
-        };
-        new MutationObserver(syncDock).observe(nav, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
-        syncDock();
-        const more = dock;
+        window.lrmOpenChats = () => setChats(true);
+        chatsItem.onclick = () => setChats(chats.hidden);
+        $('.lrm-chats-close', chats).onclick = () => setChats(false);
+        $('.lrm-chats-new', chats).onclick = (e) => { setChats(false); if (typeof onNewChatButton === 'function') onNewChatButton(e); };
+        // Opening a chat, a page from the menu or a new chat closes the list.
+        panel.addEventListener('click', (e) => { if (e.target.closest('.session-item') && !e.target.closest('button')) setChats(false); });
+        nav.addEventListener('click', (e) => { if (e.target.closest('.sidebar-item')) setChats(false); });
+        plus.addEventListener('click', () => setChats(false));
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !chats.hidden) setChats(false); });
+        const more = nav;
 
         const account = document.createElement('div');
         account.className = 'lrm-account';
