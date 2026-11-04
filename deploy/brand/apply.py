@@ -365,4 +365,27 @@ patch("agent/tools/memory/memory_get.py",
       '        if path and _lrm_hidden(getattr(getattr(self, "model", None), "session_id", ""), path):\n'
       '            return ToolResult.fail("Chat notes are private to the owner, so they can\'t be opened from this chat.")\n'
       '        if not path:\n', root=app)
+# ---- Chat API failures say why (out of credit, key rejected, ...) instead of a bare
+# "failed", so the WhatsApp gateway can tell the owner (agent/lrm_errors.py).
+patch("api/openai_compat.py",
+      '        logger.exception("[OpenAI API] Chat completion failed")\n        raise OpenAIAPIError(\n'
+      '            500, "CowAgent failed to complete the request.", "internal_error"\n        ) from error',
+      '        logger.exception("[OpenAI API] Chat completion failed")\n'
+      '        from agent.lrm_errors import friendly as _lrm_friendly\n        raise OpenAIAPIError(\n'
+      '            500, _lrm_friendly(error), "internal_error"\n        ) from error')
+patch("api/openai_compat.py", '"CowAgent failed to complete the request."', '"LRMagent failed to complete the request."', count="all")
+patch("api/openai_compat.py", '"CowAgent timed out before producing a response."', '"LRMagent timed out before producing a response."')
+# ---- The owner's signed-in plans are the last fallback for the owner's own chats.
+patch("bridge/agent_bridge.py",
+      '            chain.append({"provider": provider, "model": model})\n        return {"chain": chain}\n',
+      '            chain.append({"provider": provider, "model": model})\n'
+      '        try:\n            from agent.lrm_plans import fallback_links as _lrm_plan_links\n'
+      '            chain += [link for link in _lrm_plan_links(self, chain)\n'
+      '                      if (link["provider"], link["model"]) not in seen]\n'
+      '        except Exception as e:\n            logger.debug(f"[AgentBridge] plans fallback unavailable: {e}")\n'
+      '        return {"chain": chain}\n', root=app)
+patch("bridge/agent_bridge.py",
+      '        if not isinstance(raw, dict) or not raw.get("enabled"):\n            return empty\n',
+      '        if not isinstance(raw, dict) or not raw.get("enabled"):\n'
+      '            raw = {"enabled": True, "chain": []}  # LRMagent: the plans below may still apply\n', root=app)
 print("LRM brand applied")

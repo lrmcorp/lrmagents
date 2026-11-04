@@ -361,7 +361,16 @@ class Account {
       clearInterval(typing);
       unreact();
       log.error({ agent: this.agentId, err: error.message }, 'agent call failed');
-      await this.send(sock, chat, ERROR_REPLY, msg);
+      const reason = error.reason || (error.name === 'TimeoutError' ? 'The agent took too long to answer and the request was stopped.' : '');
+      const own = isOwnChat(chat, [sock.user?.id, sock.user?.lid]);
+      // The owner sees why; contacts get the polite line and the owner is told (at most every 30 minutes).
+      await this.send(sock, chat, own && reason ? `⚠️ ${reason}` : ERROR_REPLY, msg);
+      if (!own && reason && sock.user?.id && Date.now() - (this.lastFailureNotice || 0) > 30 * 60_000) {
+        this.lastFailureNotice = Date.now();
+        const who = chat.endsWith('@g.us') ? 'a group chat' : `+${phoneOf(chat)}`;
+        await this.send(sock, `${bareJid(sock.user.id)}@s.whatsapp.net`,
+          `⚠️ LRMagent (${this.agentId}) couldn't answer ${who}: ${reason}`).catch(() => {});
+      }
     } finally {
       await sock.sendPresenceUpdate('paused', chat).catch(() => {});
     }

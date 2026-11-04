@@ -28,7 +28,11 @@ export async function ask({ agentId, conversationId, text }) {
     signal: AbortSignal.timeout(ANSWER_TIMEOUT_MS),
   });
   const body = await json(response);
-  if (!response.ok) throw new Error(`agent HTTP ${response.status}: ${JSON.stringify(body).slice(0, 300)}`);
+  if (!response.ok) {
+    // LRMagent explains failures in plain words (out of credit, key rejected, ...): keep that for the owner.
+    const reason = typeof body?.error?.message === 'string' ? body.error.message.slice(0, 600) : '';
+    throw Object.assign(new Error(`agent HTTP ${response.status}: ${JSON.stringify(body).slice(0, 300)}`), { reason });
+  }
   return String(body?.choices?.[0]?.message?.content ?? '').trim() || '(No reply.)';
 }
 

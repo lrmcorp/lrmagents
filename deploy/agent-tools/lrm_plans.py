@@ -74,3 +74,40 @@ def headers_for(url):
     if url and str(url).startswith(API_BASE):
         return {"X-LRM-Session": _session.get()}
     return {}
+
+
+# ---- plans as the last fallback ------------------------------------------------------
+# When the main model and its configured fallbacks fail (out of credit, outage), the
+# owner's own chats continue on a signed-in plan. Other chats never use the plans.
+FALLBACK = os.environ.get("LRMAGENT_PLANS_FALLBACK", "on").lower() not in ("0", "off", "false", "no")
+_owners = {}
+
+
+def _is_owner(session_id):
+    session_id = str(session_id or "")
+    if not session_id.startswith("openai:"):
+        return True
+    hit = _owners.get(session_id)
+    if hit and time.time() - hit[1] < 600:
+        return hit[0]
+    try:
+        from agent.lrm_owner import owner_session
+        owner = bool(owner_session(session_id)[0])
+    except Exception:
+        owner = False
+    _owners[session_id] = (owner, time.time())
+    return owner
+
+
+def fallback_links(model_wrapper, chain):
+    """Plan links to add at the end of ``chain`` for this run (may be empty)."""
+    if not FALLBACK:
+        return []
+    found, _ = models()
+    if not found:
+        return []
+    session = getattr(model_wrapper, "session_id", "") or _session.get()
+    if not _is_owner(session):
+        return []
+    have = {(link.get("provider"), link.get("model")) for link in chain}
+    return [{"provider": BOT_TYPE, "model": m} for m in found if (BOT_TYPE, m) not in have]
