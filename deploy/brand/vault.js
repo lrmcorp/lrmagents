@@ -1078,6 +1078,8 @@ function emptyState() {
       <button class="link-btn" data-act="switcher">Go to a note <kbd>${isMac ? '⌘' : 'Ctrl'} O</kbd></button>
       <button class="link-btn" data-act="daily">Open today's daily note</button>
       <button class="link-btn" data-act="open-graph">Open graph view <kbd>${isMac ? '⌘' : 'Ctrl'} G</kbd></button>
+      <button class="link-btn" data-act="topo">Topologies of Thoughts</button>
+      ${S.lc.has('knowledge/home.md') ? '<button class="link-btn" data-act="home">Open Home</button>' : '<button class="link-btn" data-act="setup">Set up my vault (numbered folders)</button>'}
     </div>
     ${recent.length ? `<div style="margin-top:22px;text-align:left"><div class="side-head">Recently changed</div>${recent.map((n) => `<a class="side-item" data-open="${esc(n.path)}">${esc(n.path === ROOT_FILE ? 'MEMORY' : stem(n.path))} <small>· ${esc(dirname(n.path) || 'vault')} · ${ago(n.mtime)}</small></a>`).join('')}</div>` : ''}</div>`;
 }
@@ -1328,6 +1330,9 @@ view.addEventListener('click', async (e) => {
     if (act === 'switcher') return quickSwitcher();
     if (act === 'daily') return dailyNote();
     if (act === 'open-graph') return openGraph();
+    if (act === 'topo') return openTopology();
+    if (act === 'setup') return setupVault();
+    if (act === 'home') return openPath('knowledge/Home.md');
   }
   const folder = e.target.closest('[data-folder]');
   if (folder) { reveal(folder.dataset.folder); return; }
@@ -1667,6 +1672,46 @@ function renderDockGraph(el, tab) {
   }));
   requestAnimationFrame(() => drawGraph({ center }, el.querySelector('.dock-graph-wrap'),
     { settings: { ...S.graph, depth: 2, filter: '', orphans: true }, keep: (sim) => { dock.sim = sim; }, sameTab: true }));
+}
+
+// "Set up my vault": the numbered folder structure (Johnny.Decimal-style, as in the
+// reference setup) plus a Home note. Only adds what is missing; nothing is moved.
+const VAULT_FOLDERS = ['00 Inbox', '10 Wiki', '12 Notes', '14 References', '14 References/Articles', '14 References/Books',
+  '14 References/Courses', '14 References/Movies and TV Shows', '14 References/Websites', '15 Courses', '20 Projects', '30 Areas', '90 Archive'];
+const HOME_NOTE = `---
+tags: [home]
+---
+Start here. New ideas go to [[00 Inbox]] first; sort them when you have a moment.
+
+## Folders
+- **00 Inbox**: quick captures, WhatsApp notes, anything not sorted yet
+- **10 Wiki**: lasting notes about a topic, one idea per note, linked with [[wikilinks]]
+- **12 Notes**: working notes, meetings, drafts
+- **14 References**: what you read and watch (Articles, Books, Courses, Movies and TV Shows, Websites)
+- **15 Courses**: what you are learning
+- **20 Projects** / **30 Areas**: work with a deadline / ongoing responsibilities
+- **90 Archive**: finished things
+
+## Shortcuts
+- Today's daily note: the calendar button at the top
+- See how everything connects: the graph on the right, or Topologies of Thoughts (◎)
+- Every agent can read this vault; ask your agent to "add a note to my inbox"
+`;
+async function setupVault() {
+  const missing = VAULT_FOLDERS.filter((f) => !S.dirs.has(`knowledge/${f}`));
+  const homeMissing = !S.lc.has('knowledge/home.md');
+  if (!missing.length && !homeMissing) { toast('Your vault already has this structure.'); return openPath('knowledge/Home.md'); }
+  const ok = await ask({ title: 'Set up my vault', ok: 'Set up',
+    text: `Adds ${missing.length} folder${missing.length === 1 ? '' : 's'}${homeMissing ? ' and a Home note' : ''} to your vault: ${missing.map((f) => esc(f)).join(', ')}. Nothing you have is moved or changed.` });
+  if (!ok) return;
+  try {
+    for (const f of missing) await post('create', { path: `knowledge/${f}`, kind: 'folder' }).catch(() => {});
+    if (homeMissing) await post('create', { path: 'knowledge/Home.md', content: HOME_NOTE }).catch(() => {});
+    await loadIndex({ quiet: true });
+    S.expanded.add('knowledge'); saveState(); renderTree();
+    openPath('knowledge/Home.md');
+    toast('Your vault is set up');
+  } catch (e) { fail(e); }
 }
 
 // Topologies of Thoughts: the full-screen view in topology.js (mouse, touch and hand gestures).
@@ -2555,6 +2600,8 @@ const COMMANDS = [
   { name: "Open today's daily note", fn: () => dailyNote() },
   { name: 'Open graph view', key: 'G', fn: () => openGraph() },
   { name: 'Topologies of Thoughts (full-screen graph, hand gestures)', fn: () => openTopology() },
+  { name: 'Set up my vault (numbered folders and a Home note)', fn: () => setupVault() },
+  { name: 'Open Home', fn: () => (S.lc.has('knowledge/home.md') ? openPath('knowledge/Home.md') : setupVault()) },
   { name: 'Show the graph beside notes (right sidebar)', fn: () => { setPane('right', true); S.rightTab = 'graph'; saveState(); renderRight(); } },
   { name: 'Open local graph of this note', fn: () => activeTab()?.kind === 'note' && openGraph(activeTab().path) },
   { name: 'Toggle reading / editing view', key: 'E', fn: () => setMode() },

@@ -43,6 +43,7 @@
   .body.no-right { grid-template-columns: var(--left-w, 270px) 1fr 0; }
   .body.no-left.no-right { grid-template-columns: 0 1fr 0; }
   .body.dock-graph { --right-w: clamp(320px, 34vw, 620px); }
+  #btn-topo { width: auto; padding: 0 10px; gap: 6px; display: inline-flex; align-items: center; white-space: nowrap; }
   .dock-graph-head { display: flex; align-items: center; gap: 6px; padding: 6px 4px 8px; }
   .dock-graph-head .spacer { flex: 1; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
@@ -350,7 +351,7 @@
     <button class="icon-btn" id="btn-switcher" title="Quick switcher (Ctrl/⌘ O)"><i class="fa-solid fa-magnifying-glass"></i></button>
     <button class="icon-btn" id="btn-daily" title="Open today's daily note"><i class="fa-regular fa-calendar"></i></button>
     <button class="icon-btn" id="btn-graph" title="Graph view (Ctrl/⌘ G)"><i class="fa-solid fa-diagram-project"></i></button>
-    <button class="icon-btn" id="btn-topo" title="Topologies of Thoughts"><i class="fa-solid fa-circle-nodes"></i></button>
+    <button class="icon-btn" id="btn-topo" title="Topologies of Thoughts: full-screen graph with hand gestures"><i class="fa-solid fa-circle-nodes"></i><span class="hide-sm">Topologies</span></button>
     <button class="icon-btn" id="btn-git" title="Sync with GitHub / Obsidian"><i class="fa-brands fa-github"></i><span class="git-dot" id="git-dot" hidden></span></button>
     <button class="icon-btn" id="btn-palette" title="Command palette (Ctrl/⌘ P)"><i class="fa-solid fa-terminal"></i></button>
     <button class="icon-btn" id="toggle-right" title="Toggle backlinks and outline" aria-pressed="true"><i class="fa-solid fa-table-columns fa-flip-horizontal"></i></button>
