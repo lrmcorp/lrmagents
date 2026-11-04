@@ -5,6 +5,7 @@
 cd ~/cowagent || exit 1
 dc() { sudo -n docker compose -f deploy/compose.yaml "$@" </dev/null; }
 echo "== revision"; cat .deploy-revision 2>/dev/null
+echo "== machine"; nproc; free -m; df -h / | tail -1; sudo -n docker stats --no-stream --format "{{.Name}} {{.MemUsage}}" 2>/dev/null
 echo "== containers"; dc ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
 echo "== gateway health"; dc exec -T whatsapp-gateway node -e "fetch('http://127.0.0.1:8080/whatsapp/health').then(r=>r.text()).then(console.log)" 2>&1
 echo "== gateway log"; dc logs --no-color --tail 400 whatsapp-gateway 2>&1 | grep -iE 'error|fail|warn|connect|close|logged|agent call|restart' | tail -80
