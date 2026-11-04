@@ -121,6 +121,8 @@ def propose(agent_id, session_id, title, content, summary, folder="", path="", s
         for old in items:
             if old["path"] == vpath and old["status"] in ("review", "owner"):
                 old["status"] = "replaced"
+        if item["status"] == "owner":
+            item["code"] = _new_code(items)
         items.append(item)
         _save(items)
     if item["status"] == "review":
@@ -128,6 +130,29 @@ def propose(agent_id, session_id, title, content, summary, folder="", path="", s
     else:
         threading.Thread(target=_notify_owner, args=(item,), daemon=True).start()
     return item
+
+
+def _new_code(items):
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    taken = {i.get("code") for i in items if i["status"] == "owner"}
+    try:
+        from agent import lrm_activity
+        taken |= {r["code"] for r in lrm_activity.pending()}
+    except Exception:
+        pass
+    while True:
+        code = "".join(secrets.choice(alphabet) for _ in range(4))
+        if code not in taken:
+            return code
+
+
+def decide_by_code(code, decision):
+    """A WhatsApp reply (YES/NO CODE) to an update waiting for the owner; None when no such code."""
+    code = str(code or "").strip().upper()
+    item = next((i for i in _load() if i["status"] == "owner" and i.get("code") == code), None)
+    if item is None:
+        return None
+    return owner_decide(item["id"], "approve" if decision in ("approve", "approved", "yes", True) else "reject")
 
 
 def review(item_id, by_agent, decision, content=None, note=""):
@@ -144,6 +169,7 @@ def review(item_id, by_agent, decision, content=None, note=""):
             if content and str(content).strip():
                 item["content"] = str(content).strip()[:MAX_CONTENT]
             item["status"] = "owner"
+            item["code"] = _new_code(items)
         item["review_note"] = str(note or "")[:1000]
         item["updated"] = time.time()
         item["history"].append(f"{decision} by {agent_name(by_agent)}" + (f": {note}" if note else ""))
@@ -244,11 +270,18 @@ def _notify_owner(item):
     token, _ = _token_port()
     url = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/")
     domain = (os.environ.get("WEB_PUBLIC_URL") or "").rstrip("/")
-    text = (f"📚 Vault update waiting for you: *{item['title']}* ({item['path']})\n"
-            f"From {agent_name(item['agent'])}" + (f", checked by {agent_name(reviewer_id())}" if item["agent"] != reviewer_id() else "") + ".\n"
-            + (f"{item['summary']}\n" if item["summary"] else "")
-            + (f"Note: {item['review_note']}\n" if item.get("review_note") else "")
-            + f"Approve or change it in the Vault → Updates{f' ({domain})' if domain else ''}.")
+    lines = [l.strip() for l in item["content"].splitlines() if l.strip() and not l.startswith("---")]
+    preview = [l for l in lines if not l.startswith("#") and (l.startswith(("-", "*")) or len(l) < 140)][:8]
+    checked = f", checked by {agent_name(reviewer_id())}" if item["agent"] != reviewer_id() else ""
+    text = "\n".join(
+        [f"*Vault update · {item['title']}*",
+         f"- {'Updates' if current_text(item['path']) is not None else 'New'}: {item['path'].replace('knowledge/', '', 1)}",
+         f"- From {agent_name(item['agent'])}{checked}"]
+        + ([f"- What: {item['summary']}"] if item["summary"] else [])
+        + ([f"- Note: {item['review_note']}"] if item.get("review_note") else [])
+        + ["", *[(l if l.startswith(("-", "*")) else f"> {l}") for l in preview]]
+        + ["", f"Reply *YES {item.get('code', '')}* to save or *NO {item.get('code', '')}* to reject."
+           + (f" Full note: {domain} → Vault → Updates." if domain else " Full note: Vault → Updates.")])
     try:
         req = urllib.request.Request(f"{url}/whatsapp/internal/notify-owner", method="POST",
                                      data=json.dumps({"agentId": reviewer_id(), "text": text}).encode(),

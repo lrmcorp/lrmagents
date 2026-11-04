@@ -50,6 +50,17 @@ class LrmActivityHandler:
             via = "whatsapp" if _internal_caller() else "console"
             done = act.decide(body.get("code"), body.get("decision"), via)
             if not done:
+                # A vault update waiting for the owner answers to the same YES/NO CODE replies.
+                from agent import lrm_vault_flow as flow
+                try:
+                    item = flow.decide_by_code(body.get("code"), body.get("decision"))
+                except ValueError:
+                    item = None
+                if item:
+                    saved = item["status"] == "applied"
+                    return json.dumps({"status": "success", "vault": item["id"], "message":
+                                       f"✅ Saved to the vault: {item['path'].replace('knowledge/', '', 1)}" if saved
+                                       else f"🚫 Not saved: {item['title']}"}, ensure_ascii=False)
                 return json.dumps({"status": "error", "message": "No pending approval with that code (it may have expired)."})
             return json.dumps({"status": "success", "approval": done}, ensure_ascii=False)
         if body.get("op") == "mode" and not _internal_caller():

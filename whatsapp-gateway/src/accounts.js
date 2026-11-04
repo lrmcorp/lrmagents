@@ -291,7 +291,7 @@ class Account {
         .then((r) => {
           if (r?.status !== 'success') return this.enqueue(sock, Object.assign(msg, { approvalChecked: true }));
           this.seen.add(msg.key.id);
-          return this.send(sock, chat, reply.decision === 'approve' ? `✅ Approved ${reply.code}. It will go ahead now.` : `🚫 Refused ${reply.code}. It will not do that.`);
+          return this.send(sock, chat, r.message || (reply.decision === 'approve' ? `✅ Approved ${reply.code}. It will go ahead now.` : `🚫 Refused ${reply.code}. It will not do that.`));
         })
         .catch((e) => { log.error({ err: e.message }, 'approval reply failed'); this.enqueue(sock, Object.assign(msg, { approvalChecked: true })); });
       return;
