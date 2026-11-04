@@ -8,6 +8,7 @@ echo "== revision"; cat .deploy-revision 2>/dev/null
 echo "== machine"; nproc; free -m; df -h / | tail -1; sudo -n docker stats --no-stream --format "{{.Name}} {{.MemUsage}}" 2>/dev/null
 echo "== containers"; dc ps --format 'table {{.Service}}\t{{.State}}\t{{.Status}}'
 echo "== gateway health"; dc exec -T whatsapp-gateway node -e "fetch('http://127.0.0.1:8080/whatsapp/health').then(r=>r.text()).then(console.log)" 2>&1
+echo "== voice"; dc exec -T cowagent python -c "import urllib.request;print(urllib.request.urlopen('http://voice:8095/health',timeout=10).read().decode())" 2>&1 | tail -1; dc logs --no-color --tail 30 voice 2>&1 | tail -8
 echo "== gateway log"; dc logs --no-color --tail 400 whatsapp-gateway 2>&1 | grep -iE 'error|fail|warn|connect|close|logged|agent call|restart' | tail -80
 echo "== agent errors"; dc logs --no-color --tail 4000 cowagent 2>&1 | grep -iE 'error|exception|traceback|fallback|lrmplans|insufficient|402|401|OpenAI API|ChatMemory|failed' | tail -120
 echo "== last agent tracebacks"; dc logs --no-color --tail 4000 cowagent 2>&1 | grep -A25 'Traceback' | tail -120
