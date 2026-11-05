@@ -216,9 +216,9 @@
       r.lang = BCP[lang] || 'en-US'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
       const live = { rec: r, lang, final: '', interim: '', ok: true, ended: false, done: null };
       r.onresult = (e) => {
-        let fin = ''; let mid = '';
-        for (const res of e.results) { if (res.isFinal) fin += res[0].transcript + ' '; else mid += res[0].transcript; }
-        live.final = fin; live.interim = mid;
+        let fin = ''; let mid = ''; const conf = [];
+        for (const res of e.results) { if (res.isFinal) { fin += res[0].transcript + ' '; conf.push(res[0].confidence || 0); } else mid += res[0].transcript; }
+        live.final = fin; live.interim = mid; live.conf = conf.length ? Math.min(...conf) : 0;
         const said = (fin + mid).trim(); if (said) $('#you').textContent = `“${said}”`;
       };
       r.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') live.ok = false; };
@@ -233,7 +233,7 @@
     if (!live) return Promise.resolve(null);
     return new Promise((resolve) => {
       let doneOnce = false;
-      const finish = () => { if (doneOnce) return; doneOnce = true; const t = (live.final + ' ' + live.interim).replace(/\s+/g, ' ').trim(); resolve(live.ok && t ? { text: t, lang: live.lang } : null); };
+      const finish = () => { if (doneOnce) return; doneOnce = true; const t = (live.final + ' ' + live.interim).replace(/\s+/g, ' ').trim(); resolve(live.ok && t ? { text: t, lang: live.lang, conf: live.conf || 0 } : null); };
       if (live.ended) return finish();
       live.done = finish;
       try { live.rec.stop(); } catch { finish(); }
@@ -283,7 +283,11 @@
     S.busy = true; setState('thinking', 'understanding');
     try {
       const live = await liveStop();
-      if (live) { await ask(live.text, { lang: live.lang }); return; }
+      // The browser hears one language at a time, so Bahasa mixed with English (or Mandarin)
+      // comes out garbled: those go to faster-whisper on the server, which follows mixed
+      // speech. A confident English result is used at once.
+      if (live && live.lang === 'en' && (live.conf === 0 || live.conf >= 0.6)) { await ask(live.text, { lang: 'en' }); return; }
+      if (live?.text) $('#you').textContent = `“${live.text}…”`;
       const lang = $('#lang').value;
       const r = await fetch('/api/lrm/voice?op=stt', { method: 'POST', body: blob, headers: lang ? { 'X-Lang': lang } : {}, credentials: 'same-origin' });
       const data = await readJson(r);
