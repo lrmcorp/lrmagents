@@ -453,6 +453,26 @@ patch("api/sessions.py",
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
 
+# ---- Browser: logins survive the browser closing itself (agent/lrm_browser_keep.py).
+# Session cookies (no expiry) are lost when Chromium closes after its idle timeout, which
+# signed the owner out of their apps; they are saved on close and put back on launch.
+patch("agent/tools/browser/browser_service.py",
+      '        logger.info("[Browser] Browser ready")\n',
+      '        logger.info("[Browser] Browser ready")\n'
+      '        try:\n'
+      '            from agent.lrm_browser_keep import restore_cookies as _lrm_restore\n'
+      '            _lrm_restore(self._context)\n'
+      '        except Exception as _e:\n'
+      '            logger.debug(f"[Browser] session cookies not restored: {_e}")\n', root=app)
+patch("agent/tools/browser/browser_service.py",
+      '        would never return.\n        """\n        self._cancel_idle_timer()\n',
+      '        would never return.\n        """\n        self._cancel_idle_timer()\n'
+      '        try:\n'
+      '            from agent.lrm_browser_keep import save_cookies as _lrm_save\n'
+      '            _lrm_save(self._context)\n'
+      '        except Exception as _e:\n'
+      '            logger.debug(f"[Browser] cookies not saved: {_e}")\n', root=app)
+
 # ---- Tasks: LRMagent's WhatsApp numbers as delivery channels in the console's task form
 # (upstream lists only its own IM integrations, so the form had no channel at all).
 # channel/lrm_whatsapp_relay.py supplies the instances ("lrm-wa:<agent>") and recipients

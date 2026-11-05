@@ -4,6 +4,8 @@ GET  ?op=state                       -> open?, url, title, viewport, who has con
 GET  ?op=shot                        -> the current page as JPEG (204 when no browser is open)
 POST {op: "open", url}               -> open the browser on a page (e.g. to sign in to a site)
 POST {op: "control", take: true}     -> the owner drives; agent browser calls wait until handed back
+GET  ?op=keep                        -> {sites}: the apps kept signed in (agent/lrm_browser_keep.py)
+POST {op: "keep", sites: [{name, url}]} / {op: "keep-check"}
 POST {op: "input", kind, ...}        -> click {x, y} | type {text} | key {key} | scroll {dy} | navigate {url} | back | forward | reload
 Everything runs on the browser's own worker thread, so it never races an agent action.
 Installed as channel/web/api/lrm_browser.py by the LRMagent image.
@@ -46,6 +48,10 @@ class LrmBrowserHandler:
         _require_auth()
         from agent import lrm_activity as act
         op = web.input(op="state").op
+        if op == "keep":
+            from agent import lrm_browser_keep as keep
+            web.header("Content-Type", "application/json; charset=utf-8")
+            return json.dumps({"status": "success", "sites": keep.sites(), "every_minutes": keep.CHECK_EVERY // 60}, ensure_ascii=False)
         service = _service()
         if op == "shot":
             data = None
@@ -81,6 +87,14 @@ class LrmBrowserHandler:
             return json.dumps({"status": "error", "message": "invalid JSON"})
         op = body.get("op")
         try:
+            if op == "keep":
+                from agent import lrm_browser_keep as keep
+                return json.dumps({"status": "success", "sites": keep.set_sites(body.get("sites") or [])}, ensure_ascii=False)
+            if op == "keep-check":
+                import threading
+                from agent import lrm_browser_keep as keep
+                threading.Thread(target=keep.check_all, daemon=True).start()
+                return json.dumps({"status": "success"})
             if op == "control":
                 act.set_browser_control(bool(body.get("take")))
                 return json.dumps({"status": "success", "control": act.browser_control()})
@@ -128,3 +142,12 @@ class LrmBrowserHandler:
             return json.dumps({"status": "error", "message": "unknown op"})
         except Exception as e:
             return json.dumps({"status": "error", "message": str(e)[:300]})
+
+
+# Keep the owner's apps signed in: checks every 20 minutes (agent/lrm_browser_keep.py).
+try:
+    from agent import lrm_browser_keep as _keep
+    _keep.start_background()
+except Exception as _e:  # never stop the console from starting
+    from common.log import logger as _log
+    _log.warning(f"[BrowserKeep] not started: {_e}")

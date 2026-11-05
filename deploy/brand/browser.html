@@ -37,6 +37,14 @@
   .hint { font-size: 12px; color: var(--text-3); padding: 0 14px 12px; text-align: center; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--canvas); padding: 8px 14px; border-radius: 10px; font-size: 13px; }
   .toast.err { background: var(--bad); color: #fff; }
+  .keep { position: fixed; inset: 0; background: rgb(0 0 0 / .3); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 14px; z-index: 5; }
+  .keep .box { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; width: min(620px, 100%); max-height: 86vh; overflow: auto; }
+  .keep h3 { margin: 0 0 4px; font-size: 16px; }
+  .keep .row { display: flex; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+  .keep .row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .keep form { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; } .keep form input { flex: 1 1 160px; }
+  .st { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
+  .st.signed_in { background: var(--ok-bg); color: var(--ok); } .st.signed_out, .st.error { background: var(--warn-bg); color: var(--warn); } .st.unchecked { background: var(--muted-bg); color: var(--text-3); }
 </style>
 </head>
 <body>
@@ -45,6 +53,7 @@
     <button class="icon" data-k="forward" title="Forward"><i class="fas fa-arrow-right"></i></button>
     <button class="icon" data-k="reload" title="Reload"><i class="fas fa-rotate-right"></i></button>
     <form id="go"><input id="url" placeholder="Open a site, e.g. tokopedia.com or mail.google.com" spellcheck="false" autocomplete="off"><button class="primary" type="submit">Go</button></form>
+    <button id="keep-open" title="Apps the agents stay signed in to"><i class="fas fa-key"></i> Keep signed in</button>
     <span id="who"></span>
     <button id="control"></button>
   </div>
@@ -132,6 +141,33 @@ $('#go').addEventListener('submit', async (e) => {
 $('#control').addEventListener('click', async () => {
   try { const d = await post({ op: 'control', take: state.control?.who !== 'owner' }); state.control = d.control; renderState(); toast(state.control.who === 'owner' ? 'You are driving; agents wait' : 'Handed back to the agents'); } catch (e) { toast(e.message, true); }
 });
+// ---- keep signed in ---------------------------------------------------------------
+const ST = { signed_in: 'Signed in', signed_out: 'Signed out', error: 'Could not check', unchecked: 'Not checked yet' };
+async function keepPanel() {
+  const get = async () => (await (await fetch('/api/lrm/browser?op=keep', { credentials: 'same-origin' })).json());
+  let d = await get(); let list = d.sites || [];
+  const box = document.createElement('div'); box.className = 'keep';
+  const draw = () => {
+    box.innerHTML = `<div class="box"><h3>Keep signed in</h3>
+      <p style="color:var(--text-3);margin:0 0 10px;font-size:13px">Apps the agents read data from. Every ${d.every_minutes || 20} minutes each one is opened in the background, which keeps the session active, and checked. If one signs you out, Lorium tells you on WhatsApp; sign in again here (tick “remember me” when the site offers it).</p>
+      ${list.map((x, i) => `<div class="row"><b title="${x.url.replace(/"/g, '&quot;')}">${x.name.replace(/</g, '&lt;')}</b><span class="st ${x.status}">${ST[x.status] || x.status}</span>
+        <button data-sign="${i}">Sign in</button><button data-del="${i}" title="Remove"><i class="fas fa-xmark"></i></button></div>`).join('') || '<p style="color:var(--text-3)">No apps yet.</p>'}
+      <form id="keep-add"><input name="name" placeholder="Name, e.g. Shopee Seller"><input name="url" placeholder="Address, e.g. seller.shopee.co.id" value="${state.open && state.url ? state.url.replace(/"/g, '&quot;') : ''}"><button class="primary">Add</button></form>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end"><button id="keep-check">Check now</button><button id="keep-close">Close</button></div></div>`;
+  };
+  const save = async () => { const r = await post({ op: 'keep', sites: list }); list = r.sites; draw(); };
+  draw(); document.body.appendChild(box);
+  box.addEventListener('submit', async (e) => { e.preventDefault(); const f = new FormData(e.target); if (!String(f.get('url')).trim()) return; list.push({ name: f.get('name'), url: f.get('url') }); try { await save(); } catch (err) { toast(err.message, true); } });
+  box.addEventListener('click', async (e) => {
+    const b = e.target.closest('button'); if (!b) { if (e.target === box) box.remove(); return; }
+    if (b.id === 'keep-close') return box.remove();
+    if (b.id === 'keep-check') { await post({ op: 'keep-check' }); toast('Checking in the background; this takes a minute.'); setTimeout(async () => { d = await get(); list = d.sites; draw(); }, 45000); return; }
+    if (b.dataset.del) { list.splice(Number(b.dataset.del), 1); try { await save(); } catch (err) { toast(err.message, true); } return; }
+    if (b.dataset.sign) { const x = list[Number(b.dataset.sign)]; box.remove(); $('#url').value = x.url; $('#go').requestSubmit(); }
+  });
+}
+$('#keep-open').addEventListener('click', () => keepPanel().catch((e) => toast(e.message, true)));
+
 refreshState(); frame();
 setInterval(() => { if (document.visibilityState === 'visible') refreshState(); }, 2000);
 </script>

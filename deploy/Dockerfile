@@ -18,6 +18,7 @@ COPY deploy/agent-tools/lrm_usage.py /app/agent/lrm_usage.py
 COPY deploy/agent-tools/lrm_usage_api.py /app/channel/web/api/lrm_usage.py
 # Errors in chat explained in plain words (hooked in by apply.py).
 COPY deploy/agent-tools/lrm_errors.py /app/agent/lrm_errors.py
+COPY deploy/agent-tools/lrm_browser_keep.py /app/agent/lrm_browser_keep.py
 # Approvals and activity log: recorder/gate, API and page (page copied with the brand files).
 COPY deploy/agent-tools/lrm_activity.py /app/agent/lrm_activity.py
 COPY deploy/agent-tools/lrm_activity_api.py /app/channel/web/api/lrm_activity.py
