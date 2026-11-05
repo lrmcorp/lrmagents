@@ -12,7 +12,7 @@ const settings = (raw) => normalizeSettings(raw);
 
 test('settings fall back to safe defaults', () => {
   assert.deepEqual(normalizeSettings({ dmPolicy: 'weird', allowFrom: ['+62 812-0000-0000', 'x'] }), {
-    dmPolicy: 'pairing', allowFrom: ['6281200000000'], ownerNumbers: [], groupPolicy: 'off', batchMs: 2500, voiceReplies: false,
+    mode: 'reply', dmPolicy: 'pairing', allowFrom: ['6281200000000'], ownerNumbers: [], groupPolicy: 'off', batchMs: 2500, voiceReplies: false,
   });
 });
 

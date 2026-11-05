@@ -133,6 +133,7 @@ function card(agent) {
     <div class="card-head">
       <h2>${esc(agent.name)}</h2><span class="id">${esc(agent.id)}</span>
       <span class="badge ${esc(wa.status)}">${esc(STATUS[wa.status] || wa.status)}</span>
+      ${wa.settings.mode === 'monitor' ? '<span class="badge" title="Records chats for reports; never sends anything">Monitor only</span>' : ''}
       <div class="actions">
         ${linked ? `<button class="danger" data-unlink>Unlink</button>` : `<button class="primary" data-link ${busy ? 'disabled' : ''}>${busy ? 'Waiting…' : 'Link WhatsApp'}</button>`}
       </div>
@@ -147,6 +148,8 @@ function card(agent) {
     <details>
       <summary>Who can talk to this agent, and how it answers</summary>
       <form class="form" data-settings>
+        <div class="full"><label>Mode</label><select name="mode">${options({ reply: 'Answer chats (agent replies)', monitor: 'Monitor only: read and report, never send anything' }, wa.settings.mode || 'reply')}</select>
+          <div class="hint">Monitor only is for a branch's own WhatsApp: staff keep using the phone; the agent sees customers' messages and staff replies, sends nothing (no replies, read ticks or typing), and reports to you (new numbers, complaints, reply times, chat quality).</div></div>
         <div><label>Direct messages</label><select name="dmPolicy">${options(DM, wa.settings.dmPolicy)}</select></div>
         <div><label>Groups</label><select name="groupPolicy">${options(GROUP, wa.settings.groupPolicy)}</select></div>
         <div><label>Quick messages in a row</label><select name="batchMs">${options({ 0: 'Answer each one', 2500: 'Wait 2 seconds, answer together', 5000: 'Wait 5 seconds, answer together' }, String(wa.settings.batchMs ?? 2500))}</select></div>
@@ -220,7 +223,7 @@ document.addEventListener('submit', async (event) => {
   const data = new FormData(form);
   try {
     await api(`agents/${agentId}/settings`, {
-      dmPolicy: data.get('dmPolicy'), groupPolicy: data.get('groupPolicy'),
+      mode: data.get('mode'), dmPolicy: data.get('dmPolicy'), groupPolicy: data.get('groupPolicy'),
       batchMs: Number(data.get('batchMs')), voiceReplies: data.get('voiceReplies') === 'true',
       allowFrom: String(data.get('allowFrom')).split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean),
       ownerNumbers: String(data.get('ownerNumbers')).split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean),

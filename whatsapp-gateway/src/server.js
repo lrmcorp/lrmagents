@@ -186,6 +186,18 @@ async function route(req, res) {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
     return send(res, 200, { accounts: accounts.internalStatus(), designated: designated.contacts, groups: designated.groups });
   }
+  // A branch number's monitor report, for its agent's chat_monitor tool.
+  if (url.pathname === '/whatsapp/internal/monitor') {
+    if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    const from = String(url.searchParams.get('from') || ''); const to = String(url.searchParams.get('to') || from);
+    if (!day.test(from) || !day.test(to)) return send(res, 400, { error: 'from and to are YYYY-MM-DD' });
+    try {
+      return send(res, 200, await accounts.monitorReport(String(url.searchParams.get('agent') || ''), from, to));
+    } catch (error) {
+      return send(res, error.status || 500, { error: error.message });
+    }
+  }
   // For the teammates tool: only the owner's own chat may use the paid plans.
   if (url.pathname === '/whatsapp/internal/owner') {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });

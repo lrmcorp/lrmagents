@@ -15,6 +15,7 @@ import makeWASocket, {
 } from 'baileys';
 import { ask, decideApproval, speak } from './cowagent.js';
 import { notePrompt, relayPrompt } from './designated.js';
+import { MonitorLog } from './monitor.js';
 import crypto from 'node:crypto';
 import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
@@ -101,6 +102,27 @@ class Account {
     this.qrTimer = null;
     this.retryTimer = null;
     this.knownChats = new Set(); // chats that wrote to this agent: the only ones it may message first
+    this.monitor = new MonitorLog(this.dir);
+  }
+
+  get monitoring() { return this.settings.mode === 'monitor'; }
+
+  // Monitor-only: record a chat message (customer or staff on the branch phone), send nothing.
+  async observe(msg) {
+    const chat = msg.key?.remoteJid || '';
+    if (!chat || /@(g\.us|broadcast|newsletter)$/.test(chat) || chat === 'status@broadcast' || !msg.message) return;
+    const kind = mediaKind(msg.message);
+    let text = messageText(msg.message);
+    if (kind) text = `[${{ image: 'photo', audio: 'voice note', document: 'document', video: 'video', sticker: 'sticker' }[kind] || kind}]${text ? ` ${text}` : ''}`;
+    if (!text) return;
+    const fromMe = Boolean(msg.key.fromMe);
+    if (chat.endsWith('@lid') && !fromMe) {
+      const p = senderPhone(msg.key);
+      if (p) this.lidPhone.set(chat, p);
+    }
+    const phone = phoneOf(chat) || (fromMe ? '' : senderPhone(msg.key)) || this.lidPhone.get(chat) || '';
+    const ts = Number(msg.messageTimestamp || 0) * 1000 || Date.now();
+    await this.monitor.record({ ts, chat, phone, name: fromMe ? '' : String(msg.pushName || '').slice(0, 80), fromMe, text: text.slice(0, 2000) });
   }
 
   async loadKnownChats() {
@@ -174,10 +196,29 @@ class Account {
     this.sock = sock;
     sock.ev.on('creds.update', saveCreds);
     sock.ev.on('connection.update', (update) => this.onConnection(sock, update));
+    // A monitor-only number never sends: messages, read receipts and "typing" are refused
+    // right at the connection, whatever asks for them.
+    for (const name of ['sendMessage', 'readMessages', 'sendPresenceUpdate', 'sendReceipt', 'sendReceipts']) {
+      const raw = typeof sock[name] === 'function' ? sock[name].bind(sock) : null;
+      if (!raw) continue;
+      sock[name] = (...args) => {
+        if (!this.monitoring) return raw(...args);
+        if (name === 'sendMessage') return Promise.reject(Object.assign(new Error('this number is monitor-only: it never sends'), { status: 403 }));
+        return Promise.resolve();
+      };
+    }
     sock.ev.on('messages.upsert', ({ messages, type }) => {
+      if (this.monitoring) {
+        // the customers' messages and the staff's replies from the branch phone
+        if (type === 'notify' || type === 'append') for (const msg of messages) this.observe(msg).catch((e) => log.warn({ err: e.message }, 'monitor record failed'));
+        return;
+      }
       if (type !== 'notify') return;
       for (const msg of messages) this.enqueue(sock, msg);
     });
+    for (const event of ['contacts.upsert', 'contacts.update']) {
+      sock.ev.on(event, (list) => { if (this.monitoring) this.monitor.contacts(list).catch(() => {}); });
+    }
   }
 
   async onConnection(sock, { connection, lastDisconnect, qr }) {
@@ -417,6 +458,7 @@ class Account {
 
   // The answer as a voice note too. Best effort: without text-to-speech the text reply stands alone.
   async sendVoice(sock, chat, text) {
+    if (this.monitoring) return;
     try {
       const audio = await speak(stripMarkdown(text).slice(0, 1500));
       if (!audio) return;
@@ -455,6 +497,7 @@ class Account {
   }
 
   async sendFile(sock, chat, file) {
+    if (this.monitoring) return;
     try {
       const real = await fs.realpath(file.path);
       if (!FILE_ROOTS.some((root) => real.startsWith(root))) throw new Error('outside the workspace');
@@ -474,6 +517,7 @@ class Account {
   }
 
   async send(sock, chat, text, quoted) {
+    if (this.monitoring) throw Object.assign(new Error('this number is monitor-only: it never sends'), { status: 403 });
     const { text: body, files } = extractLocalFiles(text, FILE_ROOTS);
     const parts = chunks(toWhatsApp(body));
     for (let i = 0; i < parts.length; i += 1) {
@@ -543,7 +587,7 @@ export class Accounts {
   internalStatus() {
     return [...this.byAgent.values()].map((a) => ({
       agent: a.agentId, status: a.status, phone: a.sock?.user ? phoneOf(`${bareJid(a.sock.user.id)}@s.whatsapp.net`) : '',
-      ownerNumbers: a.settings.ownerNumbers, approved: a.settings.allowFrom.length,
+      ownerNumbers: a.settings.ownerNumbers, approved: a.settings.allowFrom.length, mode: a.settings.mode,
     }));
   }
 
@@ -626,7 +670,7 @@ export class Accounts {
   // A message to the owner (their own "Message yourself" chat), from this agent's
   // number or, when that one is not linked, from any linked number.
   async notifyOwner(agentId, text) {
-    const accounts = [this.get(agentId), ...this.byAgent.values()].filter((a) => a && a.status === 'connected' && a.sock?.user);
+    const accounts = [this.get(agentId), ...this.byAgent.values()].filter((a) => a && a.status === 'connected' && a.sock?.user && !a.monitoring);
     const account = accounts[0];
     if (!account) throw Object.assign(new Error('no WhatsApp number is linked'), { status: 503 });
     // To the owner's own phone when one is set (they may not watch the linked phone), else "Message yourself".
@@ -720,6 +764,15 @@ export class Accounts {
     return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // The monitor report of a branch number (src/monitor.js).
+  async monitorReport(agentId, from, to) {
+    const account = this.get(agentId);
+    if (!account) throw Object.assign(new Error('no WhatsApp number is linked for this agent'), { status: 404 });
+    if (!account.monitoring) throw Object.assign(new Error("this agent's number is not set to Monitor only (WhatsApp page)"), { status: 400 });
+    account.monitor.prune().catch(() => {});
+    return account.monitor.report(from, to);
+  }
+
   // Whether a number has WhatsApp, asked through this agent's linked number.
   async hasWhatsApp(agentId, phone) {
     const account = this.byAgent.get(agentId);
@@ -733,6 +786,7 @@ export class Accounts {
   async safeDeliver(agentId, { phone, text, document, fileName }) {
     const account = this.byAgent.get(agentId);
     if (!account?.sock?.user || account.status !== 'connected') throw Object.assign(new Error("Lorium's WhatsApp is not connected"), { status: 503 });
+    if (account.monitoring) throw Object.assign(new Error('this number is monitor-only: it never sends'), { status: 403 });
     const chat = `${phone}@s.whatsapp.net`;
     for (const content of [{ text }, { document, fileName, mimetype: 'text/html' }]) {
       const sent = await account.sock.sendMessage(chat, content);

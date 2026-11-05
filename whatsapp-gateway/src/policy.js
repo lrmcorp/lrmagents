@@ -48,6 +48,8 @@ export function digits(value) {
 export function normalizeSettings(raw = {}) {
   const pick = (value, options, fallback) => (options.includes(value) ? value : fallback);
   return {
+    // 'reply': the agent answers chats. 'monitor': a branch number LRMagent only reads (src/monitor.js); it never sends.
+    mode: raw.mode === 'monitor' ? 'monitor' : 'reply',
     dmPolicy: pick(raw.dmPolicy, ['pairing', 'allowlist', 'open', 'disabled'], DEFAULT_SETTINGS.dmPolicy),
     allowFrom: [...new Set((raw.allowFrom ?? []).map(digits).filter((n) => n.length >= 6))],
     // The owner's own phones besides the linked one: treated like "Message yourself".

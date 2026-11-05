@@ -44,6 +44,7 @@ COPY deploy/agent-tools/lrm_vault_updates_api.py /app/channel/web/api/lrm_vault_
 COPY deploy/agent-tools/vault_update /app/agent/tools/vault_update/
 COPY deploy/agent-tools/ask_agent /app/agent/tools/ask_agent/
 COPY deploy/agent-tools/site_login /app/agent/tools/site_login/
+COPY deploy/agent-tools/chat_monitor /app/agent/tools/chat_monitor/
 COPY deploy/agent-tools/lrm_google_api.py /app/channel/web/api/lrm_google.py
 # Watchable browser: live view and take-over API (page copied with the brand files).
 COPY deploy/agent-tools/lrm_browser_api.py /app/channel/web/api/lrm_browser.py

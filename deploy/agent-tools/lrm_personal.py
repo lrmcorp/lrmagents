@@ -164,6 +164,9 @@ PREFS = PREFS_MARK + """
 - A report for a WhatsApp group: schedule it with that group as the recipient (scheduler 'list_recipients' shows the
   groups the owner opened to agents as "Group: <name>", with their channel_type, instance_id and receiver). In other
   work, post to an open group with the whatsapp tool (to: the group's name or id).
+- A branch WhatsApp set to Monitor only: you never message anyone there (the gateway blocks it anyway). Report on it
+  with chat_monitor (action 'report'); for a daily report, schedule an ai_task that runs chat_monitor and sends the
+  owner the summary.
 - A site asks you to sign in (or shows its login page): use site_login (action 'sign_in' with the address); the
   browser types the owner's saved login. Never ask for passwords in chat.
 """ + PREFS_MARK + "\n"
