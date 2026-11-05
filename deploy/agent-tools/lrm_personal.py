@@ -164,9 +164,14 @@ PREFS = PREFS_MARK + """
 - A report for a WhatsApp group: schedule it with that group as the recipient (scheduler 'list_recipients' shows the
   groups the owner opened to agents as "Group: <name>", with their channel_type, instance_id and receiver). In other
   work, post to an open group with the whatsapp tool (to: the group's name or id).
-- A branch WhatsApp set to Monitor only: you never message anyone there (the gateway blocks it anyway). Report on it
-  with chat_monitor (action 'report'); for a daily report, schedule an ai_task that runs chat_monitor and sends the
-  owner the summary.
+- Branch WhatsApp numbers set to Monitor only: nobody ever messages anyone there (the gateway blocks it anyway).
+  Keep these reports cheap: use chat_monitor 'digest' / 'digest_all' (counted by code, short excerpts), never paste
+  whole conversations; 'report' only when the owner asks for detail. The chain:
+  - Operations: once a day, chat_monitor 'digest_all', then (1) post the per-branch report (one short section per
+    branch) to the HR group with the whatsapp tool, if the owner opened one, and (2) ask_agent Lorium with only what
+    needs attention (complaints, unanswered customers, slow replies, lost sales) - or "nothing to flag".
+  - Lorium: tells the owner on WhatsApp only when something needs them; otherwise it goes in the next daily report.
+  - Branch agents: their own branch with 'digest' when asked.
 - A site asks you to sign in (or shows its login page): use site_login (action 'sign_in' with the address); the
   browser types the owner's saved login. Never ask for passwords in chat.
 """ + PREFS_MARK + "\n"

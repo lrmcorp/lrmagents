@@ -16,7 +16,8 @@ from agent.tools.base_tool import BaseTool, ToolResult
 from config import conf
 
 GATEWAY_URL = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/")
-MAX_CHARS = 40000
+MAX_CHARS = 20000  # 'report' (full conversations): only for drilling into detail
+FLAGGED_PER_BRANCH = 6  # 'digest' / 'digest_all': excerpts of the chats that need a look
 
 
 def _get(path):
@@ -45,23 +46,46 @@ def _day(text, today):
     return datetime.date.fromisoformat(text)
 
 
+def _digest(branch, rep, limit):
+    """The numbers and short excerpts of the chats that need a look (a few hundred tokens)."""
+    st = rep.get("stats") or {}
+    lines = [f"\n### {branch}",
+             f"Chats {st.get('customerChats', 0)} · new {st.get('newNumbers', 0)} (not saved {st.get('newNotSaved', 0)}) · "
+             f"unanswered {st.get('unanswered', 0)} · complaints {st.get('complaints', 0)} · sales leads {st.get('salesLeads', 0)} "
+             f"(closed {st.get('sold', 0)}, not closed {st.get('leadsNotClosed', 0)}) · median wait {st.get('medianReplyMinutes')} min · "
+             f"waits over 15 min {st.get('slowReplies', 0)}"]
+    order = lambda c: (not c.get("complaint"), not c.get("unanswered"), not (c.get("salesLead") and not c.get("sold")), not c.get("slow"))
+    flagged = sorted([c for c in rep.get("chats") or [] if c.get("complaint") or c.get("unanswered") or c.get("slow")
+                      or (c.get("salesLead") and not c.get("sold"))], key=order)
+    for c in flagged[:limit]:
+        why = ", ".join(w for w, on in (("complaint", c.get("complaint")), (f"unanswered {c.get('unanswered')} min", c.get("unanswered")),
+                                        (f"waited {c.get('longestWaitMinutes')} min", c.get("slow")),
+                                        ("lead not closed", c.get("salesLead") and not c.get("sold"))) if on)
+        lines.append(f"- {c['contact']} ({why}):\n  " + "\n  ".join(c.get("excerpt") or []))
+    if len(flagged) > limit:
+        lines.append(f"- +{len(flagged) - limit} more flagged chats (action 'report' for all)")
+    if not flagged:
+        lines.append("- Nothing flagged.")
+    return "\n".join(lines)
+
+
 class ChatMonitor(BaseTool):
     name: str = "chat_monitor"
     description: str = (
-        "Reports on a branch's WhatsApp number that is set to Monitor only (LRMagent reads every chat there and never "
-        "sends anything; never message those customers). Actions: 'list' (which numbers are monitored, by which agent), "
-        "'report' (agent: the branch agent, default yourself; date: today, yesterday, DD-MM-YYYY, or from/to for a period). "
-        "It returns the counted numbers (customer chats, new numbers, new ones not saved in the phone's contacts, "
-        "unanswered chats, reply times) and every conversation. Read them and write the owner a short report as a title and "
-        "points: *Chat report <branch> <DD-MM-YYYY>*; customer chats and new numbers (not saved in contacts); complaints "
-        "(who, what, handled or not); unanswered chats; reply time (median, slow replies over 15 minutes); staff chat "
-        "quality (late replies, unclear or impolite answers, missed questions, no follow-up); sales (chats that became a "
-        "booking or purchase, and those that did not and the likely reason). Quote short examples. No greeting, no filler."
+        "Reports on branch WhatsApp numbers set to Monitor only (LRMagent reads every chat there and never sends "
+        "anything; never message those customers). Cheap by design: the counting and flagging is done by code. Actions: "
+        "'list' (monitored numbers); 'digest' (one branch: the numbers plus short excerpts of the chats that need a look: "
+        "complaints, unanswered, slow replies, sales leads not closed) - use this for daily reports; 'digest_all' (every "
+        "branch at once, one section each) - for the Operations agent's overview; 'report' (one branch, every conversation "
+        "in full) - only when the owner asks for detail. agent: the branch agent (default yourself); date: today, "
+        "yesterday or DD-MM-YYYY, or from/to. Write reports as a title and points, per branch: chats and new numbers (not "
+        "saved), complaints (who, what, handled?), unanswered, reply time (median, over 15 min), staff chat quality (late, "
+        "unclear or impolite answers, no follow-up), sales (closed, and leads lost and why). Short quotes, no filler."
     )
     params: dict = {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "report"]},
+            "action": {"type": "string", "enum": ["list", "digest", "digest_all", "report"]},
             "agent": {"type": "string", "description": "For 'report': the branch agent's id or name (default: yourself)"},
             "date": {"type": "string", "description": "For 'report': today, yesterday or DD-MM-YYYY"},
             "from": {"type": "string", "description": "For a period: first day (DD-MM-YYYY)"},
@@ -87,8 +111,23 @@ class ChatMonitor(BaseTool):
                     return ToolResult.success("No number is set to Monitor only yet (WhatsApp page → an agent's card → Mode).")
                 return ToolResult.success("Monitored WhatsApp numbers:\n" + "\n".join(
                     f"- {names.get(a['agent'], a['agent'])} [id {a['agent']}]: +{a.get('phone') or '?'} ({a.get('status')})" for a in monitored))
-            if action != "report":
-                return ToolResult.fail("action must be 'list' or 'report'.")
+            if action not in ("report", "digest", "digest_all"):
+                return ToolResult.fail("action must be list, digest, digest_all or report.")
+            today = datetime.date.today()
+            first = _day(args.get("from") or args.get("date"), today)
+            last = _day(args.get("to"), today) if args.get("to") else first
+            period = first.strftime("%d-%m-%Y") + ("" if first == last else " to " + last.strftime("%d-%m-%Y"))
+            if action == "digest_all":
+                if not monitored:
+                    return ToolResult.success("No number is set to Monitor only yet.")
+                parts = [f"All branches · {period}"]
+                for a in monitored:
+                    q = urllib.parse.urlencode({"agent": a["agent"], "from": first.isoformat(), "to": last.isoformat()})
+                    try:
+                        parts.append(_digest(names.get(a["agent"], a["agent"]), _get(f"/whatsapp/internal/monitor?{q}"), 4))
+                    except Exception as e:
+                        parts.append(f"\n### {names.get(a['agent'], a['agent'])}\n(no report: {e})")
+                return ToolResult.success("\n".join(parts))
             wanted = str(args.get("agent") or getattr(model, "agent_id", "") or "").strip().lower()
             agent = next((a["agent"] for a in monitored if a["agent"].lower() == wanted or names.get(a["agent"], "").lower() == wanted), None)
             if agent is None:
@@ -96,15 +135,13 @@ class ChatMonitor(BaseTool):
                     agent = monitored[0]["agent"]
                 else:
                     return ToolResult.fail("Which branch? Monitored: " + (", ".join(f"{names.get(a['agent'], a['agent'])} [id {a['agent']}]" for a in monitored) or "none"))
-            today = datetime.date.today()
-            first = _day(args.get("from") or args.get("date"), today)
-            last = _day(args.get("to"), today) if args.get("to") else first
             q = urllib.parse.urlencode({"agent": agent, "from": first.isoformat(), "to": last.isoformat()})
             rep = _get(f"/whatsapp/internal/monitor?{q}")
         except Exception as e:
             return ToolResult.fail(f"Chat monitor: {e}")
+        if action == "digest":
+            return ToolResult.success(f"{period}\n" + _digest(names.get(agent, agent), rep, FLAGGED_PER_BRANCH))
         st = rep.get("stats") or {}
-        period = first.strftime("%d-%m-%Y") + ("" if first == last else " to " + last.strftime("%d-%m-%Y"))
         lines = [f"Branch: {names.get(agent, agent)} · {period} ({rep.get('timezone')})",
                  f"Customer chats: {st.get('customerChats', 0)} · new numbers: {st.get('newNumbers', 0)} "
                  f"(not saved in contacts: {st.get('newNotSaved', 0)}) · unanswered now: {st.get('unanswered', 0)}",

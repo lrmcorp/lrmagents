@@ -10,6 +10,11 @@ import path from 'node:path';
 
 const KEEP_DAYS = 90;
 const TZ = process.env.MONITOR_TZ || 'Asia/Jakarta';
+// Flags set by code, so a report needs no AI to count: the agent only reads the excerpts.
+const COMPLAINT = /(kecewa|komplain|complain|marah|kesal|refund|uang (saya )?kembali|tidak profesional|parah|jelek|buruk|lama banget|lambat|(tidak|ga|gak|nggak|belum) (di)?bal[ae]s|dibatalkan|batalin|salah|rusak|kotor|tipu|bohong|keluhan|kurang puas|tidak puas|not happy|disappointed|bad service|worst|terlambat|telat)/i;
+const SALES = /(harga|price|berapa|biaya|paket|package|promo|diskon|discount|trial|daftar|registrasi|member|booking|book\b|jadwal|slot|available|tersedia|kelas|class|sesi|session)/i;
+const CLOSED = /(sudah (di)?transfer|udah transfer|bukti transfer|sudah bayar|udah bayar|lunas|paid|invoice|sudah (di)?booking|berhasil (di)?booking|sudah dibooking|confirmed|terkonfirmasi|terdaftar|selamat bergabung|see you|sampai jumpa di kelas)/i;
+
 const dayOf = (ms) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
 
 export class MonitorLog {
@@ -113,7 +118,19 @@ export class MonitorLog {
       }
       replyMinutes.push(...waits);
       const last = c.messages[c.messages.length - 1];
+      const customerText = inbound.map((m) => m.text).join('\n');
+      const flags = {
+        complaint: COMPLAINT.test(customerText),
+        salesLead: SALES.test(customerText) && !COMPLAINT.test(customerText),
+        sold: CLOSED.test(c.messages.map((m) => m.text).join('\n')),
+        slow: waits.some((w) => w > 15),
+      };
+      const pick = (m) => (!m.fromMe && (COMPLAINT.test(m.text) || SALES.test(m.text))) || CLOSED.test(m.text);
+      const keyLines = [c.messages[0], ...c.messages.filter(pick), ...c.messages.slice(-2)]
+        .filter((m, i, all) => all.indexOf(m) === i).slice(0, 8);
       chats.push({
+        ...flags,
+        excerpt: keyLines.map((m) => `${new Date(m.ts).toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit' })} ${m.fromMe ? 'Staff' : 'Customer'}: ${String(m.text).slice(0, 160)}`),
         contact: savedName || c.name || (c.phone ? `+${c.phone}` : 'unknown'), phone: c.phone ? `+${c.phone}` : '', saved: Boolean(savedName),
         new: isNew, customerMessages: inbound.length, staffMessages: c.messages.length - inbound.length,
         firstReplyMinutes: waits.length ? waits[0] : null, longestWaitMinutes: waits.length ? Math.max(...waits) : null,
@@ -133,6 +150,10 @@ export class MonitorLog {
         medianReplyMinutes: sorted.length ? sorted[Math.floor(sorted.length / 2)] : null,
         slowReplies: replyMinutes.filter((m) => m > 15).length,
         replies: replyMinutes.length,
+        complaints: chats.filter((c) => c.complaint).length,
+        salesLeads: chats.filter((c) => c.salesLead).length,
+        sold: chats.filter((c) => c.sold).length,
+        leadsNotClosed: chats.filter((c) => c.salesLead && !c.sold).length,
       },
       chats,
     };

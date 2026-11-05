@@ -75,9 +75,47 @@ def ensure_profiles():
                 changes.append((p.id, update))
             except Exception as e:
                 logger.warning(f"[Team] could not update {p.id}: {e}")
+    changes += _cheap_model_for_monitors(reg)
     if changes:
         logger.info(f"[Team] profiles updated: {changes}")
     return changes
+
+
+def _cheap_model_for_monitors(reg):
+    """Agents whose WhatsApp is Monitor only only digest chats: a fast, cheap model is plenty.
+    Set once when the agent has no model of its own (the owner can change it after)."""
+    import json as _json
+    import os as _os
+    import urllib.request as _ur
+    try:
+        from config import conf
+        token = str(conf().get("external_api_token") or "")
+        url = _os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/") + "/whatsapp/internal/status"
+        with _ur.urlopen(_ur.Request(url, headers={"Authorization": f"Bearer {token}"}), timeout=5) as r:
+            monitored = {a["agent"] for a in _json.loads(r.read()).get("accounts") or [] if a.get("mode") == "monitor"}
+        from channel.web.api.lrm_voice import voice_model
+        from channel.web.api.openai_compat import _model_catalog
+        model = voice_model()
+        provider = next((p["id"] for p in _model_catalog() if model in (p.get("models") or [])), None) if model else None
+    except Exception as e:
+        logger.debug(f"[Team] monitor model check skipped: {e}")
+        return []
+    done = []
+    if not model or not provider:
+        return done
+    for agent_id in monitored:
+        try:
+            p = reg.get(agent_id, require_enabled=False)
+        except Exception:
+            continue
+        if getattr(p, "model", None):
+            continue
+        try:
+            _admin().update_agent(agent_id, model=model, bot_type=provider)
+            done.append((agent_id, {"model": model}))
+        except Exception as e:
+            logger.warning(f"[Team] could not set the cheap model for {agent_id}: {e}")
+    return done
 
 
 def roster():

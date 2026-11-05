@@ -39,6 +39,12 @@ test('monitor only: records customers and staff, reports the numbers, never send
   assert.equal(r.chats.find((c) => c.phone === '+6281300000001').longestWaitMinutes, 34);
   assert.equal(r.stats.slowReplies, 1);
   assert.match(r.chats.find((c) => c.phone === '+6281300000002').transcript[0], /Customer: Kenapa kelas/);
+  assert.equal(r.stats.complaints, 1);
+  assert.equal(r.stats.salesLeads, 2, 'the pilates booking and the renewal (the complaint is not a lead)');
+  assert.equal(r.stats.leadsNotClosed, 0);
+  assert.equal(r.stats.sold, 2, 'booked, and the invoice sent');
+  assert.equal(r.chats.find((c) => c.phone === '+6281300000002').complaint, true);
+  assert.ok(r.chats.find((c) => c.phone === '+6281300000001').excerpt.length <= 8);
   // nothing may go out: replies, owner notices, deliveries
   await assert.rejects(a.send(a.sock, A, 'hi'), /monitor-only/);
   await assert.rejects(accounts.deliver('branch-kemang', '6281200000000@s.whatsapp.net', 'note'), /monitor-only/);
