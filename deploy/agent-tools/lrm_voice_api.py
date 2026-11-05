@@ -176,3 +176,10 @@ try:
     _p.ensure_preferences()
 except Exception as _e:  # never stop the console from starting
     logger.warning(f"[Personal] not created at start: {_e}")
+
+# Who does what: descriptions, Lorium's name, teammates in every profile and the vault (hourly).
+try:
+    from agent import lrm_team as _team
+    _team.start_background()
+except Exception as _e:
+    logger.warning(f"[Team] not started: {_e}")

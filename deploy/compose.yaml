@@ -33,7 +33,7 @@ services:
       TZ: Asia/Jakarta
       # English only, and the agent introduces itself by the LRM name.
       COW_LANG: en
-      DEFAULT_AGENT_NAME: LRMagent
+      DEFAULT_AGENT_NAME: Lorium
     ports:
       # For an SSH tunnel: ssh -L 9899:127.0.0.1:9899 ubuntu@43.152.240.47
       - "127.0.0.1:9899:9899"
