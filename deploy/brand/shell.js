@@ -381,4 +381,15 @@
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
     window.addEventListener('load', () => { start(); keepPanelOpen(); });
+
+    // The private vault's 7-day clock: using the console counts as the owner being around.
+    let seenAt = 0;
+    const seen = () => {
+        if (document.hidden || Date.now() - seenAt < 10 * 60 * 1000) return;
+        seenAt = Date.now();
+        fetch('/whatsapp/safe/api/seen', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
+    };
+    seen();
+    setInterval(seen, 30 * 60 * 1000);
+    document.addEventListener('visibilitychange', seen);
 })();

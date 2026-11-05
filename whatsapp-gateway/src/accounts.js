@@ -14,6 +14,7 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from 'baileys';
 import { ask, decideApproval, speak } from './cowagent.js';
+import { relayPrompt } from './designated.js';
 import crypto from 'node:crypto';
 import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
@@ -65,6 +66,16 @@ async function version() {
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Called with the agent id when the owner writes to a linked number (the private vault
+// counts that as the owner being around).
+let ownerHook = null;
+export function onOwnerMessage(fn) { ownerHook = fn; }
+// Designated contacts (src/designated.js), set by the server.
+let directory = null;
+let relayHook = null;
+export function useDesignated(d) { directory = d; }
+export const LORIUM = process.env.LORIUM_AGENT || 'default';
 
 class Account {
   constructor(agentId) {
@@ -268,6 +279,10 @@ class Account {
       const phone = senderPhone(msg.key);
       if (phone) this.lidPhone.set(chat, phone);
     }
+    if (ownerHook && msg.message && !msg.batched && !msg.approvalChecked && !this.sentIds.has(msg.key?.id)
+        && (isSelfChat(msg.key, [sock.user?.id, sock.user?.lid]) || (!msg.key?.fromMe && this.isOwner(chat, sock)))) {
+      Promise.resolve().then(() => ownerHook(this.agentId)).catch((e) => log.warn({ err: e.message }, 'owner hook failed'));
+    }
     // Several quick texts in a row become one request, so the agent answers the whole thought.
     if (this.settings.batchMs && !msg.batched && !msg.approvalChecked && msg.message && !this.sentIds.has(msg.key?.id) && batchable(msg.message)
         && !approvalReply(messageText(msg.message)) && !chat.endsWith('@g.us')) {
@@ -310,8 +325,15 @@ class Account {
     if (this.seen.size > 5000) this.seen.delete(this.seen.values().next().value);
     const myJids = [sock.user?.id, sock.user?.lid].filter(Boolean);
     const selfChat = isSelfChat(msg.key, myJids);
-    const verdict = decide({ key: msg.key, message: msg.message, settings: this.settings, myJids, selfChat });
     const chat = msg.key.remoteJid;
+    // A designated contact writing back: the agent stays silent and Lorium hears it.
+    const fromPhone = chat.endsWith('@g.us') ? '' : (senderPhone(msg.key) || this.lidPhone.get(chat) || '');
+    if (!selfChat && fromPhone && directory?.has(fromPhone) && !this.isOwner(chat, sock)) {
+      if (this.limiter.check(chat) !== 'ok') return;
+      await relayHook?.(this, sock, msg, fromPhone);
+      return;
+    }
+    const verdict = decide({ key: msg.key, message: msg.message, settings: this.settings, myJids, selfChat });
 
     if (verdict.action === 'ignore') {
       // Remember group talk the agent wasn't asked about, for context when it is.
@@ -509,6 +531,7 @@ class Account {
 
 export class Accounts {
   constructor() {
+    relayHook = (account, sock, msg, phone) => this.relay(account, sock, msg, phone);
     this.byAgent = new Map();
     this.deliveries = new Map(); // idempotency key -> time, so a retried reminder is not sent twice
   }
@@ -613,9 +636,11 @@ export class Accounts {
     if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });
     if (!/@(s\.whatsapp\.net|g\.us|lid)$/.test(chat)) throw Object.assign(new Error('not a WhatsApp chat id'), { status: 400 });
     const own = [account.sock.user?.id, account.sock.user?.lid].some((jid) => jid && bareJid(jid) === bareJid(chat));
-    const approved = account.settings.allowFrom.includes(phoneOf(chat)) || account.isOwner(chat, account.sock);
-    if (!own && !approved && !account.knownChats.has(chat)) {
-      throw Object.assign(new Error('this chat never wrote to the agent; refusing to start a conversation'), { status: 403 });
+    const phone = phoneOf(chat) || account.lidPhone.get(chat) || '';
+    const designated = Boolean(directory?.has(phone));
+    if (!own && !account.isOwner(chat, account.sock) && !designated) {
+      throw Object.assign(new Error(`agents may only message the owner and designated contacts; +${phone || chat} is not one. `
+        + 'The owner can add it under Designated contacts on the WhatsApp page.'), { status: 403 });
     }
     if (!text.trim()) return;
     const key = crypto.createHash('sha256').update(`${agentId}\n${chat}\n${text}`).digest('hex');
@@ -625,10 +650,60 @@ export class Accounts {
     this.deliveries.set(key, now);
     try {
       await account.send(account.sock, chat, text);
+      if (designated) await directory.sent(phone, agentId, text);
     } catch (error) {
       // Nothing went out yet: let the scheduler retry. A partial send is not retried.
       if (!error.partial) this.deliveries.delete(key);
       throw error;
+    }
+  }
+
+  // A designated contact wrote back to some agent's number. Nothing goes back to them:
+  // Lorium gets the message (with what was last sent to them) and tells the owner.
+  async relay(account, sock, msg, phone) {
+    const contact = directory.get(phone);
+    let text = messageText(msg.message);
+    const kind = mediaKind(msg.message);
+    if (kind) {
+      try {
+        const file = await account.saveMedia(sock, msg);
+        text = `[They sent ${kind === 'image' ? 'a photo' : kind === 'audio' ? 'a voice note (transcribe it with transcribe_audio)' : 'a file'}, saved at ${file}.]${text ? `\n${text}` : ''}`;
+      } catch (e) {
+        text = `[They sent ${kind === 'audio' ? 'a voice note' : `a ${kind}`} that could not be saved.]${text ? `\n${text}` : ''}`;
+      }
+    }
+    if (!text.trim()) return;
+    const who = `${contact?.name || 'Contact'} (+${phone})`;
+    log.info({ agent: account.agentId, phone: `…${phone.slice(-4)}` }, 'designated contact replied; relayed to Lorium');
+    let note;
+    try {
+      note = await ask({ agentId: LORIUM, conversationId: `whatsapp-relay:${phone}`,
+        text: relayPrompt({ contact, phone, agent: account.agentId, last: directory.lastSent(phone), text }) });
+    } catch (e) {
+      log.error({ err: e.message }, 'relay to Lorium failed');
+      note = `📩 *Reply from ${who}*\n- To agent ${account.agentId}'s number\n- ${text.slice(0, 1500)}\n- (Lorium could not read it: ${e.reason || 'error'})`;
+    }
+    await this.notifyOwner(LORIUM, note).catch((e) => log.error({ err: e.message }, 'relay note to the owner failed'));
+  }
+
+  // Whether a number has WhatsApp, asked through this agent's linked number.
+  async hasWhatsApp(agentId, phone) {
+    const account = this.byAgent.get(agentId);
+    if (!account?.sock?.user || account.status !== 'connected') return null;
+    const [hit] = await account.sock.onWhatsApp(`${phone}@s.whatsapp.net`).catch(() => [null]);
+    return Boolean(hit?.exists);
+  }
+
+  // The private vault's delivery: a message and the locked file to the person the owner
+  // chose. Only the private vault calls this (never the agents), so it may start a chat.
+  async safeDeliver(agentId, { phone, text, document, fileName }) {
+    const account = this.byAgent.get(agentId);
+    if (!account?.sock?.user || account.status !== 'connected') throw Object.assign(new Error("Lorium's WhatsApp is not connected"), { status: 503 });
+    const chat = `${phone}@s.whatsapp.net`;
+    for (const content of [{ text }, { document, fileName, mimetype: 'text/html' }]) {
+      const sent = await account.sock.sendMessage(chat, content);
+      if (sent?.key?.id) account.sentIds.add(sent.key.id);
+      await sleep(900);
     }
   }
 

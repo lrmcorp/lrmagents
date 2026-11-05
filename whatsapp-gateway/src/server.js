@@ -5,13 +5,32 @@ import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Accounts } from './accounts.js';
+import { Accounts, LORIUM, onOwnerMessage, useDesignated } from './accounts.js';
+import { Designated } from './designated.js';
+import { Safe, normalizePhone } from './safe.js';
 import crypto from 'node:crypto';
 import { consoleUser, listAgents } from './cowagent.js';
 
 const PORT = Number(process.env.PORT || 8080);
 const PAGE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'index.html');
 const accounts = new Accounts();
+const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+
+// ---- private vault (src/safe.js): kept in this container only, out of the agents' reach.
+const SAFE_AGENT = LORIUM;
+const designated = await new Designated(process.env.DATA_DIR || '/data').load();
+useDesignated(designated);
+const OPENER = await fs.readFile(path.join(PUBLIC, 'safe-open.html'), 'utf8');
+const openerPage = (data) => OPENER.replace('__SAFE_DATA__', () => JSON.stringify(data).replace(/</g, '\\u003c'));
+const safe = await new Safe({
+  dir: path.join(process.env.DATA_DIR || '/data', '.private-vault'),
+  notifyOwner: (text) => accounts.notifyOwner(SAFE_AGENT, text),
+  deliver: (msg) => accounts.safeDeliver(SAFE_AGENT, msg),
+  log: { error: (o, m) => console.error(m, o) },
+}).load();
+onOwnerMessage((agentId) => (agentId === SAFE_AGENT ? safe.seen('WhatsApp') : null));
+setInterval(() => safe.tick(openerPage), Number(process.env.SAFE_TICK_MS || 5 * 60 * 1000)).unref();
+const siteOf = (req) => `${String(req.headers['x-forwarded-proto'] || 'https').split(',')[0]}://${req.headers['x-forwarded-host'] || req.headers.host}`;
 const INTERNAL_TOKEN = process.env.COWAGENT_API_TOKEN || '';
 
 // Container-to-container calls (scheduled messages from LRMagent) carry the
@@ -34,12 +53,12 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.end(data);
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 64 * 1024) {
   let size = 0;
   const parts = [];
   for await (const part of req) {
     size += part.length;
-    if (size > 64 * 1024) throw Object.assign(new Error('body too large'), { status: 413 });
+    if (size > limit) throw Object.assign(new Error('body too large'), { status: 413 });
     parts.push(part);
   }
   try {
@@ -101,12 +120,21 @@ async function route(req, res) {
   // For LRMagent's whatsapp tool (owner only on that side): linked numbers and owner numbers.
   if (url.pathname === '/whatsapp/internal/status') {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
-    return send(res, 200, { accounts: accounts.internalStatus() });
+    return send(res, 200, { accounts: accounts.internalStatus(), designated: designated.contacts });
   }
   // For the teammates tool: only the owner's own chat may use the paid plans.
   if (url.pathname === '/whatsapp/internal/owner') {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
     return send(res, 200, { owner: accounts.isOwnerChat(String(url.searchParams.get('agent') || ''), String(url.searchParams.get('chat') || '')) });
+  }
+  // The link Lorium sends to the chosen person: public, but it only shows the locked
+  // vault, and only once it has been sent.
+  const opened = url.pathname.match(/^\/whatsapp\/safe\/open\/([A-Za-z0-9_-]{20,64})$/);
+  if (opened && req.method === 'GET') {
+    const data = safe.released(opened[1]);
+    if (!data) return send(res, 404, 'This link is not active.', 'text/plain; charset=utf-8');
+    res.setHeader('X-Robots-Tag', 'noindex');
+    return send(res, 200, openerPage(data), 'text/html; charset=utf-8');
   }
   if (url.pathname === '/whatsapp') {
     res.writeHead(308, { Location: '/whatsapp/' });
@@ -123,6 +151,45 @@ async function route(req, res) {
 
   if (url.pathname === '/whatsapp/' && req.method === 'GET') {
     return send(res, 200, await fs.readFile(PAGE), 'text/html; charset=utf-8');
+  }
+
+  if (url.pathname === '/whatsapp/safe') {
+    res.writeHead(308, { Location: '/whatsapp/safe/' });
+    return res.end();
+  }
+  if (url.pathname === '/whatsapp/safe/' && req.method === 'GET') {
+    return send(res, 200, await fs.readFile(path.join(PUBLIC, 'safe.html')), 'text/html; charset=utf-8');
+  }
+  if (url.pathname.startsWith('/whatsapp/safe/api/')) {
+    const op = url.pathname.slice('/whatsapp/safe/api/'.length);
+    if (op === 'status' && req.method === 'GET') {
+      return send(res, 200, { ...safe.view(), lorium: (await accounts.view(SAFE_AGENT)).status });
+    }
+    if (req.method !== 'POST') return send(res, 405, { error: 'method not allowed' });
+    if (!sameSite(req)) return send(res, 403, { error: 'cross-site request refused' });
+    const body = await readJson(req, 3 * 1024 * 1024);
+    try {
+      if (op === 'seen') { await safe.seen('console'); return send(res, 200, { ok: true }); }
+      if (op === 'open') return send(res, 200, safe.open(body.auth));
+      if (op === 'check-number') {
+        const phone = normalizePhone(body.phone);
+        if (!phone) return send(res, 200, { ok: false, why: 'Use the full number with country code, e.g. 62812…' });
+        const has = await accounts.hasWhatsApp(SAFE_AGENT, phone);
+        return send(res, 200, { ok: has !== false, phone, why: has === false ? 'This number is not on WhatsApp.' : has === null ? "Lorium's WhatsApp is not connected, so the number could not be checked." : '' });
+      }
+      if (op === 'save') return send(res, 200, await safe.save(body, siteOf(req)));
+      if (op === 'delete') { await safe.remove(body.auth); return send(res, 200, { ok: true }); }
+    } catch (error) {
+      return send(res, error.status || 500, { error: error.status ? error.message : 'internal error' });
+    }
+    return send(res, 404, { error: 'not found' });
+  }
+
+  if (url.pathname === '/whatsapp/api/designated') {
+    if (req.method === 'GET') return send(res, 200, { contacts: designated.contacts });
+    if (req.method !== 'POST' || !sameSite(req)) return send(res, 403, { error: 'refused' });
+    const body = await readJson(req);
+    return send(res, 200, { contacts: await designated.set(body.contacts) });
   }
 
   if (url.pathname === '/whatsapp/api/agents' && req.method === 'GET') {

@@ -42,8 +42,9 @@ class WhatsAppTool(BaseTool):
     description: str = (
         "The agent's own WhatsApp number (linked on the console's WhatsApp page). Actions: 'status' (is a number linked, "
         "which one, the owner's numbers), 'send' (send a WhatsApp message now). For 'send', 'to' is 'me' for the owner "
-        "(e.g. 'send me a WhatsApp', 'text me the summary') or a phone number with country code; only numbers that "
-        "already wrote to the agent or are approved can be messaged. Use this whenever the owner asks to send or receive "
+        "(e.g. 'send me a WhatsApp', 'text me the summary') or the number of a designated contact (see 'status'): agents may "
+        "message nobody else. When a designated contact writes back, you do not answer them: Lorium receives their reply and "
+        "tells the owner. Use this whenever the owner asks to send or receive "
         "something on WhatsApp; for a message at a later time use the scheduler instead. Write WhatsApp messages and reports as "
         "a short bold title (*Title*) and bullet points with the facts: no greeting, no filler, no closing line."
     )
@@ -80,6 +81,10 @@ class WhatsAppTool(BaseTool):
                     lines.append(f"- agent '{a.get('agent')}': {a.get('status')}, number +{a.get('phone') or '?'}"
                                  + (f", owner numbers: {', '.join('+' + n for n in a.get('ownerNumbers') or [])}" if a.get("ownerNumbers") else
                                     ", no 'Your own numbers' set (owner messages go to the linked phone's Message yourself)"))
+                people = state.get("designated") or []
+                lines.append("- designated contacts (the only people besides the owner agents may message): "
+                             + (", ".join(f"{c.get('name') or 'unnamed'} +{c.get('phone')}" for c in people) if people else
+                                "none; the owner adds them on the console's WhatsApp page"))
                 return ToolResult.success("WhatsApp:\n" + "\n".join(lines))
             if action != "send":
                 return ToolResult.fail("action must be 'status' or 'send'.")
@@ -103,8 +108,14 @@ class WhatsAppTool(BaseTool):
             number = re.sub(r"\D", "", to)
             if len(number) < 6:
                 return ToolResult.fail("Give the phone number with country code, e.g. 6281234567890, or 'me'.")
+            people = {c.get("phone"): c for c in state.get("designated") or []}
+            if number not in people:
+                return ToolResult.fail(f"+{number} is not a designated contact, and agents may only message the owner and designated "
+                                       "contacts. Ask the owner to add it under Designated contacts on the console's WhatsApp page.")
             _call("/whatsapp/internal/send", {"agentId": account["agent"], "chat": f"{number}@s.whatsapp.net", "text": text})
-            return ToolResult.success(f"Sent to +{number} on WhatsApp.")
+            who = people[number].get("name") or f"+{number}"
+            return ToolResult.success(f"Sent to {who} (+{number}) on WhatsApp. If they reply, Lorium receives it and tells the owner; "
+                                      "you will not answer them.")
         except Exception as e:
             logger.warning(f"[whatsapp] {action} failed: {e}")
             return ToolResult.fail(f"WhatsApp: {e}")

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Private vault · LRMagent</title>
+<link rel="icon" href="/assets/favicon.ico">
+<link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
+<style>
+  :root {
+    --brand: #18181b; --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8;
+    --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c; --line: #dbdbe5;
+    --ok: #047857; --ok-bg: #ecfdf5; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; display: flex; align-items: center; gap: 10px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  .lede { color: var(--text-2); margin: 0 0 18px; max-width: 70ch; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .row > * { flex: 1 1 200px; }
+  label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-3); }
+  input, textarea { font: 400 14px Inter, system-ui, sans-serif; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; width: 100%; outline: none; }
+  input:focus, textarea:focus { border-color: #7480f1; box-shadow: 0 0 0 3px rgb(116 128 241 / .15); }
+  textarea { min-height: 70px; resize: vertical; }
+  button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 10px; padding: 9px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); white-space: nowrap; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.danger { color: var(--bad); border-color: #fecdd3; }
+  button:disabled { opacity: .5; cursor: default; }
+  .flex0 { flex: 0 0 auto !important; }
+  .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .stat small { display: block; color: var(--text-3); font-size: 12px; font-weight: 600; }
+  .stat b { font-size: 14px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--muted-bg); color: var(--text-2); }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); } .pill.warn { background: var(--warn-bg); color: var(--warn); } .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .note { font-size: 12.5px; color: var(--text-3); margin: 8px 0 0; }
+  .banner { border-radius: 12px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px; }
+  .banner.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid #fde68a; }
+  .banner.bad { background: var(--bad-bg); color: var(--bad); border: 1px solid #fecdd3; }
+  .entry { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin-bottom: 10px; display: grid; gap: 8px; }
+  .entry .row > * { flex: 1 1 180px; }
+  .secret { display: flex; gap: 6px; } .secret input { font-family: ui-monospace, monospace; }
+  .toggle { display: flex; gap: 10px; align-items: center; font-size: 14px; color: var(--text); font-weight: 500; }
+  .toggle input { width: auto; accent-color: var(--brand); transform: scale(1.2); }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #18181b; color: #fff; padding: 9px 14px; border-radius: 10px; font-size: 13px; z-index: 9; max-width: calc(100% - 32px); }
+  .toast.err { background: var(--bad); }
+  .meter { height: 4px; border-radius: 4px; background: var(--muted-bg); overflow: hidden; margin-top: 6px; } .meter i { display: block; height: 100%; width: 0; background: var(--bad); transition: width .2s; }
+  .steps { margin: 0; padding-left: 18px; color: var(--text-2); } .steps li { margin: 3px 0; }
+  .empty { color: var(--text-3); text-align: center; padding: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🔒 Private vault</h1>
+  <p class="lede">Passwords and other sensitive notes, locked with a passphrase only you know. No agent can see or change it: it is locked in this browser before it is stored, and it is kept apart from the agents. If you stop talking to Lorium for 7 days, Lorium sends it on WhatsApp to the person you choose.</p>
+
+  <div id="banner"></div>
+
+  <section class="card" id="state-card" hidden>
+    <h2>Status</h2>
+    <div class="status" id="status"></div>
+    <p class="note">You count as around when you message Lorium on WhatsApp or use this console. Lorium warns you after 5 and 6 days of silence; reply anything to stop it.</p>
+  </section>
+
+  <!-- create -->
+  <section class="card" id="create" hidden>
+    <h2>Create your private vault</h2>
+    <ol class="steps">
+      <li>Choose a passphrase: a few unrelated words is easy to remember and hard to guess (at least 12 characters).</li>
+      <li>Give the passphrase to the person who should receive the vault, in person or on paper. Not on WhatsApp.</li>
+      <li>If you forget it, nobody can open the vault, not even LRMagent.</li>
+    </ol>
+    <div class="row" style="margin-top:12px">
+      <label>Passphrase<input id="c-pass" type="password" autocomplete="new-password"><div class="meter"><i id="c-meter"></i></div></label>
+      <label>Type it again<input id="c-pass2" type="password" autocomplete="new-password"></label>
+      <button class="primary flex0" id="c-go">Create</button>
+    </div>
+  </section>
+
+  <!-- unlock -->
+  <section class="card" id="unlock" hidden>
+    <h2>Unlock to view or change</h2>
+    <div class="row">
+      <label>Passphrase<input id="u-pass" type="password" autocomplete="current-password"></label>
+      <button class="primary flex0" id="u-go">Unlock</button>
+    </div>
+    <p class="note">Unlocking happens in this browser. It locks again after 10 minutes without activity.</p>
+  </section>
+
+  <!-- editor -->
+  <div id="editor" hidden>
+    <section class="card">
+      <div class="row" style="align-items:center;margin-bottom:10px">
+        <h2 style="margin:0">Contents</h2>
+        <button class="flex0" id="add">+ Add a login</button>
+        <button class="flex0" id="lock">Lock</button>
+      </div>
+      <div id="entries"></div>
+      <label style="margin-top:6px">Other notes (instructions, accounts, where things are)<textarea id="notes" rows="5"></textarea></label>
+    </section>
+
+    <section class="card">
+      <h2>Who receives it</h2>
+      <div class="row">
+        <label>Your name (shown to them)<input id="owner-name" placeholder="e.g. Ryan"></label>
+        <label>Their name<input id="r-name" placeholder="e.g. Sarah"></label>
+        <label>Their WhatsApp number<input id="r-phone" inputmode="tel" placeholder="62812…"></label>
+        <button class="flex0" id="check">Check number</button>
+      </div>
+      <p class="note" id="check-out"></p>
+      <label class="toggle" style="margin-top:10px"><input type="checkbox" id="armed"> Send it to them after 7 days without a message from me</label>
+    </section>
+
+    <div class="row" style="margin-bottom:16px">
+      <button class="primary flex0" id="save">Save</button>
+      <span class="note flex0" id="saved-note"></span>
+    </div>
+
+    <section class="card">
+      <h2>Passphrase and removal</h2>
+      <div class="row">
+        <label>New passphrase<input id="n-pass" type="password" autocomplete="new-password"></label>
+        <label>Type it again<input id="n-pass2" type="password" autocomplete="new-password"></label>
+        <button class="flex0" id="n-go">Change passphrase</button>
+      </div>
+      <p class="note">After changing it, give the new passphrase to the person too.</p>
+      <div class="row" style="margin-top:14px"><button class="danger flex0" id="del">Delete the private vault</button></div>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ITER = 600000;
+  let st = null; // server status
+  let key = null; // { enc, auth } while unlocked
+  let data = null; // { items, notes } while unlocked
+  let idle = null;
+
+  function toast(msg, err) { document.querySelectorAll('.toast').forEach((x) => x.remove()); const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 6000 : 2600); }
+  async function api(op, body) {
+    const r = await fetch(`/whatsapp/safe/api/${op}`, body ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin' });
+    if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
+    return d;
+  }
+
+  // ---- crypto: PBKDF2-SHA256 -> 64 bytes: AES-GCM key | proof for the server ----------
+  const b64 = (u8) => btoa(String.fromCharCode(...u8));
+  const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const hex = (u8) => [...u8].map((b) => b.toString(16).padStart(2, '0')).join('');
+  async function derive(pass, salt, iter) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass.normalize('NFKC')), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: unb64(salt), iterations: iter, hash: 'SHA-256' }, base, 512));
+    return { enc: await crypto.subtle.importKey('raw', bits.slice(0, 32), 'AES-GCM', false, ['encrypt', 'decrypt']), auth: hex(bits.slice(32)) };
+  }
+  async function lockData(k, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k.enc, new TextEncoder().encode(JSON.stringify(obj))));
+    return { iv: b64(iv), ct: b64(ct) };
+  }
+  async function unlockData(k, iv, ct) {
+    return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(iv) }, k.enc, unb64(ct))));
+  }
+  function strength(p) { let s = Math.min(60, p.length * 3); if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s += 10; if (/\d/.test(p)) s += 10; if (/[^A-Za-z0-9]/.test(p)) s += 10; if (/\s/.test(p.trim())) s += 10; return Math.min(100, s); }
+  function checkNew(p, p2) {
+    if (p.length < 12) throw new Error('Use at least 12 characters.');
+    if (p !== p2) throw new Error('The two passphrases are different.');
+  }
+
+  // ---- status ----------------------------------------------------------------------
+  const fmt = (t) => t ? new Date(t).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-') : '—';
+  const until = (t) => { const h = Math.round((t - Date.now()) / 3600000); return h <= 0 ? 'any moment' : h < 48 ? `in ${h} hours` : `in ${Math.round(h / 24)} days`; };
+  function renderStatus() {
+    const b = $('#banner'); b.innerHTML = '';
+    if (st.lorium !== 'connected') b.innerHTML = `<div class="banner warn">Lorium's WhatsApp is not connected (${esc(st.lorium || 'unlinked')}). Warnings and the vault can't be sent until it is: link it on the WhatsApp page.</div>`;
+    if (st.error) b.innerHTML += `<div class="banner bad">Last attempt failed: ${esc(st.error)}. It is tried again every few minutes.</div>`;
+    $('#state-card').hidden = !st.exists;
+    if (!st.exists) return;
+    const sending = st.released ? '<span class="pill bad">Sent</span>' : st.armed ? '<span class="pill ok">On</span>' : '<span class="pill">Off</span>';
+    const warned = Object.keys(st.warned || {}).length;
+    $('#status').innerHTML = [
+      ['Automatic sending', sending],
+      ['Goes to', st.recipient?.name ? `${esc(st.recipient.name)}<br><span class="note">+${esc(st.recipient.phone)}</span>` : '<span class="pill warn">Not chosen</span>'],
+      ['Last seen you', `${fmt(st.lastSeen)}<br><span class="note">${esc(st.lastSeenVia || '')}</span>`],
+      st.released ? ['Sent on', fmt(st.released.at)] : ['Would be sent', st.armed && st.deadline ? `${fmt(st.deadline)}<br><span class="note">${until(st.deadline)}${warned ? ` · ${warned} warning${warned > 1 ? 's' : ''} sent` : ''}</span>` : '—'],
+      ['Saved', `${fmt(st.updatedAt)}<br><span class="note">${st.entries} login${st.entries === 1 ? '' : 's'}</span>`],
+    ].map(([k, v]) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('');
+    if (st.released) b.innerHTML += '<div class="banner bad">The vault was sent. To take it back, unlock it and press Save: its link stops working and the 7 days start again.</div>';
+  }
+  async function refresh() {
+    st = await api('status');
+    renderStatus();
+    $('#create').hidden = st.exists || Boolean(key);
+    $('#unlock').hidden = !st.exists || Boolean(key);
+    $('#editor').hidden = !key;
+  }
+
+  // ---- editor ----------------------------------------------------------------------
+  function renderEntries() {
+    const box = $('#entries');
+    if (!data.items.length) { box.innerHTML = '<div class="empty">No logins yet. Add one, or write everything in the notes below.</div>'; return; }
+    box.innerHTML = data.items.map((e, i) => `<div class="entry" data-i="${i}">
+      <div class="row">
+        <label>What<input data-f="title" value="${esc(e.title)}" placeholder="e.g. BCA internet banking"></label>
+        <label>Username / email<input data-f="user" value="${esc(e.user)}" autocomplete="off"></label>
+        <label>Password<div class="secret"><input data-f="secret" type="password" value="${esc(e.secret)}" autocomplete="off"><button type="button" data-show="${i}">Show</button></div></label>
+      </div>
+      <div class="row">
+        <label>Website<input data-f="url" value="${esc(e.url)}" placeholder="https://"></label>
+        <label>Notes<input data-f="notes" value="${esc(e.notes)}" placeholder="PIN hint, security questions…"></label>
+        <button type="button" class="danger flex0" data-del="${i}">Remove</button>
+      </div></div>`).join('');
+  }
+  function collect() {
+    document.querySelectorAll('.entry').forEach((el) => { const e = data.items[el.dataset.i]; el.querySelectorAll('[data-f]').forEach((inp) => { e[inp.dataset.f] = inp.value; }); });
+    data.notes = $('#notes').value;
+    return { v: 1, items: data.items.filter((e) => Object.values(e).some((v) => String(v).trim())), notes: data.notes };
+  }
+  function openEditor(content) {
+    data = { items: content.items || [], notes: content.notes || '' };
+    $('#notes').value = data.notes;
+    $('#owner-name').value = st.ownerName || '';
+    $('#r-name').value = st.recipient?.name || '';
+    $('#r-phone').value = st.recipient?.phone || '';
+    $('#armed').checked = st.exists ? Boolean(st.armed) : true;
+    renderEntries(); touch(); refresh();
+  }
+  function lock() { key = null; data = null; $('#entries').innerHTML = ''; $('#notes').value = ''; clearTimeout(idle); refresh(); }
+  function touch() { clearTimeout(idle); idle = setTimeout(() => { if (key) { lock(); toast('Locked after 10 minutes without activity.'); } }, 10 * 60 * 1000); }
+  ['click', 'keydown'].forEach((ev) => document.addEventListener(ev, () => { if (key) touch(); }, true));
+
+  async function save(extra = {}) {
+    const content = collect();
+    const k = extra.newKey || key;
+    const locked = await lockData(k, content);
+    const body = { ...locked, entries: content.items.length, ownerName: $('#owner-name').value, recipient: { name: $('#r-name').value, phone: $('#r-phone').value }, armed: $('#armed').checked };
+    if (st.exists) body.auth = key.auth;
+    if (extra.newKey) { body.salt = extra.salt; body.iter = ITER; if (st.exists) body.newAuth = extra.newKey.auth; else body.auth = extra.newKey.auth; }
+    st = { ...st, ...(await api('save', body)) };
+    if (extra.newKey) key = extra.newKey;
+    $('#saved-note').textContent = `Saved ${fmt(Date.now())}`;
+    await refresh();
+  }
+
+  // ---- actions ---------------------------------------------------------------------
+  $('#c-pass').oninput = () => { const s = strength($('#c-pass').value); const m = $('#c-meter'); m.style.width = `${s}%`; m.style.background = s >= 70 ? 'var(--ok)' : s >= 45 ? '#d97706' : 'var(--bad)'; };
+  $('#c-go').onclick = async () => {
+    const btn = $('#c-go');
+    try {
+      checkNew($('#c-pass').value, $('#c-pass2').value);
+      btn.disabled = true; btn.textContent = 'Creating…';
+      const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
+      const k = await derive($('#c-pass').value, salt, ITER);
+      $('#c-pass').value = ''; $('#c-pass2').value = '';
+      key = k; data = { items: [], notes: '' };
+      $('#armed').checked = false; // nothing is sent until a person is chosen and it is switched on
+      await save({ newKey: k, salt });
+      openEditor({ items: [], notes: '' }); $('#armed').checked = false;
+      toast('Created. Add what should be passed on, then choose who receives it.');
+    } catch (e) { key = null; toast(e.message, true); } finally { btn.disabled = false; btn.textContent = 'Create'; }
+  };
+  $('#u-go').onclick = async () => {
+    const btn = $('#u-go');
+    try {
+      btn.disabled = true; btn.textContent = 'Unlocking…';
+      const k = await derive($('#u-pass').value, st.salt, st.iter);
+      const { iv, ct } = await api('open', { auth: k.auth });
+      const content = await unlockData(k, iv, ct);
+      $('#u-pass').value = ''; key = k; openEditor(content);
+    } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = 'Unlock'; }
+  };
+  $('#u-pass').onkeydown = (e) => { if (e.key === 'Enter') $('#u-go').click(); };
+  $('#lock').onclick = lock;
+  $('#add').onclick = () => { collect(); data.items.push({ title: '', user: '', secret: '', url: '', notes: '' }); renderEntries(); document.querySelector('.entry:last-child [data-f="title"]')?.focus(); };
+  $('#entries').onclick = (e) => {
+    const show = e.target.closest('[data-show]'); const del = e.target.closest('[data-del]');
+    if (show) { const inp = show.previousElementSibling; inp.type = inp.type === 'password' ? 'text' : 'password'; show.textContent = inp.type === 'password' ? 'Show' : 'Hide'; }
+    if (del && confirm('Remove this login from the vault?')) { collect(); data.items.splice(Number(del.dataset.del), 1); renderEntries(); }
+  };
+  $('#check').onclick = async () => {
+    try { const r = await api('check-number', { phone: $('#r-phone').value }); $('#check-out').textContent = r.ok ? (r.why || `✓ +${r.phone} is on WhatsApp.`) : r.why; if (r.phone) $('#r-phone').value = r.phone; } catch (e) { toast(e.message, true); }
+  };
+  $('#save').onclick = async () => {
+    const btn = $('#save');
+    try { btn.disabled = true; await save(); toast($('#armed').checked ? 'Saved. Automatic sending is on.' : 'Saved. Automatic sending is off.'); } catch (e) { toast(e.message, true); } finally { btn.disabled = false; }
+  };
+  $('#n-go').onclick = async () => {
+    try {
+      checkNew($('#n-pass').value, $('#n-pass2').value);
+      const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
+      const k = await derive($('#n-pass').value, salt, ITER);
+      await save({ newKey: k, salt });
+      $('#n-pass').value = ''; $('#n-pass2').value = '';
+      toast('Passphrase changed. Give the new one to the person too.');
+    } catch (e) { toast(e.message, true); }
+  };
+  $('#del').onclick = async () => {
+    if (!confirm('Delete the private vault for good? This cannot be undone.')) return;
+    try { await api('delete', { auth: key.auth }); key = null; data = null; toast('Deleted.'); refresh(); } catch (e) { toast(e.message, true); }
+  };
+
+  refresh().catch((e) => toast(e.message, true));
+  setInterval(() => { if (!document.hidden) refresh().catch(() => {}); }, 60000);
+})();
+</script>
+</body>
+</html>

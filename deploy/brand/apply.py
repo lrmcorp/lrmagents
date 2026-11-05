@@ -91,7 +91,7 @@ patch("agent/registry.py", 'name=builtin_name or "CowAgent",', f'name=builtin_na
 # the entry is merged into it (and restored if a saved menu lacks it).
 patch("static/js/core/menu.js",
       "    star: 'fa-star',",
-      "    whatsapp: 'fa-comments', vault: 'fa-gem', personal: 'fa-circle-dot', star: 'fa-star',")
+      "    whatsapp: 'fa-comments', vault: 'fa-gem', safe: 'fa-lock', personal: 'fa-circle-dot', star: 'fa-star',")
 patch("static/js/core/menu.js",
       "function menuMerge(saved) {",
       """function menuMerge(saved) {
@@ -105,6 +105,7 @@ function _lrmEnsureWhatsApp(doc) {
     const pages = [
         { after: 'chat', item: { id: 'lrm-personal', type: 'url', url: '/assets/brand/personal.html', open: 'frame', title: 'Personal', icon: 'personal', hidden: false } },
         { after: 'knowledge', hide: ['memory', 'knowledge'], item: { id: 'lrm-vault', type: 'url', url: '/assets/brand/vault.html', open: 'frame', title: 'Vault', icon: 'vault', hidden: false } },
+        { after: 'knowledge', item: { id: 'lrm-safe', type: 'url', url: '/whatsapp/safe/', open: 'frame', title: 'Private vault', icon: 'safe', hidden: false } },
         { after: 'skills', item: { id: 'lrm-teammates', type: 'url', url: '/teammates/', open: 'frame', title: 'Teammates', icon: 'robot', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
         { after: 'tasks', item: { id: 'lrm-browser', type: 'url', url: '/assets/brand/browser.html', open: 'frame', title: 'Browser', icon: 'globe', hidden: false } },
@@ -128,7 +129,7 @@ function _lrmGroup(doc) {
     const sections = [
         { id: 'chat', title: '', keys: ['chat', 'artifacts'] },
         { id: 'lrm-assistants', title: 'Assistants', keys: ['lrm-personal', 'agents'] },
-        { id: 'lrm-knowledge', title: 'Knowledge', keys: ['lrm-vault', 'skills', 'memory', 'knowledge'] },
+        { id: 'lrm-knowledge', title: 'Knowledge', keys: ['lrm-vault', 'lrm-safe', 'skills', 'memory', 'knowledge'] },
         { id: 'lrm-connect', title: 'Connect', keys: ['lrm-whatsapp', 'lrm-connections', 'channels'] },
         { id: 'lrm-work', title: 'Work', keys: ['tasks', 'lrm-activity', 'lrm-browser'] },
         { id: 'lrm-settings', title: 'Settings', keys: ['config', 'lrm-usage', 'logs'] },
