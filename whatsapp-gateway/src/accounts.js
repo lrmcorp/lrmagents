@@ -376,7 +376,7 @@ class Account {
       return;
     }
     // A designated contact set to "Agent may reply" talks with the agent like an approved contact.
-    const settings = fromPhone && directory?.mayReply(fromPhone) && !this.settings.allowFrom.includes(fromPhone)
+    const settings = fromPhone && directory?.mayReply(fromPhone, this.agentId) && !this.settings.allowFrom.includes(fromPhone)
       ? { ...this.settings, allowFrom: [...this.settings.allowFrom, fromPhone] } : this.settings;
     const verdict = decide({ key: msg.key, message: msg.message, settings, myJids, selfChat });
 
@@ -680,23 +680,25 @@ export class Accounts {
 
   // A message the agent sends on its own (report, reminder): only to the owner, designated contacts,
   // ticked groups and approved people who talk with it. The key de-duplicates scheduler retries.
-  async deliver(agentId, chat, text) {
+  // asAgent: the agent asking (it may send through another agent's number); the contact or
+  // group must be set for that agent. Without it (scheduled deliveries) any designated one counts.
+  async deliver(agentId, chat, text, asAgent = '') {
     const account = this.get(agentId);
     if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });
     if (!/@(s\.whatsapp\.net|g\.us|lid)$/.test(chat)) throw Object.assign(new Error('not a WhatsApp chat id'), { status: 400 });
     const own = [account.sock.user?.id, account.sock.user?.lid].some((jid) => jid && bareJid(jid) === bareJid(chat));
     const phone = phoneOf(chat) || account.lidPhone.get(chat) || '';
-    const designated = Boolean(directory?.has(phone));
+    const designated = asAgent ? Boolean(directory?.allows(phone, asAgent)) : Boolean(directory?.has(phone));
     // Approved people who have talked with this agent may get what they asked it for
     // (a reminder set in their chat). Anyone else only if designated by the owner.
     const followUp = Boolean(phone) && account.settings.allowFrom.includes(phone) && account.knownChats.has(chat);
-    const group = chat.endsWith('@g.us') && Boolean(directory?.group(chat));
+    const group = chat.endsWith('@g.us') && (asAgent ? Boolean(directory?.groupAllows(chat, asAgent)) : Boolean(directory?.group(chat)));
     if (chat.endsWith('@g.us') && !group) {
-      throw Object.assign(new Error('agents may only post in groups the owner ticked under Groups on the WhatsApp page; this group is not one'), { status: 403 });
+      throw Object.assign(new Error(`agents may only post in groups the owner ticked for them on the WhatsApp page; this group is not one${asAgent ? ` for '${asAgent}'` : ''}`), { status: 403 });
     }
     if (!own && !account.isOwner(chat, account.sock) && !designated && !followUp && !group) {
-      throw Object.assign(new Error(`agents may only message the owner, designated contacts, and approved people who talk with them; +${phone || chat} is none of these. `
-        + 'The owner can add it under Designated contacts on the WhatsApp page.'), { status: 403 });
+      throw Object.assign(new Error(`agents may only message the owner, their own contacts, and approved people who talk with them; +${phone || chat} is none of these${asAgent ? ` for '${asAgent}'` : ''}. `
+        + 'The owner can add it under that agent\'s Contacts on the WhatsApp page.'), { status: 403 });
     }
     if (!text.trim()) return;
     const key = crypto.createHash('sha256').update(`${agentId}\n${chat}\n${text}`).digest('hex');

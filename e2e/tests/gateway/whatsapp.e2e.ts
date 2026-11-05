@@ -2,26 +2,42 @@ import { expect } from 'e2e';
 import { test } from '@e2e-dev/web';
 import { healthy } from '../helpers';
 
-test('WhatsApp page: add and remove a designated contact', async ({ app, browser }) => {
-  await app.open('/whatsapp/');
-  await expect(browser.locator('#agents [data-agent]').first()).toBeVisible();
+test('WhatsApp page: a contact for one agent, then for every agent', async ({ app, browser }) => {
+  await app.open('/whatsapp/#agent=default');
+  await expect(browser.locator('#a-name')).toContainText('Lorium');
   await browser.locator('#t-groups').click();
   await expect(browser.locator('#groups')).toBeVisible();
   await browser.locator('#t-contacts').click();
   await expect(browser.locator('#designated')).toBeVisible();
+  // Kept to this agent: untick "Every agent".
   await browser.locator('#d-add [name=name]').fill('Budi');
   await browser.locator('#d-add [name=phone]').fill('+62 811 0000 0001');
+  await browser.locator('[name=every]').click();
   await browser.locator('#d-add button').click();
+  await expect(browser.locator('#d-list')).toContainText('Only this agent');
+  await browser.evaluate(() => { location.hash = 'agent=lrm-cfo'; });
+  await expect(browser.locator('#d-list')).toContainText('None yet');
+  // Opened to every agent from Lorium's list.
+  await browser.evaluate(() => { location.hash = 'agent=default'; });
+  await browser.locator('[data-scope="contact"]').click();
+  await browser.locator('#scope-form [value=all]').click();
+  await browser.locator('#scope-form button[type=submit]').click();
+  await browser.evaluate(() => { location.hash = 'agent=lrm-cfo'; });
   await expect(browser.locator('#d-list')).toContainText('Budi');
+  await expect(browser.locator('#d-list')).toContainText('Every agent');
+  // Removed everywhere: from CFO, then from Lorium.
   await browser.evaluate(() => { window.confirm = () => true; });
-  await browser.locator('[data-dremove="0"]').click();
+  await browser.locator('[data-dremove="6281100000001"]').click();
+  await expect(browser.locator('#d-list')).toContainText('None yet');
+  await browser.evaluate(() => { location.hash = 'agent=default'; });
+  await browser.locator('[data-dremove="6281100000001"]').click();
   await expect(browser.locator('#d-list')).toContainText('None yet');
   await healthy(browser);
 });
 
 test('WhatsApp page: an agent\'s settings open and close', async ({ app, browser }) => {
   await app.open('/whatsapp/');
-  await browser.locator('[data-agent="default"] [data-settings]').click();
+  await browser.locator('#a-settings').click();
   await expect(browser.locator('#set-dlg')).toBeVisible();
   await browser.locator('#set-form [value=monitor]').click();
   await expect(browser.locator('#set-form [name=dmPolicy]')).toBeHidden();

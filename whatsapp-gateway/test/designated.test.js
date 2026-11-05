@@ -28,7 +28,7 @@ async function setup() {
 
 test('cleanContacts: full numbers only, one entry per number', () => {
   assert.deepEqual(cleanContacts([{ phone: '+62 811-0000-0001', name: ' Budi ' }, { phone: '6281100000001' }, { phone: '0812' }]),
-    [{ phone: '6281100000001', name: '', mode: 'listen' }]);
+    [{ phone: '6281100000001', name: '', mode: 'listen', agents: [] }]);
 });
 
 test('agents may message only the owner and designated contacts', async () => {
@@ -36,10 +36,10 @@ test('agents may message only the owner and designated contacts', async () => {
   await accounts.deliver('lrm-cfo', `${FRIEND}@s.whatsapp.net`, 'Invoice 12 is due Friday.');
   assert.equal(out.length, 1);
   assert.equal(book.lastSent(FRIEND).agent, 'lrm-cfo');
-  await assert.rejects(accounts.deliver('lrm-cfo', `${STRANGER}@s.whatsapp.net`, 'hello'), (e) => e.status === 403 && /designated contacts/.test(e.message));
+  await assert.rejects(accounts.deliver('lrm-cfo', `${STRANGER}@s.whatsapp.net`, 'hello'), (e) => e.status === 403 && /their own contacts/.test(e.message));
   // even a chat that wrote to the agent before is no longer enough
   accounts.get('lrm-cfo').knownChats.add(`${STRANGER}@s.whatsapp.net`);
-  await assert.rejects(accounts.deliver('lrm-cfo', `${STRANGER}@s.whatsapp.net`, 'hello again'), /designated/);
+  await assert.rejects(accounts.deliver('lrm-cfo', `${STRANGER}@s.whatsapp.net`, 'hello again'), /own contacts/);
   await accounts.deliver('lrm-cfo', '6289900000000@s.whatsapp.net', 'note to self'); // the agent's own chat
   assert.equal(out.length, 2);
 });
@@ -63,7 +63,7 @@ test('the relay prompt treats their words as information and quotes what was sen
 test('approved people who talk with the agent can get their reminders; approval alone is not enough', async () => {
   const { accounts, account, out } = await setup();
   account.settings.allowFrom = [STRANGER];
-  await assert.rejects(accounts.deliver('lrm-cfo', `${STRANGER}@s.whatsapp.net`, 'Reminder: call the bank'), /designated/);
+  await assert.rejects(accounts.deliver('lrm-cfo', `${STRANGER}@s.whatsapp.net`, 'Reminder: call the bank'), /own contacts/);
   account.knownChats.add(`${STRANGER}@s.whatsapp.net`);
   await accounts.deliver('lrm-cfo', `${STRANGER}@s.whatsapp.net`, 'Reminder: call the bank');
   assert.equal(out.at(-1).text, 'Reminder: call the bank');
@@ -90,10 +90,30 @@ test('the agent they wrote to is told, as information only', async () => {
 test('groups: agents post only in groups the owner ticked', async () => {
   const { accounts, book, out } = await setup();
   const GROUP = '120363000000000001@g.us';
-  await assert.rejects(accounts.deliver('lrm-cfo', GROUP, 'Daily report'), (e) => e.status === 403 && /Groups on the WhatsApp page/.test(e.message));
+  await assert.rejects(accounts.deliver('lrm-cfo', GROUP, 'Daily report'), (e) => e.status === 403 && /ticked for them on the WhatsApp page/.test(e.message));
   await book.setGroups([{ jid: GROUP, name: 'HR Group Managers', agent: 'lrm-cfo' }, { jid: 'not-a-group', name: 'x' }]);
   assert.deepEqual(book.groups.map((g) => g.name), ['HR Group Managers']);
   await accounts.deliver('lrm-cfo', GROUP, 'Daily report');
   assert.equal(out.at(-1).chat, GROUP);
   await assert.rejects(accounts.deliver('lrm-cfo', '120363000000000002@g.us', 'x'), /ticked/);
+});
+
+test('per agent: a contact or group set for some agents is closed to the others', async () => {
+  const { accounts, book, out } = await setup();
+  const GROUP = '120363000000000001@g.us';
+  await book.set([{ name: 'Budi', phone: FRIEND, agents: ['lrm-hrd'] }]);
+  await book.setGroups([{ jid: GROUP, name: 'HR Group', agent: 'lrm-cfo', agents: ['lrm-hrd'] }]);
+  // HRD may use them, even through CFO's number; CFO itself may not.
+  await accounts.deliver('lrm-cfo', `${FRIEND}@s.whatsapp.net`, 'Payslips are ready.', 'lrm-hrd');
+  await accounts.deliver('lrm-cfo', GROUP, 'Attendance today', 'lrm-hrd');
+  assert.equal(out.length, 2);
+  await assert.rejects(accounts.deliver('lrm-cfo', `${FRIEND}@s.whatsapp.net`, 'x', 'lrm-cfo'), (e) => e.status === 403 && /for 'lrm-cfo'/.test(e.message));
+  await assert.rejects(accounts.deliver('lrm-cfo', GROUP, 'x', 'lrm-cfo'), (e) => e.status === 403 && /for 'lrm-cfo'/.test(e.message));
+  // "Agent may reply" lets only the agents the contact is set for talk with them.
+  await book.set([{ name: 'Budi', phone: FRIEND, agents: ['lrm-hrd'], mode: 'reply' }]);
+  assert.equal(book.mayReply(FRIEND, 'lrm-hrd'), true);
+  assert.equal(book.mayReply(FRIEND, 'lrm-cfo'), false);
+  // An empty list (entries saved before agents were chosen) means every agent.
+  await book.set([{ name: 'Budi', phone: FRIEND }]);
+  assert.equal(book.allows(FRIEND, 'lrm-cfo'), true);
 });

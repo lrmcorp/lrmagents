@@ -11,42 +11,64 @@
     --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8; --hover: #ededf5;
     --text: #0a0a0f; --text-2: #3f3f46; --text-3: #5f5f68; --line: #dbdbe5;
     --primary: #18181b; --on-primary: #fff; --ring: #7480f1;
-    --ok: #12795b; --ok-bg: #e7f6ef; --warn: #92400e; --warn-bg: #fff7e6; --warn-line: #f6d79a; --bad: #b42530; --bad-bg: #fff1f2;
+    --ok: #12795b; --warn: #92400e; --warn-bg: #fff7e6; --warn-line: #f6d79a; --bad: #b42530; --bad-bg: #fff1f2;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-  header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
-  header img { height: 28px; }
-  header a { margin-left: auto; color: var(--text); font-weight: 600; text-decoration: none; font-size: 13px; }
-  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  body > header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  body > header img { height: 28px; width: auto; }
+  body > header a { margin-left: auto; color: var(--text); font-weight: 600; text-decoration: none; font-size: 13px; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
   h1 { font-size: 22px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
   .summary { color: var(--text-3); margin: 2px 0 16px; }
 
   /* Things waiting for the owner: the only coloured block on the page. */
   .todo { display: grid; gap: 8px; margin-bottom: 16px; }
-  .todo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn); }
-  .todo-row.bad { background: var(--bad-bg); border-color: #fecdd3; color: var(--bad); }
-  .todo-row span { flex: 1 1 240px; color: var(--text); }
+  .todo:empty { display: none; }
+  .todo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: var(--warn-bg); border: 1px solid var(--warn-line); }
+  .todo-row.bad { background: var(--bad-bg); border-color: #fecdd3; }
+  .todo-row span { flex: 1 1 240px; }
   .todo-row code { font: 700 13px ui-monospace, Menlo, monospace; letter-spacing: .06em; }
 
-  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
-  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px 12px; color: var(--text-3); font-weight: 600; min-height: 44px; }
+  /* Agents on the left, the chosen agent's number, contacts and groups on the right. */
+  .layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .agents { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 6px; display: grid; gap: 2px; position: sticky; top: 16px; }
+  .agents button { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; text-align: left; border: 0; border-radius: 10px; padding: 9px 10px; background: none; min-height: 0; font-weight: 400; white-space: normal; }
+  .agents button:hover { background: var(--muted-bg); }
+  .agents button[aria-current="true"] { background: var(--muted-bg); box-shadow: inset 0 0 0 1px var(--line); }
+  .agents b { font-weight: 600; overflow-wrap: anywhere; }
+  .agents small { grid-column: 1 / -1; color: var(--text-3); font-size: 12px; }
+  .panel label.picker { display: none; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; min-width: 0; }
+  .phead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .phead h2 { margin: 0; font-size: 17px; font-weight: 650; }
+  .phead .grow { flex: 1 1 200px; min-width: 0; }
+  .phead p { margin: 2px 0 0; color: var(--text-3); font-size: 13px; }
+  .phead .acts { display: flex; gap: 8px; }
+
+  .tabs { display: flex; gap: 4px; padding: 0 12px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px 8px; color: var(--text-3); font-weight: 600; min-height: 44px; }
   .tabs button:hover { background: none; color: var(--text); }
   .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
-  .tabs .n:empty { display: none; }
-  .tabs .n { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--muted-bg); color: var(--text-2); font-size: 12px; }
-  .intro { color: var(--text-2); margin: 0 0 14px; max-width: 680px; }
+  .n { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--muted-bg); color: var(--text-2); font-size: 12px; text-align: center; }
+  .n:empty { display: none; }
+  .pane { padding: 14px 18px 18px; }
+  .intro { color: var(--text-2); margin: 0 0 12px; }
 
-  .list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
-  .row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .list { border: 1px solid var(--line); border-radius: 12px; }
+  .row { display: grid; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
   .row:first-child { border-top: 0; }
+  .row .who { min-width: 0; }
   .row .who b { display: block; font-weight: 600; overflow-wrap: anywhere; }
   .row .who small, .row .sub { color: var(--text-3); font-size: 12.5px; }
-  .row .acts { display: flex; gap: 8px; justify-content: flex-end; }
-  .empty { padding: 18px 16px; color: var(--text-3); margin: 0; }
+  .contact { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 160px auto; }
+  .group { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); }
+  .group label { cursor: pointer; }
+  .group input { width: 20px; height: 20px; min-height: 0; accent-color: var(--primary); }
+  .empty { padding: 16px 14px; color: var(--text-3); margin: 0; }
 
-  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--text-2); white-space: nowrap; }
   .chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #a1a1aa; }
   .chip.connected { color: var(--ok); } .chip.connected::before { background: var(--ok); }
   .chip.qr, .chip.starting, .chip.reconnecting { color: var(--warn); } .chip.qr::before, .chip.starting::before, .chip.reconnecting::before { background: #d97706; }
@@ -59,18 +81,16 @@
   button.danger { color: var(--bad); }
   button:disabled { opacity: .5; cursor: default; }
   input, select, textarea { width: 100%; font: 400 14px Inter, system-ui, sans-serif; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-height: 38px; }
-  textarea { min-height: 60px; resize: vertical; }
   label.f { display: grid; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
   .hint { font-size: 12.5px; color: var(--text-3); font-weight: 400; }
   .msg { font-size: 13px; color: var(--text-3); margin: 8px 0 0; min-height: 20px; }
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-  .add { display: grid; grid-template-columns: 1fr 1.4fr 1fr auto; gap: 8px; margin-bottom: 12px; }
-  .contact { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr) auto; }
-  .group { grid-template-columns: auto minmax(0, 1fr) auto; cursor: pointer; }
-  .group input { width: 20px; height: 20px; min-height: 0; accent-color: var(--primary); }
+  .add { display: grid; grid-template-columns: 1fr 1.3fr 160px auto; gap: 8px; margin-bottom: 8px; }
+  .add-opts { display: flex; gap: 8px; align-items: center; color: var(--text-2); font-size: 13px; margin: 0 0 12px; }
+  .add-opts input { width: 18px; height: 18px; min-height: 0; accent-color: var(--primary); }
   .toolbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; }
-  .toolbar .intro { margin: 0; flex: 1 1 320px; }
+  .toolbar .intro { margin: 0; flex: 1 1 300px; }
   details.more { margin-top: 12px; }
   details.more summary { cursor: pointer; font-weight: 600; color: var(--text-2); min-height: 32px; }
   .foot { color: var(--text-3); font-size: 12.5px; margin: 12px 2px 0; }
@@ -79,7 +99,7 @@
   dialog { border: 0; border-radius: 16px; padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--text); box-shadow: 0 20px 50px rgba(10,10,15,.18); }
   dialog::backdrop { background: rgba(10,10,15,.35); }
   .dlg { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); }
-  .dlg header { position: static; height: auto; padding: 16px 20px 12px; border: 0; background: none; display: block; }
+  .dlg header { padding: 16px 20px 12px; }
   .dlg h2 { margin: 0; font-size: 17px; font-weight: 650; }
   .dlg header p { margin: 2px 0 0; color: var(--text-3); font-size: 13px; }
   .dlg .body { padding: 4px 20px 16px; overflow-y: auto; display: grid; gap: 14px; }
@@ -95,18 +115,32 @@
   .mode input { width: 16px; height: 16px; min-height: 0; margin: 3px 0 0; accent-color: var(--primary); }
   .mode small { grid-column: 2; color: var(--text-3); font-weight: 400; font-size: 12.5px; }
   .mode:has(input:checked) { border-color: var(--primary); background: var(--muted-bg); }
+  .checks { display: grid; gap: 2px; border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+  .checks label { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
+  .checks label:hover { background: var(--muted-bg); }
+  .checks input { width: 18px; height: 18px; min-height: 0; accent-color: var(--primary); }
+  .checks small { margin-left: auto; color: var(--text-3); }
+  .checks.off { opacity: .5; }
+  button.scope { border: 0; background: none; padding: 4px 0; min-height: 0; color: var(--text-2); font-weight: 600; font-size: 12.5px; text-decoration: underline; text-underline-offset: 3px; text-align: left; white-space: normal; }
+  button.scope:hover { background: none; color: var(--text); }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 12px; }
   legend { font-size: 13px; font-weight: 650; padding: 0; margin-bottom: 8px; }
 
-  @media (max-width: 720px) {
-    .row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
-    .row .chip { grid-column: 2; grid-row: 1; justify-self: end; }
-    .row .sub { grid-column: 1 / -1; }
-    .row .acts { grid-column: 1 / -1; justify-content: flex-start; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; }
+    .agents { display: none; }
+    .panel label.picker { display: grid; gap: 4px; }
+    .phead { padding: 14px; }
+    .pane { padding: 12px 14px 16px; }
     .contact { grid-template-columns: minmax(0, 1fr) auto; }
-    .contact select { grid-column: 1 / -1; grid-row: 2; }
-    .add { grid-template-columns: 1fr; }
+    .contact .sub { grid-column: 1 / -1; grid-row: 2; }
+    .contact select { grid-column: 1 / -1; grid-row: 3; }
+    .group { grid-template-columns: auto minmax(0, 1fr); }
+    .group .sub { grid-column: 2; }
+    .add { grid-template-columns: 1fr auto; }
+    .add input { grid-column: 1 / -1; }
+    .add-opts { align-items: flex-start; }
     .modes, .pair { grid-template-columns: 1fr; }
     dialog { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 16px 16px 0 0; max-height: 92dvh; }
     .dlg { max-height: 92dvh; }
@@ -126,47 +160,53 @@
   <p class="summary" id="summary">Loading…</p>
   <div class="todo" id="todo" aria-live="polite"></div>
 
-  <nav class="tabs" role="tablist" aria-label="WhatsApp settings">
-    <button role="tab" id="t-numbers" aria-controls="p-numbers" aria-selected="true">Numbers<span class="n" id="n-numbers"></span></button>
-    <button role="tab" id="t-contacts" aria-controls="p-contacts" aria-selected="false" tabindex="-1">Contacts<span class="n" id="n-contacts"></span></button>
-    <button role="tab" id="t-groups" aria-controls="p-groups" aria-selected="false" tabindex="-1">Groups<span class="n" id="n-groups"></span></button>
-  </nav>
+  <div class="layout">
+    <nav class="agents" id="agents" aria-label="Agents"><p class="empty">Loading agents…</p></nav>
+    <section class="panel" id="panel" aria-live="polite">
+      <label class="picker f" style="padding:14px 14px 0">Agent<select id="pick" aria-label="Agent"></select></label>
+      <div class="phead">
+        <div class="grow"><h2 id="a-name"></h2><p id="a-line"></p></div>
+        <span class="chip" id="a-chip"></span>
+        <div class="acts"><button class="primary" id="a-link" hidden>Link</button><button id="a-settings">Settings</button></div>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="This agent's WhatsApp">
+        <button role="tab" id="t-contacts" aria-controls="designated" aria-selected="true">Contacts<span class="n" id="n-contacts"></span></button>
+        <button role="tab" id="t-groups" aria-controls="groups" aria-selected="false" tabindex="-1">Groups<span class="n" id="n-groups"></span></button>
+      </nav>
 
-  <section id="p-numbers" role="tabpanel" aria-labelledby="t-numbers">
-    <p class="intro">Each agent can have its own WhatsApp number. Link it once by scanning a code, like WhatsApp Web.</p>
-    <div class="list" id="agents"><p class="empty">Loading agents…</p></div>
-    <p class="foot">Use a dedicated number for each agent: linking goes through WhatsApp Web, and heavy or spam-like use can get a number banned.</p>
-  </section>
+      <div class="pane" id="designated" role="tabpanel" aria-labelledby="t-contacts">
+        <p class="intro" id="c-intro"></p>
+        <form class="add" id="d-add">
+          <input name="name" placeholder="Name" aria-label="Contact name" autocomplete="off">
+          <input name="phone" placeholder="Number with country code, e.g. 62812…" aria-label="WhatsApp number with country code" inputmode="tel" autocomplete="off">
+          <select name="mode" aria-label="When they write back"><option value="listen">Listen only</option><option value="reply">Agent may reply</option></select>
+          <button class="primary">Add</button>
+        </form>
+        <label class="add-opts"><input type="checkbox" name="every" form="d-add" checked><span>Every agent may message them. <span class="hint">Untick to keep them to <span id="c-only">this agent</span>.</span></span></label>
+        <div class="list" id="d-list"></div>
+        <p class="msg" role="status" id="d-msg"></p>
+        <p class="foot"><b>Listen only:</b> the agent does not answer; Lorium tells you what they said. <b>Agent may reply:</b> the agent talks with them directly.</p>
+      </div>
 
-  <section id="designated" role="tabpanel" aria-labelledby="t-contacts" hidden>
-    <p class="intro">Besides you, agents may message only these people first. Choose what happens when they write back.</p>
-    <form class="add" id="d-add">
-      <input name="name" placeholder="Name" aria-label="Contact name" autocomplete="off">
-      <input name="phone" placeholder="Number with country code, e.g. 62812…" aria-label="WhatsApp number with country code" inputmode="tel" autocomplete="off">
-      <select name="mode" aria-label="When they write back"><option value="listen">Listen only</option><option value="reply">Agent may reply</option></select>
-      <button class="primary">Add</button>
-    </form>
-    <div class="list" id="d-list"></div>
-    <p class="msg" role="status" id="d-msg"></p>
-    <p class="foot"><b>Listen only:</b> the agent does not answer; Lorium tells you what they said. <b>Agent may reply:</b> the agent talks with them directly.</p>
-  </section>
-
-  <section id="groups" role="tabpanel" aria-labelledby="t-groups" hidden>
-    <div class="toolbar">
-      <p class="intro">Tick the groups agents may post to. In a group they answer only when someone @mentions or replies to them.</p>
-      <button id="g-load">Refresh list</button>
-    </div>
-    <div class="list" id="g-list"><p class="empty">Loading…</p></div>
-    <p class="msg" role="status" id="g-msg"></p>
-    <details class="more">
-      <summary>Group not in the list?</summary>
-      <form class="add" id="g-add" style="grid-template-columns: 1fr 1.4fr auto; margin-top: 8px">
-        <input name="name" placeholder="Group name" aria-label="Group name" autocomplete="off">
-        <input name="jid" placeholder="Group id, e.g. 120363…@g.us" aria-label="Group id" spellcheck="false" autocomplete="off">
-        <button>Add group</button>
-      </form>
-    </details>
-  </section>
+      <div class="pane" id="groups" role="tabpanel" aria-labelledby="t-groups" hidden>
+        <div class="toolbar">
+          <p class="intro" id="g-intro"></p>
+          <button id="g-load">Refresh list</button>
+        </div>
+        <div class="list" id="g-list"><p class="empty">Loading…</p></div>
+        <p class="msg" role="status" id="g-msg"></p>
+        <details class="more">
+          <summary>Group not in the list?</summary>
+          <form class="add" id="g-add" style="grid-template-columns: 1fr 1.4fr auto; margin-top: 8px">
+            <input name="name" placeholder="Group name" aria-label="Group name" autocomplete="off">
+            <input name="jid" placeholder="Group id, e.g. 120363…@g.us" aria-label="Group id" spellcheck="false" autocomplete="off">
+            <button>Add group</button>
+          </form>
+        </details>
+      </div>
+    </section>
+  </div>
+  <p class="foot">Use a dedicated number for each agent: linking goes through WhatsApp Web, and heavy or spam-like use can get a number banned.</p>
 </main>
 
 <dialog id="link-dlg" aria-labelledby="link-title">
@@ -224,6 +264,22 @@
   </form>
 </dialog>
 
+
+<dialog id="scope-dlg" aria-labelledby="scope-title">
+  <form class="dlg" id="scope-form">
+    <header><h2 id="scope-title">Who may use it</h2><p id="scope-sub"></p></header>
+    <div class="body">
+      <div class="modes">
+        <label class="mode"><input type="radio" name="scope" value="all">Every agent<small>Agents you add later too.</small></label>
+        <label class="mode"><input type="radio" name="scope" value="some">Only these agents<small>Tick them below.</small></label>
+      </div>
+      <div class="checks" id="scope-list"></div>
+      <p class="msg" id="scope-msg" role="status"></p>
+    </div>
+    <footer><span class="grow"></span><button type="button" id="scope-cancel">Cancel</button><button class="primary" type="submit">Save</button></footer>
+  </form>
+</dialog>
+
 <script>
 'use strict';
 // Inside the console's own frame the page header would repeat the console's.
@@ -231,7 +287,9 @@ if (window.self !== window.top) document.querySelector('body > header').hidden =
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STATUS = { unlinked: 'Not linked', starting: 'Starting', qr: 'Waiting for scan', connected: 'Connected', reconnecting: 'Reconnecting', logged_out: 'Logged out on phone', error: 'Connection failed' };
+const CMODE = { listen: 'Listen only', reply: 'Agent may reply' };
 let agents = []; let contacts = []; let groupRows = []; let groupPicked = [];
+let current = ''; let tab = 'contacts';
 let linking = null; let qrTimer = null;
 
 async function api(path, body) {
@@ -242,42 +300,58 @@ async function api(path, body) {
   return data;
 }
 const numbers = (text) => String(text || '').split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean);
-
-// Tabs (arrow keys move between them; the open tab is kept in the address).
-const TABS = ['numbers', 'contacts', 'groups'];
-const PANEL = { numbers: 'p-numbers', contacts: 'designated', groups: 'groups' };
-function openTab(name, focus) {
-  for (const t of TABS) {
-    const on = t === name; const tab = $(`#t-${t}`);
-    tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1;
-    $(`#${PANEL[t]}`).hidden = !on;
-  }
-  if (focus) $(`#t-${name}`).focus();
-  history.replaceState(null, '', name === 'numbers' ? location.pathname : `#${name}`);
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const agentOf = (id) => agents.find((a) => a.id === id);
+const nameOf = (id) => agentOf(id)?.name || id;
+const allIds = () => agents.map((a) => a.id);
+// An empty agents list (entries saved before agents were chosen) means every agent.
+const forAgent = (entry, id) => !entry.agents?.length || entry.agents.includes(id);
+const mineContacts = (id) => contacts.filter((c) => forAgent(c, id));
+const mineGroups = (id) => groupPicked.filter((g) => forAgent(g, id));
+function shared(entry, id) {
+  if (!entry.agents?.length) return 'Every agent';
+  const others = entry.agents.filter((a) => a !== id).map(nameOf);
+  return others.length ? `Also ${others.join(', ')}` : 'Only this agent';
 }
-for (const t of TABS) $(`#t-${t}`).addEventListener('click', () => openTab(t));
-$('.tabs').addEventListener('keydown', (e) => {
-  const i = TABS.findIndex((t) => $(`#t-${t}`).getAttribute('aria-selected') === 'true');
-  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); openTab(TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length], true); }
-});
-openTab(TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'numbers');
 
-// Numbers
-function drawAgents() {
+// The chosen agent and tab are kept in the address (#agent=cfo&tab=groups).
+function readHash() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  current = h.get('agent') || current; tab = h.get('tab') === 'groups' ? 'groups' : 'contacts';
+}
+function writeHash() { history.replaceState(null, '', `#agent=${encodeURIComponent(current)}${tab === 'groups' ? '&tab=groups' : ''}`); }
+
+function drawAll() {
+  if (!agentOf(current)) current = agents[0]?.id || '';
   const linked = agents.filter((a) => a.whatsapp.status === 'connected').length;
-  $('#n-numbers').textContent = agents.length ? `${linked}/${agents.length}` : '';
   $('#summary').textContent = agents.length ? `${linked} of ${agents.length} agents connected` : 'No agents yet';
-  $('#agents').innerHTML = agents.length ? agents.map((a) => {
-    const wa = a.whatsapp; const linkedNow = ['connected', 'reconnecting'].includes(wa.status);
-    const mode = wa.settings.mode === 'monitor' ? 'Monitor only' : 'Answers chats';
-    return `<div class="row" data-agent="${esc(a.id)}">
-      <div class="who"><b>${esc(a.name)}</b><small>${wa.phone ? `+${esc(wa.phone)}` : 'No number linked'}</small></div>
-      <span class="chip ${esc(wa.status)}">${esc(STATUS[wa.status] || wa.status)}</span>
-      <span class="sub">${mode}</span>
-      <div class="acts">${linkedNow ? '' : `<button class="primary" data-link>${wa.status === 'unlinked' ? 'Link' : 'Link again'}</button>`}<button data-settings aria-label="Settings for ${esc(a.name)}">Settings</button></div>
-    </div>`;
-  }).join('') : '<p class="empty">No agents yet. Create one on the Agents page first.</p>';
-  drawTodo();
+  $('#agents').innerHTML = agents.length ? agents.map((a) => `<button type="button" data-pick="${esc(a.id)}" aria-current="${a.id === current}">
+      <b>${esc(a.name)}</b><span class="chip ${esc(a.whatsapp.status)}" aria-label="${esc(STATUS[a.whatsapp.status] || a.whatsapp.status)}"></span>
+      <small>${a.whatsapp.phone ? `+${esc(a.whatsapp.phone)}` : 'No number'} · ${plural(mineContacts(a.id).length, 'contact')} · ${plural(mineGroups(a.id).length, 'group')}</small></button>`).join('')
+    : '<p class="empty">No agents yet. Create one on the Agents page first.</p>';
+  $('#pick').innerHTML = agents.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(STATUS[a.whatsapp.status] || a.whatsapp.status)}</option>`).join('');
+  $('#pick').value = current;
+  $('#panel').hidden = !agents.length;
+  drawTodo(); drawAgent(); drawContacts(); drawGroups();
+}
+function drawAgent() {
+  const a = agentOf(current); if (!a) return;
+  const wa = a.whatsapp;
+  $('#a-name').textContent = a.name;
+  $('#a-line').textContent = `${wa.phone ? `+${wa.phone}` : 'No number linked'} · ${wa.settings.mode === 'monitor' ? 'Monitor only: reads chats, never sends' : 'Answers chats'}`;
+  $('#a-chip').className = `chip ${wa.status}`; $('#a-chip').textContent = STATUS[wa.status] || wa.status;
+  const linkedNow = ['connected', 'reconnecting'].includes(wa.status);
+  $('#a-link').hidden = linkedNow; $('#a-link').textContent = wa.status === 'unlinked' ? 'Link' : 'Link again';
+  $('#c-only').textContent = a.name;
+  $('#c-intro').textContent = `Besides you, ${a.name} may message only these people first.`;
+  $('#g-intro').textContent = `Tick the groups ${a.name} may post to. In a group it answers only when someone @mentions or replies to it.`;
+  $('#n-contacts').textContent = mineContacts(current).length || '';
+  $('#n-groups').textContent = mineGroups(current).length || '';
+  for (const t of ['contacts', 'groups']) {
+    const on = t === tab;
+    $(`#t-${t}`).setAttribute('aria-selected', String(on)); $(`#t-${t}`).tabIndex = on ? 0 : -1;
+    $(t === 'contacts' ? '#designated' : '#groups').hidden = !on;
+  }
 }
 function drawTodo() {
   const rows = [];
@@ -287,13 +361,21 @@ function drawTodo() {
   }
   $('#todo').innerHTML = rows.join('');
 }
+function pick(id) { current = id; $('#d-msg').textContent = ''; $('#g-msg').textContent = ''; writeHash(); drawAll(); }
+$('#agents').addEventListener('click', (e) => { const b = e.target.closest('[data-pick]'); if (b) pick(b.dataset.pick); });
+$('#pick').addEventListener('change', (e) => pick(e.target.value));
+for (const t of ['contacts', 'groups']) $(`#t-${t}`).addEventListener('click', () => { tab = t; writeHash(); drawAgent(); });
+$('.tabs').addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  e.preventDefault(); tab = tab === 'contacts' ? 'groups' : 'contacts'; writeHash(); drawAgent(); $(`#t-${tab}`).focus();
+});
+
 async function loadAgents() {
-  try { agents = (await api('agents')).agents; drawAgents(); }
+  try { agents = (await api('agents')).agents; drawAll(); }
   catch (e) { $('#agents').innerHTML = `<p class="empty">Could not load the agents: ${esc(e.message)}. Reload the page to try again.</p>`; $('#summary').textContent = ''; }
 }
-const agentOf = (id) => agents.find((a) => a.id === id);
 
-// Linking: start, show the code, close by itself once connected.
+// Linking: start, show the code, say when it is connected.
 async function startLink(id) {
   const a = agentOf(id); linking = id;
   $('#link-sub').textContent = a ? `For ${a.name}` : '';
@@ -319,12 +401,12 @@ function pollQr() {
 }
 $('#link-close').onclick = () => $('#link-dlg').close();
 $('#link-dlg').addEventListener('close', () => { clearTimeout(qrTimer); linking = null; loadAgents(); });
+$('#a-link').onclick = () => startLink(current);
 
 // Settings
-let editing = null;
 function openSettings(id) {
   const a = agentOf(id); if (!a) return;
-  editing = id; const s = a.whatsapp.settings; const f = $('#set-form');
+  const s = a.whatsapp.settings; const f = $('#set-form');
   $('#set-title').textContent = `${a.name} settings`;
   $('#set-sub').textContent = a.whatsapp.phone ? `+${a.whatsapp.phone} · ${STATUS[a.whatsapp.status] || a.whatsapp.status}` : 'No number linked yet';
   f.mode.value = s.mode === 'monitor' ? 'monitor' : 'reply';
@@ -340,12 +422,13 @@ function showMode() {
   for (const el of document.querySelectorAll('[data-reply]')) el.hidden = monitor;
   $('[data-monitor]').hidden = !monitor;
 }
+$('#a-settings').onclick = () => openSettings(current);
 $('#set-form').addEventListener('change', (e) => { if (e.target.name === 'mode') showMode(); });
 $('#set-cancel').onclick = () => $('#set-dlg').close();
 $('#set-form').addEventListener('submit', async (e) => {
   e.preventDefault(); const f = e.target;
   try {
-    await api(`agents/${editing}/settings`, {
+    await api(`agents/${current}/settings`, {
       mode: f.mode.value, dmPolicy: f.dmPolicy.value, groupPolicy: f.groupPolicy.value,
       batchMs: Number(f.batchMs.value), voiceReplies: f.voiceReplies.value === 'true',
       allowFrom: numbers(f.allowFrom.value), ownerNumbers: numbers(f.ownerNumbers.value),
@@ -355,75 +438,146 @@ $('#set-form').addEventListener('submit', async (e) => {
 });
 $('#set-unlink').onclick = async () => {
   if (!confirm('Unlink this number from the agent? You can link it again later.')) return;
-  try { await api(`agents/${editing}/unlink`, {}); $('#set-dlg').close(); loadAgents(); } catch (err) { $('#set-msg').textContent = err.message; }
+  try { await api(`agents/${current}/unlink`, {}); $('#set-dlg').close(); loadAgents(); } catch (err) { $('#set-msg').textContent = err.message; }
 };
-
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('button'); if (!b) return;
-  const row = b.closest('[data-agent]');
   try {
-    if (b.hasAttribute('data-link')) startLink(row.dataset.agent);
-    else if (b.hasAttribute('data-settings')) openSettings(row.dataset.agent);
-    else if (b.dataset.relink) startLink(b.dataset.relink);
+    if (b.dataset.relink) startLink(b.dataset.relink);
     else if (b.dataset.approve) { b.disabled = true; await api(`agents/${b.dataset.for}/approve`, { code: b.dataset.approve }); loadAgents(); }
   } catch (err) { alert(err.message); loadAgents(); }
 });
 
-// Contacts
-const CMODE = { listen: 'Listen only', reply: 'Agent may reply' };
+// Contacts of the chosen agent
 function drawContacts() {
-  $('#n-contacts').textContent = contacts.length || '';
-  $('#d-list').innerHTML = contacts.length ? contacts.map((c, i) => `<div class="row contact">
+  const mine = mineContacts(current);
+  $('#d-list').innerHTML = mine.length ? mine.map((c) => `<div class="row contact">
       <div class="who"><b>${esc(c.name || 'No name')}</b><small>+${esc(c.phone)}</small></div>
-      <select data-dmode="${i}" aria-label="When ${esc(c.name || c.phone)} writes back">${Object.entries(CMODE).map(([v, t]) => `<option value="${v}" ${v === (c.mode || 'listen') ? 'selected' : ''}>${t}</option>`).join('')}</select>
-      <button data-dremove="${i}" aria-label="Remove ${esc(c.name || c.phone)}">Remove</button></div>`).join('')
-    : '<p class="empty">None yet: agents can only message you.</p>';
+      <span class="sub"><button type="button" class="scope" data-scope="contact" data-key="${esc(c.phone)}">${esc(shared(c, current))}</button></span>
+      <select data-dmode="${esc(c.phone)}" aria-label="When ${esc(c.name || c.phone)} writes back">${Object.entries(CMODE).map(([v, t]) => `<option value="${v}" ${v === (c.mode || 'listen') ? 'selected' : ''}>${t}</option>`).join('')}</select>
+      <button data-dremove="${esc(c.phone)}" aria-label="Remove ${esc(c.name || c.phone)}">Remove</button></div>`).join('')
+    : `<p class="empty">None yet: ${esc(nameOf(current))} can only message you.</p>`;
 }
 async function saveContacts(next, done) {
-  try { contacts = (await api('designated', { contacts: next })).contacts; drawContacts(); $('#d-msg').textContent = done || 'Saved.'; } catch (e) { $('#d-msg').textContent = e.message; }
+  try { contacts = (await api('designated', { contacts: next })).contacts; drawAll(); $('#d-msg').textContent = done || 'Saved.'; } catch (e) { $('#d-msg').textContent = e.message; }
 }
 $('#d-add').addEventListener('submit', async (e) => {
   e.preventDefault();
   const f = new FormData(e.target); const phone = String(f.get('phone')).replace(/\D/g, '');
   if (!/^[1-9]\d{7,14}$/.test(phone)) { $('#d-msg').textContent = 'Use the full number with country code, e.g. 6281234567890.'; return; }
-  await saveContacts([...contacts, { name: String(f.get('name')).trim(), phone, mode: f.get('mode') }], 'Added.'); e.target.reset();
+  const every = Boolean(f.get('every')); const name = String(f.get('name')).trim();
+  const old = contacts.find((c) => c.phone === phone);
+  // The same number for another agent: one entry, with this agent added to it.
+  const agentsFor = every ? [] : old ? (old.agents?.length ? [...new Set([...old.agents, current])] : []) : [current];
+  const entry = { phone, name: name || old?.name || '', mode: f.get('mode'), agents: agentsFor };
+  await saveContacts([...contacts.filter((c) => c.phone !== phone), entry], `Added for ${every || (old && !old.agents?.length) ? 'every agent' : nameOf(current)}.`);
+  e.target.reset(); $('[name=every]').checked = true;
 });
-$('#d-list').addEventListener('click', (e) => { const b = e.target.closest('[data-dremove]'); if (b && confirm('Remove this contact? Agents will no longer be able to message them.')) saveContacts(contacts.filter((_, i) => i !== Number(b.dataset.dremove)), 'Removed.'); });
-$('#d-list').addEventListener('change', (e) => { const sel = e.target.closest('[data-dmode]'); if (sel) saveContacts(contacts.map((c, i) => (i === Number(sel.dataset.dmode) ? { ...c, mode: sel.value } : c))); });
+$('#d-list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-dremove]'); if (!b) return;
+  const c = contacts.find((x) => x.phone === b.dataset.dremove); if (!c) return;
+  // Removing takes the contact away from this agent only; an entry for every agent keeps the others.
+  const rest = (c.agents?.length ? c.agents : allIds()).filter((id) => id !== current);
+  if (!confirm(rest.length ? `Remove ${c.name || '+' + c.phone} from ${nameOf(current)}? ${rest.map(nameOf).join(', ')} keep them.` : `Remove ${c.name || '+' + c.phone}? No agent will be able to message them.`)) return;
+  saveContacts(rest.length ? contacts.map((x) => (x === c ? { ...x, agents: rest } : x)) : contacts.filter((x) => x !== c), 'Removed.');
+});
+$('#d-list').addEventListener('change', (e) => {
+  const sel = e.target.closest('[data-dmode]'); if (!sel) return;
+  saveContacts(contacts.map((c) => (c.phone === sel.dataset.dmode ? { ...c, mode: sel.value } : c)));
+});
 
-// Groups
+// Groups of the chosen agent
 function drawGroups() {
-  $('#n-groups').textContent = groupPicked.length || '';
   const known = new Map(groupRows.map((g) => [g.jid, g]));
   for (const g of groupPicked) if (!known.has(g.jid)) known.set(g.jid, { jid: g.jid, name: g.name, agents: [g.agent], members: 0, gone: true });
-  const rows = [...known.values()].sort((a, b) => (groupPicked.some((p) => p.jid === b.jid) - groupPicked.some((p) => p.jid === a.jid)) || a.name.localeCompare(b.name));
-  $('#g-list').innerHTML = rows.length ? rows.map((g) => `<label class="row group">
-      <input type="checkbox" data-gjid="${esc(g.jid)}" ${groupPicked.some((p) => p.jid === g.jid) ? 'checked' : ''}>
-      <span class="who"><b>${esc(g.name)}</b><small>${g.gone ? 'No longer listed' : `${g.members} members`}</small></span>
-      <span class="sub">${g.gone ? '' : `via ${esc((g.agents || []).map((id) => agentOf(id)?.name || id).join(', '))}`}</span></label>`).join('')
-    : '<p class="empty">No groups found. Add an agent\'s number to a WhatsApp group, then press Refresh list.</p>';
+  const on = (jid) => groupPicked.some((p) => p.jid === jid && forAgent(p, current));
+  const rows = [...known.values()].sort((a, b) => (on(b.jid) - on(a.jid)) || ((b.agents || []).includes(current) - (a.agents || []).includes(current)) || a.name.localeCompare(b.name));
+  $('#g-list').innerHTML = rows.length ? rows.map((g) => {
+    const p = groupPicked.find((x) => x.jid === g.jid);
+    const via = p?.agent || (g.agents || [])[0];
+    const bits = [g.gone ? 'no longer listed' : `${g.members} members`, via ? `sent from ${nameOf(via)}'s number` : ''].filter(Boolean).join(' · ');
+    const id = `g-${g.jid.replace(/\W/g, '')}`;
+    return `<div class="row group">
+      <input type="checkbox" id="${id}" data-gjid="${esc(g.jid)}" ${on(g.jid) ? 'checked' : ''}>
+      <label class="who" for="${id}"><b>${esc(g.name)}</b><small>${esc(bits)}</small></label>
+      <span class="sub">${p ? `<button type="button" class="scope" data-scope="group" data-key="${esc(g.jid)}">${esc(shared(p, current))}</button>` : ''}</span></div>`;
+  }).join('') : '<p class="empty">No groups found. Add an agent\'s number to a WhatsApp group, then press Refresh list.</p>';
 }
 async function loadGroups() {
-  try { const d = await api('groups'); groupRows = d.groups; groupPicked = d.designated; drawGroups(); } catch (e) { $('#g-msg').textContent = e.message; }
+  try { const d = await api('groups'); groupRows = d.groups; groupPicked = d.designated; drawAll(); } catch (e) { $('#g-msg').textContent = e.message; }
+}
+async function saveGroups(next, done, box) {
+  try { groupPicked = (await api('groups', { groups: next })).designated; drawAll(); $('#g-msg').textContent = done; }
+  catch (err) { $('#g-msg').textContent = err.message; if (box) box.checked = !box.checked; }
 }
 $('#g-load').addEventListener('click', async () => { $('#g-msg').textContent = 'Refreshing…'; await loadGroups(); if ($('#g-msg').textContent === 'Refreshing…') $('#g-msg').textContent = ''; });
-$('#g-add').addEventListener('submit', async (e) => {
+$('#g-list').addEventListener('change', (e) => {
+  const box = e.target.closest('[data-gjid]'); if (!box) return;
+  const jid = box.dataset.gjid; const row = groupRows.find((x) => x.jid === jid); const p = groupPicked.find((x) => x.jid === jid);
+  const name = p?.name || row?.name || jid;
+  let next;
+  if (box.checked) {
+    // Sent from this agent's own number when it is in the group, else from a number that is.
+    const sender = p?.agent || ((row?.agents || []).includes(current) ? current : (row?.agents || [])[0]) || current;
+    next = p ? groupPicked.map((x) => (x === p ? { ...x, agents: x.agents?.length ? [...new Set([...x.agents, current])] : [] } : x))
+      : [...groupPicked, { jid, name, agent: sender, agents: [current] }];
+  } else {
+    const rest = (p.agents?.length ? p.agents : allIds()).filter((id) => id !== current);
+    next = rest.length ? groupPicked.map((x) => (x === p ? { ...x, agents: rest } : x)) : groupPicked.filter((x) => x !== p);
+  }
+  saveGroups(next, box.checked ? `${nameOf(current)} may now post in ${name}.` : `${nameOf(current)} no longer posts in ${name}.`, box);
+});
+$('#g-add').addEventListener('submit', (e) => {
   e.preventDefault();
   const f = new FormData(e.target); const jid = String(f.get('jid')).trim();
   if (!/^[0-9-]{6,40}@g\.us$/.test(jid)) { $('#g-msg').textContent = 'A group id looks like 120363402009619635@g.us.'; return; }
   const known = groupRows.find((g) => g.jid === jid);
-  const next = [...groupPicked.filter((p) => p.jid !== jid), { jid, name: String(f.get('name')).trim() || known?.name || jid, agent: known?.agents?.[0] || 'default' }];
-  try { groupPicked = (await api('groups', { groups: next })).designated; drawGroups(); e.target.reset(); $('#g-msg').textContent = 'Added. Agents may post in it (from Lorium\'s number unless another agent is in the group).'; } catch (err) { $('#g-msg').textContent = err.message; }
-});
-$('#g-list').addEventListener('change', async (e) => {
-  const box = e.target.closest('[data-gjid]'); if (!box) return;
-  const g = groupRows.find((x) => x.jid === box.dataset.gjid) || groupPicked.find((x) => x.jid === box.dataset.gjid);
-  const next = box.checked ? [...groupPicked.filter((p) => p.jid !== g.jid), { jid: g.jid, name: g.name, agent: (g.agents || [g.agent])[0] }] : groupPicked.filter((p) => p.jid !== g.jid);
-  try { groupPicked = (await api('groups', { groups: next })).designated; drawGroups(); $('#g-msg').textContent = box.checked ? `Agents may now post in ${g.name}.` : `Closed: ${g.name}.`; } catch (err) { $('#g-msg').textContent = err.message; box.checked = !box.checked; }
+  const p = groupPicked.find((x) => x.jid === jid);
+  const entry = { jid, name: String(f.get('name')).trim() || p?.name || known?.name || jid, agent: p?.agent || known?.agents?.[0] || current,
+    agents: p ? (p.agents?.length ? [...new Set([...p.agents, current])] : []) : [current] };
+  saveGroups([...groupPicked.filter((x) => x.jid !== jid), entry], `Added for ${nameOf(current)}.`);
+  e.target.reset();
 });
 
-loadAgents().then(loadGroups);
-api('designated').then((d) => { contacts = d.contacts; drawContacts(); }).catch((e) => { $('#d-msg').textContent = e.message; });
+// Who may use a contact or group: every agent (the default), or only the agents ticked.
+let scoping = null;
+function openScope(kind, key) {
+  const entry = kind === 'contact' ? contacts.find((c) => c.phone === key) : groupPicked.find((g) => g.jid === key);
+  if (!entry) return;
+  scoping = { kind, key };
+  $('#scope-sub').textContent = kind === 'contact' ? `${entry.name || 'Contact'} · +${entry.phone}` : `Group: ${entry.name}`;
+  const all = !entry.agents?.length;
+  $('#scope-form').scope.value = all ? 'all' : 'some';
+  $('#scope-list').innerHTML = agents.map((a) => `<label><input type="checkbox" value="${esc(a.id)}" ${all || entry.agents.includes(a.id) ? 'checked' : ''}>${esc(a.name)}<small>${a.whatsapp.phone ? `+${esc(a.whatsapp.phone)}` : 'no number'}</small></label>`).join('');
+  $('#scope-msg').textContent = ''; scopeState();
+  $('#scope-dlg').showModal();
+}
+function scopeState() {
+  const some = $('#scope-form').scope.value === 'some';
+  $('#scope-list').classList.toggle('off', !some);
+  for (const box of $('#scope-list').querySelectorAll('input')) box.disabled = !some;
+}
+$('#scope-form').addEventListener('change', (e) => { if (e.target.name === 'scope') scopeState(); });
+$('#scope-cancel').onclick = () => $('#scope-dlg').close();
+$('#scope-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const some = e.target.scope.value === 'some';
+  const ids = some ? [...$('#scope-list').querySelectorAll('input:checked')].map((b) => b.value) : [];
+  if (some && !ids.length) { $('#scope-msg').textContent = 'Tick at least one agent, or choose Every agent.'; return; }
+  const { kind, key } = scoping;
+  if (kind === 'contact') await saveContacts(contacts.map((c) => (c.phone === key ? { ...c, agents: ids } : c)));
+  else await saveGroups(groupPicked.map((g) => (g.jid === key ? { ...g, agents: ids } : g)), 'Saved.');
+  $('#scope-dlg').close();
+});
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-scope]'); if (b) openScope(b.dataset.scope, b.dataset.key); });
+
+readHash();
+window.addEventListener('hashchange', () => { readHash(); drawAll(); });
+Promise.all([
+  api('agents').then((d) => { agents = d.agents; }).catch((e) => { $('#agents').innerHTML = `<p class="empty">Could not load the agents: ${esc(e.message)}. Reload the page to try again.</p>`; }),
+  api('designated').then((d) => { contacts = d.contacts; }).catch((e) => { $('#d-msg').textContent = e.message; }),
+  api('groups').then((d) => { groupRows = d.groups; groupPicked = d.designated; }).catch((e) => { $('#g-msg').textContent = e.message; }),
+]).then(() => { drawAll(); if (current) writeHash(); });
 // Refresh the numbers every 30 s, but never while a dialog is open or the owner is typing.
 setInterval(() => { if (!document.querySelector('dialog[open]') && !document.activeElement?.closest('form, .list')) loadAgents(); }, 30000);
 </script>

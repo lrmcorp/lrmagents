@@ -162,7 +162,7 @@ async function route(req, res) {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
     const body = await readJson(req);
     try {
-      await accounts.deliver(String(body.agentId || ''), String(body.chat || ''), String(body.text || ''));
+      await accounts.deliver(String(body.agentId || ''), String(body.chat || ''), String(body.text || ''), String(body.asAgent || ''));
       return send(res, 200, { ok: true });
     } catch (error) {
       return send(res, error.status || 503, { error: error.message });

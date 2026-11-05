@@ -42,9 +42,9 @@ class WhatsAppTool(BaseTool):
     description: str = (
         "The agent's own WhatsApp number (linked on the console's WhatsApp page). Actions: 'status' (is a number linked, "
         "which one, the owner's numbers), 'send' (send a WhatsApp message now). For 'send', 'to' is 'me' for the owner "
-        "(e.g. 'send me a WhatsApp', 'text me the summary'), the name of a WhatsApp group the owner opened to agents, or the "
-        "number of a designated contact (see 'status' for both): agents may "
-        "not contact anybody else first. A designated contact set to 'listen only' never gets an answer from you when they write "
+        "(e.g. 'send me a WhatsApp', 'text me the summary'), the name of a WhatsApp group the owner opened to you, or the "
+        "number of one of your contacts (see 'status' for both): the owner sets contacts and groups per agent, and you may "
+        "not contact anybody else first. A contact set to 'listen only' never gets an answer from you when they write "
         "back: Lorium tells the owner and you are told what they said, as information. Use this whenever the owner asks to send or receive "
         "something on WhatsApp; for a message at a later time use the scheduler instead. Write WhatsApp messages and reports as "
         "a short bold title (*Title*) and bullet points with the facts: no greeting, no filler, no closing line."
@@ -73,6 +73,11 @@ class WhatsAppTool(BaseTool):
             state = _call("/whatsapp/internal/status")
             accounts = state.get("accounts") or []
             mine = next((a for a in accounts if a.get("agent") == (agent_id or "default")), None)
+            me = agent_id or "default"
+            # The owner sets each contact and group for some agents (an empty list: every agent).
+            for_me = lambda e: not e.get("agents") or me in e.get("agents")
+            state["designated"] = [c for c in state.get("designated") or [] if for_me(c)]
+            state["groups"] = [g for g in state.get("groups") or [] if for_me(g)]
             linked = [a for a in accounts if a.get("status") == "connected"]
             if action == "status":
                 if not accounts:
@@ -83,12 +88,12 @@ class WhatsAppTool(BaseTool):
                                  + (f", owner numbers: {', '.join('+' + n for n in a.get('ownerNumbers') or [])}" if a.get("ownerNumbers") else
                                     ", no 'Your own numbers' set (owner messages go to the linked phone's Message yourself)"))
                 people = state.get("designated") or []
-                lines.append("- designated contacts (the only people besides the owner agents may message): "
+                lines.append("- your contacts (the only people besides the owner you may message): "
                              + (", ".join(f"{c.get('name') or 'unnamed'} +{c.get('phone')} ({'agent may reply' if c.get('mode') == 'reply' else 'listen only'})" for c in people) if people else
-                                "none; the owner adds them on the console's WhatsApp page"))
+                                "none; the owner adds them under your Contacts on the console's WhatsApp page"))
                 groups = state.get("groups") or []
-                lines.append("- groups agents may post to: " + (", ".join(f"'{g.get('name')}'" for g in groups) if groups else
-                                                                 "none; the owner ticks them under Groups on the console's WhatsApp page"))
+                lines.append("- groups you may post to: " + (", ".join(f"'{g.get('name')}'" for g in groups) if groups else
+                                                                 "none; the owner ticks them under your Groups on the console's WhatsApp page"))
                 return ToolResult.success("WhatsApp:\n" + "\n".join(lines))
             if action != "send":
                 return ToolResult.fail("action must be 'status' or 'send'.")
@@ -118,20 +123,20 @@ class WhatsAppTool(BaseTool):
                 via = next((a for a in accounts if a.get("agent") == group.get("agent") and a.get("status") == "connected"), None)
                 if via is None:
                     return ToolResult.fail(f"The number that posts in '{group.get('name')}' is not connected right now; nothing was posted.")
-                _call("/whatsapp/internal/send", {"agentId": via["agent"], "chat": group["jid"], "text": text})
+                _call("/whatsapp/internal/send", {"agentId": via["agent"], "chat": group["jid"], "text": text, "asAgent": me})
                 return ToolResult.success(f"Posted in the WhatsApp group '{group.get('name')}'.")
             if not re.search(r"\d{6,}", to):
                 names = ", ".join(f"'{g.get('name')}'" for g in groups) or "none"
-                return ToolResult.fail(f"'{to}' is not a group agents may post to (open to agents: {names}) and not a phone number. "
-                                       "The owner opens groups under Groups on the console's WhatsApp page.")
+                return ToolResult.fail(f"'{to}' is not a group you may post to (yours: {names}) and not a phone number. "
+                                       "The owner ticks groups for you on the console's WhatsApp page.")
             number = re.sub(r"\D", "", to)
             if len(number) < 6:
                 return ToolResult.fail("Give the phone number with country code, e.g. 6281234567890, or 'me'.")
             people = {c.get("phone"): c for c in state.get("designated") or []}
             if number not in people:
-                return ToolResult.fail(f"+{number} is not a designated contact, and agents may only message the owner and designated "
-                                       "contacts. Ask the owner to add it under Designated contacts on the console's WhatsApp page.")
-            _call("/whatsapp/internal/send", {"agentId": account["agent"], "chat": f"{number}@s.whatsapp.net", "text": text})
+                return ToolResult.fail(f"+{number} is not one of your contacts, and you may only message the owner and your own "
+                                       "contacts. Ask the owner to add it under your Contacts on the console's WhatsApp page.")
+            _call("/whatsapp/internal/send", {"agentId": account["agent"], "chat": f"{number}@s.whatsapp.net", "text": text, "asAgent": me})
             who = people[number].get("name") or f"+{number}"
             if people[number].get("mode") == "reply":
                 return ToolResult.success(f"Sent to {who} (+{number}) on WhatsApp. They may reply to you directly.")

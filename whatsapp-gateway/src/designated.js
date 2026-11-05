@@ -3,18 +3,22 @@
 // - 'listen' (default): when they write back the agent does not answer; Lorium tells the
 //   owner, and the agent whose number they wrote to is told too (information only).
 // - 'reply': the agent may talk with them directly, like an approved contact.
+// Contacts and groups each list the agents allowed to use them (`agents`); an empty list,
+// as in entries saved before agents were chosen, means every agent.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const digits = (v) => String(v || '').replace(/\D/g, '');
+const agentIds = (v) => [...new Set((Array.isArray(v) ? v : []).map(String).filter((id) => /^[A-Za-z0-9_-]{1,64}$/.test(id)))].slice(0, 100);
+const allowed = (entry, agent) => Boolean(entry) && (!entry.agents.length || entry.agents.includes(agent));
 
 export function cleanContacts(list) {
   const out = new Map();
   for (const c of Array.isArray(list) ? list : []) {
     const phone = digits(c?.phone);
     if (!/^[1-9]\d{7,14}$/.test(phone)) continue;
-    out.set(phone, { phone, name: String(c?.name || '').trim().slice(0, 80), mode: c?.mode === 'reply' ? 'reply' : 'listen' });
+    out.set(phone, { phone, name: String(c?.name || '').trim().slice(0, 80), mode: c?.mode === 'reply' ? 'reply' : 'listen', agents: agentIds(c?.agents) });
   }
   return [...out.values()].slice(0, 500);
 }
@@ -26,7 +30,7 @@ export function cleanGroups(list) {
   for (const g of Array.isArray(list) ? list : []) {
     const jid = String(g?.jid || '').trim();
     if (!/^[0-9-]{6,40}@g\.us$/.test(jid)) continue;
-    out.set(jid, { jid, name: String(g?.name || '').trim().slice(0, 100), agent: /^[A-Za-z0-9_-]{1,64}$/.test(String(g?.agent || '')) ? String(g.agent) : '' });
+    out.set(jid, { jid, name: String(g?.name || '').trim().slice(0, 100), agent: /^[A-Za-z0-9_-]{1,64}$/.test(String(g?.agent || '')) ? String(g.agent) : '', agents: agentIds(g?.agents) });
   }
   return [...out.values()].slice(0, 200);
 }
@@ -75,9 +79,15 @@ export class Designated {
 
   has(phone) { return Boolean(phone) && Boolean(this.get(phone)); }
 
+  // May this agent message them first / post in this group?
+  allows(phone, agent) { return allowed(this.get(phone), agent); }
+
+  groupAllows(jid, agent) { return allowed(this.group(jid), agent); }
+
   listenOnly(phone) { return this.get(phone)?.mode === 'listen'; }
 
-  mayReply(phone) { return this.get(phone)?.mode === 'reply'; }
+  // "Agent may reply": only the agents the contact is set for.
+  mayReply(phone, agent) { const c = this.get(phone); return c?.mode === 'reply' && (agent === undefined || allowed(c, agent)); }
 
   async sent(phone, agent, text) {
     if (!this.has(phone)) return;
