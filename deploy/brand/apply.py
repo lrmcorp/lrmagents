@@ -236,7 +236,8 @@ patch("web_channel.py", "\nURLS = (\n",
       "from channel.web.api.lrm_tts import LrmTtsHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_voice import LrmVoiceHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_chats import LrmChatsHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_vault_updates import LrmVaultUpdatesHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_vault_updates import LrmVaultUpdatesHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_busy import LrmBusyHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
@@ -247,7 +248,8 @@ patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/lrm/tts', 'LrmTtsHandler',\n"
       "    '/api/lrm/voice', 'LrmVoiceHandler',\n"
       "    '/api/lrm/chats', 'LrmChatsHandler',\n"
-      "    '/api/lrm/vault-updates', 'LrmVaultUpdatesHandler',\n")
+      "    '/api/lrm/vault-updates', 'LrmVaultUpdatesHandler',\n"
+      "    '/api/lrm/busy', 'LrmBusyHandler',\n")
 # ---- Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",
@@ -452,6 +454,29 @@ patch("api/sessions.py",
 # ---- Keep trying: three rounds over the fallback chain instead of two (the owner asked that a
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
+
+# ---- Redeploys wait for running work (agent/lrm_busy.py counts every agent run), and a
+# scheduled report cut off by a restart is run again for up to 2 hours (upstream: 10 min,
+# then the day's report was skipped).
+_agent_py = app / "agent/protocol/agent.py"
+_agent_src = _agent_py.read_text(encoding="utf-8")
+if "class Agent:" not in _agent_src or "    def run_stream(self, user_message: str, on_event=None" not in _agent_src:
+    sys.exit("agent/protocol/agent.py: Agent.run_stream moved")
+_agent_py.write_text(_agent_src + """
+
+# LRMagent: count runs in progress, so a redeploy waits for them (agent/lrm_busy.py).
+_lrm_original_run_stream = Agent.run_stream
+
+
+def _lrm_counted_run_stream(self, *args, **kwargs):
+    from agent import lrm_busy
+    with lrm_busy.running(getattr(self, "agent_id", "") or ""):
+        return _lrm_original_run_stream(self, *args, **kwargs)
+
+
+Agent.run_stream = _lrm_counted_run_stream
+""", encoding="utf-8")
+patch("agent/tools/scheduler/scheduler_service.py", "                if time_diff <= 600:\n", "                if time_diff <= 7200:\n", root=app)
 
 # ---- Scheduler tool: in English (models picked it less from the Chinese text), "act, don't
 # promise", and from the console it can deliver to the owner's WhatsApp (the lrm-wa:<agent>

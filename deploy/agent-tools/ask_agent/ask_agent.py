@@ -1,8 +1,11 @@
-"""ask_agent: the personal assistant asks another agent for a report, for the owner.
+"""ask_agent: one of the owner's agents asks another for data, a report or a status.
 
-Only the personal agent may use it, and only in the owner's own chats. The other agent
-answers in a separate conversation (lrm-report:<agent>:<day>), so its regular chats are
-not mixed up, and it sees only the question, not the personal conversation around it.
+Lorium (the lead) collects each team's figures from CFO, HRD, Operations and the rest;
+Sora (the personal assistant) gets reports for the owner. Only in the owner's own chats
+and the scheduled tasks they set up. Sora is never asked by the other agents: the owner's
+personal matters stay with her. The other agent answers in a separate conversation
+(lrm-report:<agent>:<day>), so its regular chats are not mixed up, and it sees only the
+question, not the conversation around it.
 """
 import datetime
 import json
@@ -18,10 +21,11 @@ from config import conf
 class AskAgent(BaseTool):
     name: str = "ask_agent"
     description: str = (
-        "Ask one of the owner's other agents (e.g. Lorium, the business agent) for a report, status or answer, "
-        "when the owner asks for it ('get me Lorium's report on sales', 'what did the team do today'). Actions: "
-        "'list' (which agents exist and what they do), 'ask' (agent + question). Write the question fully: the "
-        "other agent does not see this conversation. Never include the owner's private details in it."
+        "Ask another of the owner's agents (CFO, HRD, Operations, Lorium, ...) for data, a report, a status or an "
+        "answer: e.g. Lorium collecting each team's figures for the owner's daily report. Ask each agent for its own "
+        "area instead of fetching that data yourself. Actions: 'list' (which agents exist and what they do), 'ask' "
+        "(agent + question). Write the question fully (period, cut-off time, what to include): the other agent does "
+        "not see this conversation. Several agents can be asked at once with parallel calls."
     )
     params: dict = {
         "type": "object",
@@ -37,12 +41,16 @@ class AskAgent(BaseTool):
         from agent.lrm_owner import REFUSAL, owner_session
         from agent.lrm_personal import ID, NAME
         model = getattr(self, "model", None)
-        if str(getattr(model, "agent_id", "") or "") != ID:
-            return ToolResult.fail(f"Only {NAME}, the owner's personal assistant, asks other agents for reports.")
+        me = str(getattr(model, "agent_id", "") or "")
         if not owner_session(str(getattr(model, "session_id", "") or ""))[0]:
             return ToolResult.fail(REFUSAL)
         from agent.registry import get_agent_registry
-        others = [p for p in get_agent_registry().list(include_disabled=False) if p.id != ID]
+        agents = get_agent_registry().list(include_disabled=False)
+        if not me:
+            me = get_agent_registry().default_agent_id
+        caller = next((p.name for p in agents if p.id == me), me) if me != ID else NAME
+        # Nobody asks themselves; only the owner reaches Sora (her matters are private).
+        others = [p for p in agents if p.id != me and p.id != ID]
         action = (args.get("action") or "").strip()
         if action == "list":
             if not others:
@@ -62,7 +70,8 @@ class AskAgent(BaseTool):
         port = int(conf().get("web_port") or os.environ.get("WEB_PORT") or 9899)
         day = datetime.date.today().isoformat()
         body = {"agent_id": target.id, "conversation_id": f"lrm-report:{target.id}:{day}", "stream": False,
-                "messages": [{"role": "user", "content": f"[{NAME}, the owner's personal assistant, asks on the owner's behalf]\n{question}"}]}
+                "messages": [{"role": "user", "content": f"[{caller} asks on the owner's behalf. Answer with the data and facts asked for, "
+                                                         f"as a title and points; say plainly what you could not get and why.]\n{question}"}]}
         request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", method="POST", data=json.dumps(body).encode(),
                                          headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
         try:

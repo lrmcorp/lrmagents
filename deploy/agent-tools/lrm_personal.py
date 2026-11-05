@@ -158,6 +158,9 @@ PREFS = PREFS_MARK + """
   the owner's WhatsApp: call scheduler action 'list_recipients' and use the 'You (owner)' WhatsApp entry
   (its channel_type, instance_id and receiver). Reply with the task name, the times and where it will arrive;
   it is listed in the console's Tasks page. Never say something is set up unless the tool call succeeded.
+- A report that needs another team's data: ask that team's agent (CFO, HRD, Operations, ...) with ask_agent,
+  all at once with parallel calls, instead of fetching their data yourself. Put their answers together and
+  say plainly which part is missing and why.
 """ + PREFS_MARK + "\n"
 
 
