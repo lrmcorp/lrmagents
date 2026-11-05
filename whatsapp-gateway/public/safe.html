@@ -12,12 +12,6 @@
     --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c; --line: #dbdbe5;
     --ok: #047857; --ok-bg: #ecfdf5; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2; --on-brand: #fff; --ring: #7480f1;
   }
-  :root.dark { --brand: #f0f0f4; --on-brand: #13101b; --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a;
-    --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6; --line: #3a3348;
-    --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10; --bad: #f2a1a1; --bad-bg: #3a1418; }
-  @media (prefers-color-scheme: dark) { :root:not(.light) { --brand: #f0f0f4; --on-brand: #13101b; --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a;
-    --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6; --line: #3a3348;
-    --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10; --bad: #f2a1a1; --bad-bg: #3a1418; } }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -63,10 +57,6 @@
   :focus-visible { outline: 2px solid var(--ring, #7480f1); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
-<script>
-// Inside the console follow its theme; on its own follow the device (see the CSS).
-try { if (window.parent !== window) document.documentElement.classList.add(window.parent.document.documentElement.classList.contains('dark') ? 'dark' : 'light'); } catch { /* another origin */ }
-</script>
 </head>
 <body>
 <main>

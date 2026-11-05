@@ -457,6 +457,14 @@ patch("api/sessions.py",
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
 
+# ---- Light only: the owner does not want dark mode (an earlier "dark" choice is ignored).
+patch("static/js/core/theme.js",
+      "let currentTheme = localStorage.getItem('cow_theme') || window.__COW_DEFAULT_THEME__ || 'light';\n",
+      "let currentTheme = 'light';\n")
+patch("static/js/core/theme.js",
+      "    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';\n",
+      "    currentTheme = 'light';\n")
+
 # ---- Delegation: a chat with no team set (Lorium's own chats, the WhatsApp sessions that
 # scheduled reports run in) works with all the owner's business agents; upstream refused
 # Lorium's requests to CFO, HRD and Operations there. Sora (personal) is never a member.

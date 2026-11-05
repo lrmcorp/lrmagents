@@ -95,10 +95,8 @@
         const account = document.createElement('div');
         account.className = 'lrm-account';
         account.innerHTML = `<span class="lrm-avatar"><i class="fas fa-user"></i></span><span class="lrm-name">Owner</span>
-            <button class="lrm-icon-btn" id="lrm-theme" title="Light or dark" aria-label="Switch light or dark"><i class="fas fa-circle-half-stroke"></i></button>
             <button class="lrm-icon-btn" id="lrm-logout" title="Sign out" aria-label="Sign out"><i class="fas fa-arrow-right-from-bracket"></i></button>`;
         more.after(account);
-        $('#lrm-theme', account).onclick = () => { if (typeof toggleTheme === 'function') toggleTheme(); };
         $('#lrm-logout', account).onclick = () => { if (typeof handleLogout === 'function') handleLogout(); };
 
         keepPanelOpen();

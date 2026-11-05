@@ -89,11 +89,7 @@ const post = (op, body) => api(op, {}, body);
 
 // ---- theme: follow the console ------------------------------------------------
 function syncTheme() {
-  let dark = false;
-  try {
-    dark = window.parent !== window ? window.parent.document.documentElement.classList.contains('dark')
-      : (localStorage.getItem('cow_theme') || 'light') === 'dark';
-  } catch { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; }
+  const dark = false; // LRMagent is light only
   document.documentElement.classList.toggle('dark', dark);
   $('#hl-light').disabled = dark;
   $('#hl-dark').disabled = !dark;
