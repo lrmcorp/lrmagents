@@ -453,6 +453,37 @@ patch("api/sessions.py",
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
 
+# ---- Tasks: LRMagent's WhatsApp numbers as delivery channels in the console's task form
+# (upstream lists only its own IM integrations, so the form had no channel at all).
+# channel/lrm_whatsapp_relay.py supplies the instances ("lrm-wa:<agent>") and recipients
+# (the owner and the designated contacts); delivery goes through the WhatsApp relay.
+patch("agent/tools/scheduler/integration.py",
+      "    instance_id = (instance_id or \"\").strip()\n    if not instance_id:\n        return \"\"\n    try:\n        from channel.channel_instances import get_instance\n",
+      "    instance_id = (instance_id or \"\").strip()\n    if not instance_id:\n        return \"\"\n    if instance_id.startswith(\"lrm-wa:\"):\n        return instance_id[len(\"lrm-wa:\"):]\n    try:\n        from channel.channel_instances import get_instance\n", root=app)
+patch("api/scheduler.py",
+      "            return json.dumps({\"status\": \"success\", \"instances\": instances}, ensure_ascii=False)\n",
+      "            from channel.lrm_whatsapp_relay import task_instances as _lrm_wa_instances\n"
+      "            instances = _lrm_wa_instances() + instances\n"
+      "            return json.dumps({\"status\": \"success\", \"instances\": instances}, ensure_ascii=False)\n")
+patch("api/scheduler.py",
+      "            recipients = get_recipient_store().list()\n            instance_meta = self._instance_meta()\n",
+      "            from channel.lrm_whatsapp_relay import task_recipients as _lrm_wa_recipients\n"
+      "            recipients = get_recipient_store().list() + _lrm_wa_recipients()\n            instance_meta = self._instance_meta()\n")
+patch("api/scheduler.py",
+      "                item[\"instance_name\"] = (meta or {}).get(\"name\") or inst_id\n",
+      "                item[\"instance_name\"] = item.get(\"instance_name\") or (meta or {}).get(\"name\") or inst_id\n")
+patch("api/scheduler.py",
+      "                    target = get_recipient_store().get(new_instance, new_receiver)\n",
+      "                    from channel.lrm_whatsapp_relay import task_recipient as _lrm_wa_recipient\n"
+      "                    target = get_recipient_store().get(new_instance, new_receiver) or _lrm_wa_recipient(new_instance, new_receiver)\n")
+patch("api/scheduler.py",
+      "            target = get_recipient_store().get(instance_id, receiver)\n",
+      "            from channel.lrm_whatsapp_relay import task_recipient as _lrm_wa_recipient\n"
+      "            target = get_recipient_store().get(instance_id, receiver) or _lrm_wa_recipient(instance_id, receiver)\n")
+patch("static/js/views/tasks-modal.js",
+      "        return { value: key, label: name, hint: truncateRecipientId(r.receiver) };\n",
+      "        return { value: key, label: name, hint: r.hint || truncateRecipientId(r.receiver) };\n")
+
 # OpenRouter reserves credit for the whole max_tokens of a request, and without one it
 # assumes the model's maximum output (hundreds of thousands of tokens), so a small
 # balance answers "402 requires more credits, or fewer max_tokens" although a normal

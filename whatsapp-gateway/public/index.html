@@ -75,11 +75,12 @@
   <div class="notice"><b>Use a dedicated number.</b> This links through WhatsApp Web, which WhatsApp does not officially support for bots; heavy or spam-like use can get a number banned. Only approved people can talk to an agent.</div>
   <section class="card" id="designated" style="margin-bottom:16px">
     <div class="card-head"><h2>Designated contacts</h2></div>
-    <p class="lede" style="margin:6px 0 12px;font-size:13px">Besides you, these are the only people agents may message on WhatsApp. When one of them writes back, the agent does not answer: Lorium reads it and tells you.</p>
+    <p class="lede" style="margin:6px 0 12px;font-size:13px">Besides you, these are the only people agents may contact first on WhatsApp (people you approved can still get the reminders they ask an agent for). <b>Listen only</b>: when they write back the agent does not answer; Lorium tells you, and the agent learns the answer. <b>Agent may reply</b>: the agent talks with them directly.</p>
     <div id="d-list"></div>
     <form id="d-add" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
       <input name="name" placeholder="Name" style="flex:1 1 160px">
       <input name="phone" placeholder="Number with country code, e.g. 62812…" inputmode="tel" style="flex:2 1 220px">
+      <select name="mode" style="flex:1 1 200px;width:auto"><option value="listen">Listen only (Lorium tells me)</option><option value="reply">Agent may reply</option></select>
       <button class="primary">Add</button>
     </form>
     <p class="hint" id="d-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
@@ -221,7 +222,9 @@ document.addEventListener('submit', async (event) => {
 let contacts = [];
 function drawContacts() {
   $('#d-list').innerHTML = contacts.length
-    ? contacts.map((c, i) => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)"><b style="min-width:120px">${esc(c.name || 'Unnamed')}</b><span style="color:var(--text-2)">+${esc(c.phone)}</span><button style="margin-left:auto" data-dremove="${i}">Remove</button></div>`).join('')
+    ? contacts.map((c, i) => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);flex-wrap:wrap"><b style="min-width:120px">${esc(c.name || 'Unnamed')}</b><span style="color:var(--text-2)">+${esc(c.phone)}</span>
+        <select data-dmode="${i}" style="margin-left:auto;width:auto">${options({ listen: 'Listen only (Lorium tells me)', reply: 'Agent may reply' }, c.mode || 'listen')}</select>
+        <button data-dremove="${i}">Remove</button></div>`).join('')
     : '<p style="color:var(--text-3);margin:0">None yet: agents can only message you.</p>';
 }
 async function saveContacts(next) {
@@ -231,9 +234,10 @@ $('#d-add').addEventListener('submit', async (e) => {
   e.preventDefault(); e.stopPropagation();
   const f = new FormData(e.target); const phone = String(f.get('phone')).replace(/\D/g, '');
   if (!/^[1-9]\d{7,14}$/.test(phone)) { $('#d-msg').textContent = 'Use the full number with country code, e.g. 6281234567890.'; return; }
-  await saveContacts([...contacts, { name: f.get('name'), phone }]); e.target.reset();
+  await saveContacts([...contacts, { name: f.get('name'), phone, mode: f.get('mode') }]); e.target.reset();
 }, true);
 $('#d-list').addEventListener('click', (e) => { const b = e.target.closest('[data-dremove]'); if (b && confirm('Remove this contact? Agents will no longer be able to message them.')) saveContacts(contacts.filter((_, i) => i !== Number(b.dataset.dremove))); });
+$('#d-list').addEventListener('change', (e) => { const sel = e.target.closest('[data-dmode]'); if (sel) saveContacts(contacts.map((c, i) => (i === Number(sel.dataset.dmode) ? { ...c, mode: sel.value } : c))); });
 api('designated').then((d) => { contacts = d.contacts; drawContacts(); }).catch(() => {});
 
 load();

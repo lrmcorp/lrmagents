@@ -14,7 +14,7 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from 'baileys';
 import { ask, decideApproval, speak } from './cowagent.js';
-import { relayPrompt } from './designated.js';
+import { notePrompt, relayPrompt } from './designated.js';
 import crypto from 'node:crypto';
 import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
@@ -328,12 +328,15 @@ class Account {
     const chat = msg.key.remoteJid;
     // A designated contact writing back: the agent stays silent and Lorium hears it.
     const fromPhone = chat.endsWith('@g.us') ? '' : (senderPhone(msg.key) || this.lidPhone.get(chat) || '');
-    if (!selfChat && fromPhone && directory?.has(fromPhone) && !this.isOwner(chat, sock)) {
+    if (!selfChat && fromPhone && directory?.listenOnly(fromPhone) && !this.isOwner(chat, sock)) {
       if (this.limiter.check(chat) !== 'ok') return;
       await relayHook?.(this, sock, msg, fromPhone);
       return;
     }
-    const verdict = decide({ key: msg.key, message: msg.message, settings: this.settings, myJids, selfChat });
+    // A designated contact set to "Agent may reply" talks with the agent like an approved contact.
+    const settings = fromPhone && directory?.mayReply(fromPhone) && !this.settings.allowFrom.includes(fromPhone)
+      ? { ...this.settings, allowFrom: [...this.settings.allowFrom, fromPhone] } : this.settings;
+    const verdict = decide({ key: msg.key, message: msg.message, settings, myJids, selfChat });
 
     if (verdict.action === 'ignore') {
       // Remember group talk the agent wasn't asked about, for context when it is.
@@ -638,8 +641,11 @@ export class Accounts {
     const own = [account.sock.user?.id, account.sock.user?.lid].some((jid) => jid && bareJid(jid) === bareJid(chat));
     const phone = phoneOf(chat) || account.lidPhone.get(chat) || '';
     const designated = Boolean(directory?.has(phone));
-    if (!own && !account.isOwner(chat, account.sock) && !designated) {
-      throw Object.assign(new Error(`agents may only message the owner and designated contacts; +${phone || chat} is not one. `
+    // Approved people who have talked with this agent may get what they asked it for
+    // (a reminder set in their chat). Anyone else only if designated by the owner.
+    const followUp = Boolean(phone) && account.settings.allowFrom.includes(phone) && account.knownChats.has(chat);
+    if (!own && !account.isOwner(chat, account.sock) && !designated && !followUp) {
+      throw Object.assign(new Error(`agents may only message the owner, designated contacts, and approved people who talk with them; +${phone || chat} is none of these. `
         + 'The owner can add it under Designated contacts on the WhatsApp page.'), { status: 403 });
     }
     if (!text.trim()) return;
@@ -675,6 +681,10 @@ export class Accounts {
     if (!text.trim()) return;
     const who = `${contact?.name || 'Contact'} (+${phone})`;
     log.info({ agent: account.agentId, phone: `…${phone.slice(-4)}` }, 'designated contact replied; relayed to Lorium');
+    // The agent whose number they wrote to learns the answer too (and never replies).
+    const told = account.agentId === LORIUM ? null
+      : ask({ agentId: account.agentId, conversationId: `whatsapp:${account.agentId}:${msg.key.remoteJid}`, text: notePrompt({ contact, phone, text }) })
+        .catch((e) => log.warn({ agent: account.agentId, err: e.message }, 'could not tell the agent about the reply'));
     let note;
     try {
       note = await ask({ agentId: LORIUM, conversationId: `whatsapp-relay:${phone}`,
@@ -684,6 +694,7 @@ export class Accounts {
       note = `📩 *Reply from ${who}*\n- To agent ${account.agentId}'s number\n- ${text.slice(0, 1500)}\n- (Lorium could not read it: ${e.reason || 'error'})`;
     }
     await this.notifyOwner(LORIUM, note).catch((e) => log.error({ err: e.message }, 'relay note to the owner failed'));
+    await told;
   }
 
   // Whether a number has WhatsApp, asked through this agent's linked number.
