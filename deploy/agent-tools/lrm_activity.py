@@ -79,7 +79,11 @@ _RISKY_COMMANDS = [
     (r"\bcrontab\s+-r\b", "removes scheduled jobs"),
 ]
 _RISKY_WEB = re.compile(r"(?i)\b(buy|purchase|pay|payment|checkout|place order|order now|transfer|send money|delete|remove account|"
-                        r"unsubscribe|submit|publish|post|confirm|sign|subscribe)\b")
+                        r"unsubscribe|submit|publish|post|confirm|sign(?![ -]?(in|on)\b)|subscribe)\b")
+# Signing in is how agents reach the owner's data: never a step to approve (it held every
+# login, and with nobody watching a scheduled report, the run until the request expired).
+_SIGN_IN = re.compile(r"(?i)\b(sign[ -]?in|log[ -]?in|login|masuk|next|continue|lanjut|berikutnya|remember me|keep me signed in)\b")
+_MONEY_OR_LOSS = re.compile(r"(?i)\b(buy|purchase|pay|payment|checkout|order|transfer|send money|delete|remove|unsubscribe|publish|post)\b")
 
 
 def redact(text, limit=400):
@@ -136,6 +140,8 @@ def risk(tool, args, mode, refs=None):
                 text += " " + (refs or {}).get(int(args.get("ref")), "")
             except (TypeError, ValueError):
                 pass
+            if _SIGN_IN.search(text) and not _MONEY_OR_LOSS.search(text) and action != "evaluate":
+                return ""
             if _RISKY_WEB.search(text) or action in ("submit", "evaluate"):
                 return "acts on a website (submit, buy, post or delete)"
             return "acts on a website" if mode == "always" else ""
@@ -338,7 +344,13 @@ def gate(executor, tool_name, arguments, tool_call_id):
         deadline = time.time() + TIMEOUT
         cancel = getattr(executor, "cancel_event", None)
         status = "pending"
+        asked_at, phoned = time.time(), channel != "web"
         while time.time() < deadline:
+            if not phoned and time.time() - asked_at > 60:
+                # Asked in the console and nobody answered (a scheduled run, or the owner is away): WhatsApp too.
+                phoned = True
+                _notify_owner(agent_id, f"🔐 Approval needed ({_agent_name(agent_id)}): it wants to {why}.\n\n{tool_name}: {summary}\n\n"
+                                        f"Reply *yes* to allow or *no* to refuse. Expires in {max(1, int(deadline - time.time()) // 60)} min.")
             if cancel is not None and getattr(cancel, "is_set", lambda: False)():
                 status = "cancelled"
                 break
