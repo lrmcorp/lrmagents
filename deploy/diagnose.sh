@@ -80,7 +80,7 @@ except Exception as e:
 PY' </dev/null
 echo "== fallback during the test"; dc logs --no-color --since 15m cowagent 2>&1 | grep -iE 'fallback|LLM API error|failed across|402|usage limit|lrmplans' | cut -c1-380 | tail -25
 echo "== voice timing (text-to-speech, then speech-to-text of it)"
-dc exec -T cowagent python - <<'PY' 2>&1 | tail -8
+sudo -n docker compose -f deploy/compose.yaml exec -T cowagent python - <<'PY' 2>&1 | grep -v '^\[' | tail -8
 import json, time, urllib.request
 from config import load_config, conf
 load_config()
