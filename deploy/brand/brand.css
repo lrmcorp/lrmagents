@@ -267,3 +267,13 @@ div:has(> #cfg-password-save),
 @media (pointer: coarse) { #lrm-receivers .lrm-recv { min-height: 44px; } }
 #lrm-receivers .lrm-recv input { width: auto; margin: 0; }
 #lrm-receivers .lrm-recv small, #lrm-receivers .lrm-recv-none { color: var(--lrm-muted); font-size: 12px; }
+
+/* Agents page grouped by the Team page: a heading per group, Level 2 under its Level 1. */
+.lrm-agent-section { display: flex; align-items: baseline; gap: 8px; margin: 14px 4px 4px; font-size: 12.5px; font-weight: 650; color: rgb(var(--cw-slate-700)); }
+.lrm-agent-section.first { margin-top: 2px; }
+.lrm-agent-section small { font-weight: 500; color: rgb(var(--cw-slate-500)); }
+.lrm-agent-place { font-size: 11.5px; font-weight: 600; color: rgb(var(--cw-slate-600)); margin: 1px 0; }
+.agent-card.lrm-l2 { margin-left: 18px; position: relative; }
+.agent-card.lrm-l2::before { content: ''; position: absolute; left: -10px; top: 6px; bottom: 6px; width: 2px; border-radius: 2px; background: rgb(var(--cw-slate-200)); }
+.lrm-agent-arrange { margin: 14px 4px 4px; padding: 8px 10px; border: 1px dashed rgb(var(--cw-slate-300)); border-radius: 10px; background: none; color: rgb(var(--cw-slate-600)); font-size: 12.5px; font-weight: 600; cursor: pointer; text-align: center; }
+.lrm-agent-arrange:hover { background: rgb(var(--cw-slate-50)); color: rgb(var(--cw-slate-800)); }

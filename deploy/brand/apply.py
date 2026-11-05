@@ -706,6 +706,90 @@ patch("models/openai_compatible_bot.py",
       '                _cap = int(_lrm_os.environ.get("LRMAGENT_OPENROUTER_MAX_TOKENS") or 8192)\n'
       '                request_params["max_tokens"] = min(int(request_params.get("max_tokens") or _cap), _cap)\n',
       root=app)
+# Agents page: the list follows the Team page. Sections per group (lead first, then each
+# group, agents not placed, the personal assistant); Level 2 agents sit under their Level 1,
+# and each card says its level and who it reports to. Upstream draws the cards; this
+# regroups them, so a change in upstream card markup only loses the grouping.
+patch("static/js/views/agents.js",
+      "function renderAgentsGrid() {\n    const grid = document.getElementById('agents-grid');",
+      """let _lrmOrg = null, _lrmOrgAt = 0;
+function _lrmLoadOrg() {
+    if (Date.now() - _lrmOrgAt < 15000) return;
+    _lrmOrgAt = Date.now();
+    fetch('/api/lrm/org', { credentials: 'same-origin' }).then(r => (r.ok ? r.json() : null)).then(d => {
+        if (d && d.status === 'success' && JSON.stringify(d) !== JSON.stringify(_lrmOrg)) { _lrmOrg = d; renderAgentsGrid(); }
+    }).catch(() => {});
+}
+function renderAgentsGrid() {
+    _lrmUpstreamRenderAgentsGrid();
+    try { _lrmGroupAgents(); } catch (e) { console.warn('[LRM] agent grouping skipped', e); }
+    _lrmLoadOrg();
+}
+function _lrmGroupAgents() {
+    const grid = document.getElementById('agents-grid');
+    if (!grid || !_lrmOrg) return;
+    const cards = new Map();
+    for (const c of grid.querySelectorAll('.agent-card')) {
+        const m = (c.getAttribute('onclick') || '').match(/openAgentDetail\\('(.+?)'\\)/);
+        if (m) cards.set(m[1], c);
+    }
+    if (!cards.size) return;
+    const org = new Map(_lrmOrg.agents.map(a => [a.id, a]));
+    const nameOf = id => (org.get(id) || {}).name || id;
+    const groups = new Map(_lrmOrg.groups.map(g => [g.id, g.name]));
+    const used = new Set();
+    const out = document.createDocumentFragment();
+    const head = (title, n, first) => {
+        const h = document.createElement('div');
+        h.className = 'lrm-agent-section col-span-full' + (first ? ' first' : '');
+        h.innerHTML = `<span>${escapeHtml(title)}</span><small>${n}</small>`;
+        out.appendChild(h);
+    };
+    const put = (id, line, l2) => {
+        const c = cards.get(id);
+        if (!c || used.has(id)) return;
+        used.add(id);
+        c.classList.toggle('lrm-l2', !!l2);
+        const box = c.querySelector('.agent-card-desc');
+        if (line && box) box.insertAdjacentHTML('beforebegin', `<div class="lrm-agent-place">${escapeHtml(line)}</div>`);
+        out.appendChild(c);
+    };
+    const lead = _lrmOrg.lead;
+    let first = true;
+    if (cards.has(lead)) { head('Lead', 1, first); first = false; put(lead, 'Lead · Level 1 agents report here'); }
+    const placed = _lrmOrg.agents.filter(a => a.level && cards.has(a.id));
+    const byName = (a, b) => a.name.localeCompare(b.name);
+    for (const [gid, gname] of [..._lrmOrg.groups.map(g => [g.id, g.name]), ['', 'No group']]) {
+        const members = placed.filter(a => a.group === gid);
+        if (!members.length) continue;
+        head(gname, members.length, first); first = false;
+        const ones = members.filter(a => a.level === 1).sort(byName);
+        for (const one of ones) {
+            put(one.id, `Level 1 · reports to ${nameOf(one.reports_to)}`);
+            for (const two of members.filter(a => a.level === 2 && a.reports_to === one.id).sort(byName))
+                put(two.id, `Level 2 · reports to ${one.name}`, true);
+        }
+        for (const two of members.filter(a => a.level === 2).sort(byName)) {
+            const boss = org.get(two.reports_to);
+            put(two.id, boss ? `Level 2 · reports to ${boss.name}` + (boss.group !== gid ? ` (${groups.get(boss.group) || 'no group'})` : '') : 'Level 2 · no Level 1 chosen', true);
+        }
+    }
+    const rest = [..._lrmOrg.agents.filter(a => !a.level && !a.private && a.id !== lead && cards.has(a.id)).map(a => a.id)];
+    if (rest.length) { head('Not placed', rest.length, first); first = false; rest.forEach(id => put(id, '')); }
+    const personal = _lrmOrg.agents.filter(a => a.private && cards.has(a.id)).map(a => a.id);
+    if (personal.length) { head('Personal', personal.length, first); first = false; personal.forEach(id => put(id, 'Private: other agents cannot reach her')); }
+    const other = [...cards.keys()].filter(id => !used.has(id));
+    if (other.length) { head('Archived', other.length, first); other.forEach(id => put(id, '')); }
+    const link = document.createElement('button');
+    link.type = 'button';
+    link.className = 'lrm-agent-arrange col-span-full';
+    link.textContent = 'Arrange groups and levels on the Team page';
+    link.onclick = () => (typeof menuOpenItem === 'function' ? menuOpenItem('lrm-team') : (location.href = '/assets/brand/team.html'));
+    out.appendChild(link);
+    grid.replaceChildren(out);
+}
+function _lrmUpstreamRenderAgentsGrid() {
+    const grid = document.getElementById('agents-grid');""")
 # AI plans (sign-ins for Codex, Claude Code, Gemini, ...) is a tab of Config, next to Models,
 # instead of its own menu page.
 patch("templates/views/config.html",

@@ -4,8 +4,11 @@ import { healthy } from '../helpers';
 
 test('WhatsApp page: add and remove a designated contact', async ({ app, browser }) => {
   await app.open('/whatsapp/');
-  await expect(browser.locator('#designated')).toBeVisible();
+  await expect(browser.locator('#agents [data-agent]').first()).toBeVisible();
+  await browser.locator('#t-groups').click();
   await expect(browser.locator('#groups')).toBeVisible();
+  await browser.locator('#t-contacts').click();
+  await expect(browser.locator('#designated')).toBeVisible();
   await browser.locator('#d-add [name=name]').fill('Budi');
   await browser.locator('#d-add [name=phone]').fill('+62 811 0000 0001');
   await browser.locator('#d-add button').click();
@@ -13,6 +16,17 @@ test('WhatsApp page: add and remove a designated contact', async ({ app, browser
   await browser.evaluate(() => { window.confirm = () => true; });
   await browser.locator('[data-dremove="0"]').click();
   await expect(browser.locator('#d-list')).toContainText('None yet');
+  await healthy(browser);
+});
+
+test('WhatsApp page: an agent\'s settings open and close', async ({ app, browser }) => {
+  await app.open('/whatsapp/');
+  await browser.locator('[data-agent="default"] [data-settings]').click();
+  await expect(browser.locator('#set-dlg')).toBeVisible();
+  await browser.locator('#set-form [value=monitor]').click();
+  await expect(browser.locator('#set-form [name=dmPolicy]')).toBeHidden();
+  await browser.locator('#set-cancel').click();
+  await expect(browser.locator('#set-dlg')).toBeHidden();
   await healthy(browser);
 });
 

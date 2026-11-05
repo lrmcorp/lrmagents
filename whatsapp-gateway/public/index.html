@@ -8,294 +8,424 @@
 <link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
 <style>
   :root {
-    --brand: #18181b; --brand-strong: #000000; --brand-soft: #ebebf9;
-    --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8;
-    --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c;
-    --line: #dbdbe5; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2; --on-brand: #fff; --ring: #7480f1;
+    --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8; --hover: #ededf5;
+    --text: #0a0a0f; --text-2: #3f3f46; --text-3: #5f5f68; --line: #dbdbe5;
+    --primary: #18181b; --on-primary: #fff; --ring: #7480f1;
+    --ok: #12795b; --ok-bg: #e7f6ef; --warn: #92400e; --warn-bg: #fff7e6; --warn-line: #f6d79a; --bad: #b42530; --bad-bg: #fff1f2;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
   header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 16px; background: var(--surface); border-bottom: 1px solid var(--line); }
   header img { height: 28px; }
-  header .crumb { color: var(--text-3); font-size: 13px; }
-  header .crumb b { color: var(--text); font-weight: 600; }
-  header a.back { margin-left: auto; color: var(--brand); font-weight: 600; text-decoration: none; font-size: 13px; }
-  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .lede { color: var(--text-2); margin: 0 0 16px; }
-  .notice { background: var(--warn-bg); color: var(--warn); border: 1px solid #fde68a; border-radius: 12px; padding: 10px 14px; font-size: 13px; margin-bottom: 20px; }
-  .grid { display: grid; gap: 16px; }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
-  .card-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .card-head h2 { font-size: 16px; margin: 0; }
-  .id { color: var(--text-3); font-size: 12px; font-family: ui-monospace, monospace; }
-  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--muted-bg); color: var(--text-2); border: 1px solid var(--line); }
-  .badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .badge.connected { background: var(--brand-soft); color: var(--brand); border-color: #c9c9ef; }
-  .badge.qr, .badge.starting, .badge.reconnecting { background: var(--warn-bg); color: var(--warn); border-color: #fde68a; }
-  .badge.logged_out, .badge.error { background: var(--bad-bg); color: var(--bad); border-color: #fecdd3; }
-  .actions { margin-left: auto; display: flex; gap: 8px; }
-  button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 10px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
-  button.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
-  button.primary:hover { background: var(--brand-strong); }
+  header a { margin-left: auto; color: var(--text); font-weight: 600; text-decoration: none; font-size: 13px; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; font-weight: 650; letter-spacing: -.01em; margin: 0; }
+  .summary { color: var(--text-3); margin: 2px 0 16px; }
+
+  /* Things waiting for the owner: the only coloured block on the page. */
+  .todo { display: grid; gap: 8px; margin-bottom: 16px; }
+  .todo-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 12px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn); }
+  .todo-row.bad { background: var(--bad-bg); border-color: #fecdd3; color: var(--bad); }
+  .todo-row span { flex: 1 1 240px; color: var(--text); }
+  .todo-row code { font: 700 13px ui-monospace, Menlo, monospace; letter-spacing: .06em; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 16px; overflow-x: auto; }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 10px 12px; color: var(--text-3); font-weight: 600; min-height: 44px; }
+  .tabs button:hover { background: none; color: var(--text); }
+  .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--primary); }
+  .tabs .n:empty { display: none; }
+  .tabs .n { display: inline-block; min-width: 20px; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--muted-bg); color: var(--text-2); font-size: 12px; }
+  .intro { color: var(--text-2); margin: 0 0 14px; max-width: 680px; }
+
+  .list { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .row .who b { display: block; font-weight: 600; overflow-wrap: anywhere; }
+  .row .who small, .row .sub { color: var(--text-3); font-size: 12.5px; }
+  .row .acts { display: flex; gap: 8px; justify-content: flex-end; }
+  .empty { padding: 18px 16px; color: var(--text-3); margin: 0; }
+
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .chip::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #a1a1aa; }
+  .chip.connected { color: var(--ok); } .chip.connected::before { background: var(--ok); }
+  .chip.qr, .chip.starting, .chip.reconnecting { color: var(--warn); } .chip.qr::before, .chip.starting::before, .chip.reconnecting::before { background: #d97706; }
+  .chip.logged_out, .chip.error { color: var(--bad); } .chip.logged_out::before, .chip.error::before { background: var(--bad); }
+
+  button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 10px; padding: 8px 14px; min-height: 38px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); white-space: nowrap; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+  button.primary:hover { background: #000; }
   button.danger { color: var(--bad); }
   button:disabled { opacity: .5; cursor: default; }
-  button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-  .meta { color: var(--text-2); font-size: 13px; margin-top: 6px; }
-  .error { color: var(--bad); font-size: 13px; margin-top: 6px; }
-  .qr { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 16px; padding: 16px; border-radius: 12px; background: var(--muted-bg); border: 1px dashed var(--line); }
-  .qr img { width: 220px; height: 220px; background: #fff; border-radius: 8px; }
-  .qr ol { margin: 0; padding-left: 18px; color: var(--text-2); }
-  details { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
-  summary { cursor: pointer; font-weight: 600; color: var(--text-2); }
-  .form { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 12px; }
-  .form .full { grid-column: 1 / -1; }
-  label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
-  select, textarea, input { width: 100%; font: 500 13px Inter, system-ui, sans-serif; color: var(--text); background: var(--muted-bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
-  textarea { min-height: 64px; resize: vertical; }
-  .hint { font-size: 12px; color: var(--text-3); margin-top: 4px; }
-  .pending { margin-top: 14px; padding: 12px; border-radius: 12px; background: var(--warn-bg); border: 1px solid #fde68a; }
-  .pending h3 { margin: 0 0 8px; font-size: 13px; color: var(--warn); }
-  .pending-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
-  .pending-row code { font-weight: 700; letter-spacing: .08em; }
-  .empty { color: var(--text-2); }
-  @media (max-width: 640px) { .form { grid-template-columns: 1fr; } .actions { margin-left: 0; width: 100%; } .qr img { width: 200px; height: 200px; } }
+  input, select, textarea { width: 100%; font: 400 14px Inter, system-ui, sans-serif; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-height: 38px; }
+  textarea { min-height: 60px; resize: vertical; }
+  label.f { display: grid; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+  .hint { font-size: 12.5px; color: var(--text-3); font-weight: 400; }
+  .msg { font-size: 13px; color: var(--text-3); margin: 8px 0 0; min-height: 20px; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
-  /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
-  @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; } }
-  @media (pointer: coarse) { button, select, summary, .btn { min-height: 44px; } }
-  :focus-visible { outline: 2px solid var(--ring, #7480f1); outline-offset: 2px; }
+  .add { display: grid; grid-template-columns: 1fr 1.4fr 1fr auto; gap: 8px; margin-bottom: 12px; }
+  .contact { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr) auto; }
+  .group { grid-template-columns: auto minmax(0, 1fr) auto; cursor: pointer; }
+  .group input { width: 20px; height: 20px; min-height: 0; accent-color: var(--primary); }
+  .toolbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar .intro { margin: 0; flex: 1 1 320px; }
+  details.more { margin-top: 12px; }
+  details.more summary { cursor: pointer; font-weight: 600; color: var(--text-2); min-height: 32px; }
+  .foot { color: var(--text-3); font-size: 12.5px; margin: 12px 2px 0; }
+
+  /* Dialogs: linking and settings. The one raised surface, so it reads above the page. */
+  dialog { border: 0; border-radius: 16px; padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); color: var(--text); box-shadow: 0 20px 50px rgba(10,10,15,.18); }
+  dialog::backdrop { background: rgba(10,10,15,.35); }
+  .dlg { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); }
+  .dlg header { position: static; height: auto; padding: 16px 20px 12px; border: 0; background: none; display: block; }
+  .dlg h2 { margin: 0; font-size: 17px; font-weight: 650; }
+  .dlg header p { margin: 2px 0 0; color: var(--text-3); font-size: 13px; }
+  .dlg .body { padding: 4px 20px 16px; overflow-y: auto; display: grid; gap: 14px; }
+  .dlg footer { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); align-items: center; }
+  .dlg footer .grow { flex: 1; }
+  .steps { margin: 0; padding-left: 20px; color: var(--text-2); display: grid; gap: 6px; }
+  .qrbox { display: grid; place-items: center; min-height: 236px; background: var(--muted-bg); border-radius: 12px; }
+  .qrbox img { width: 220px; height: 220px; background: #fff; border-radius: 8px; }
+  .done { text-align: center; padding: 24px 8px; }
+  .done b { display: block; font-size: 16px; color: var(--ok); }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .mode { display: grid; gap: 2px; grid-template-columns: auto 1fr; column-gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-weight: 600; }
+  .mode input { width: 16px; height: 16px; min-height: 0; margin: 3px 0 0; accent-color: var(--primary); }
+  .mode small { grid-column: 2; color: var(--text-3); font-weight: 400; font-size: 12.5px; }
+  .mode:has(input:checked) { border-color: var(--primary); background: var(--muted-bg); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 12px; }
+  legend { font-size: 13px; font-weight: 650; padding: 0; margin-bottom: 8px; }
+
+  @media (max-width: 720px) {
+    .row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
+    .row .chip { grid-column: 2; grid-row: 1; justify-self: end; }
+    .row .sub { grid-column: 1 / -1; }
+    .row .acts { grid-column: 1 / -1; justify-content: flex-start; }
+    .contact { grid-template-columns: minmax(0, 1fr) auto; }
+    .contact select { grid-column: 1 / -1; grid-row: 2; }
+    .add { grid-template-columns: 1fr; }
+    .modes, .pair { grid-template-columns: 1fr; }
+    dialog { width: 100vw; max-width: 100vw; margin: auto 0 0; border-radius: 16px 16px 0 0; max-height: 92dvh; }
+    .dlg { max-height: 92dvh; }
+  }
+  @media (max-width: 640px) { input, select, textarea { font-size: 16px; } }
+  @media (pointer: coarse) { button, select, input:not([type=checkbox]):not([type=radio]) { min-height: 44px; } }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
 <header>
-  <img src="/assets/brand/wordtext.png" alt="Liando Reyfort Management">
-  <span class="crumb">Channels / <b>WhatsApp</b></span>
-  <a class="back" href="/">← Back to console</a>
+  <img src="/assets/brand/wordtext.png" alt="Liando Reyfort Management" width="140" height="28">
+  <a href="/">Back to console</a>
 </header>
 <main>
   <h1>WhatsApp</h1>
-  <p class="lede">Link a WhatsApp number to each agent by scanning a QR code, the same way you add WhatsApp Web.</p>
-  <div class="notice"><b>Use a dedicated number.</b> This links through WhatsApp Web, which WhatsApp does not officially support for bots; heavy or spam-like use can get a number banned. Only approved people can talk to an agent.</div>
-  <section class="card" id="designated" style="margin-bottom:16px">
-    <div class="card-head"><h2>Designated contacts</h2></div>
-    <p class="lede" style="margin:6px 0 12px;font-size:13px">Besides you, these are the only people agents may contact first on WhatsApp (people you approved can still get the reminders they ask an agent for). <b>Listen only</b>: when they write back the agent does not answer; Lorium tells you, and the agent learns the answer. <b>Agent may reply</b>: the agent talks with them directly.</p>
-    <div id="d-list"></div>
-    <form id="d-add" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <input name="name" placeholder="Name" aria-label="Contact name" style="flex:1 1 160px">
-      <input name="phone" placeholder="Number with country code, e.g. 62812…" aria-label="WhatsApp number with country code" inputmode="tel" style="flex:2 1 220px">
-      <select name="mode" aria-label="When they write back" style="flex:1 1 200px;width:auto"><option value="listen">Listen only (Lorium tells me)</option><option value="reply">Agent may reply</option></select>
+  <p class="summary" id="summary">Loading…</p>
+  <div class="todo" id="todo" aria-live="polite"></div>
+
+  <nav class="tabs" role="tablist" aria-label="WhatsApp settings">
+    <button role="tab" id="t-numbers" aria-controls="p-numbers" aria-selected="true">Numbers<span class="n" id="n-numbers"></span></button>
+    <button role="tab" id="t-contacts" aria-controls="p-contacts" aria-selected="false" tabindex="-1">Contacts<span class="n" id="n-contacts"></span></button>
+    <button role="tab" id="t-groups" aria-controls="p-groups" aria-selected="false" tabindex="-1">Groups<span class="n" id="n-groups"></span></button>
+  </nav>
+
+  <section id="p-numbers" role="tabpanel" aria-labelledby="t-numbers">
+    <p class="intro">Each agent can have its own WhatsApp number. Link it once by scanning a code, like WhatsApp Web.</p>
+    <div class="list" id="agents"><p class="empty">Loading agents…</p></div>
+    <p class="foot">Use a dedicated number for each agent: linking goes through WhatsApp Web, and heavy or spam-like use can get a number banned.</p>
+  </section>
+
+  <section id="designated" role="tabpanel" aria-labelledby="t-contacts" hidden>
+    <p class="intro">Besides you, agents may message only these people first. Choose what happens when they write back.</p>
+    <form class="add" id="d-add">
+      <input name="name" placeholder="Name" aria-label="Contact name" autocomplete="off">
+      <input name="phone" placeholder="Number with country code, e.g. 62812…" aria-label="WhatsApp number with country code" inputmode="tel" autocomplete="off">
+      <select name="mode" aria-label="When they write back"><option value="listen">Listen only</option><option value="reply">Agent may reply</option></select>
       <button class="primary">Add</button>
     </form>
-    <p class="hint" role="status" id="d-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
+    <div class="list" id="d-list"></div>
+    <p class="msg" role="status" id="d-msg"></p>
+    <p class="foot"><b>Listen only:</b> the agent does not answer; Lorium tells you what they said. <b>Agent may reply:</b> the agent talks with them directly.</p>
   </section>
-  <section class="card" id="groups" style="margin-bottom:16px">
-    <div class="card-head"><h2>Groups</h2><div class="actions"><button id="g-load">Show my groups</button></div></div>
-    <p class="lede" style="margin:6px 0 12px;font-size:13px">Groups your linked numbers are in. Tick the ones agents may post to (reports, reminders, messages you ask for); every other group stays closed. In a group, agents answer only when someone @mentions them or replies to them.</p>
-    <div id="g-list"><p style="color:var(--text-3);margin:0" id="g-none">Loading…</p></div>
-    <form id="g-add" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <input name="name" placeholder="Group name" aria-label="Group name" style="flex:1 1 160px">
-      <input name="jid" placeholder="Or add by group id, e.g. 120363…@g.us" aria-label="Group id" style="flex:2 1 240px" spellcheck="false">
-      <button>Add group</button>
-    </form>
-    <p class="hint" role="status" id="g-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
+
+  <section id="groups" role="tabpanel" aria-labelledby="t-groups" hidden>
+    <div class="toolbar">
+      <p class="intro">Tick the groups agents may post to. In a group they answer only when someone @mentions or replies to them.</p>
+      <button id="g-load">Refresh list</button>
+    </div>
+    <div class="list" id="g-list"><p class="empty">Loading…</p></div>
+    <p class="msg" role="status" id="g-msg"></p>
+    <details class="more">
+      <summary>Group not in the list?</summary>
+      <form class="add" id="g-add" style="grid-template-columns: 1fr 1.4fr auto; margin-top: 8px">
+        <input name="name" placeholder="Group name" aria-label="Group name" autocomplete="off">
+        <input name="jid" placeholder="Group id, e.g. 120363…@g.us" aria-label="Group id" spellcheck="false" autocomplete="off">
+        <button>Add group</button>
+      </form>
+    </details>
   </section>
-  <div id="agents" class="grid"><p class="empty">Loading agents…</p></div>
 </main>
+
+<dialog id="link-dlg" aria-labelledby="link-title">
+  <div class="dlg">
+    <header><h2 id="link-title">Link WhatsApp</h2><p id="link-sub"></p></header>
+    <div class="body">
+      <ol class="steps" id="link-steps">
+        <li>On the agent's phone, open WhatsApp.</li>
+        <li>Go to Settings → <b>Linked devices</b> → <b>Link a device</b>.</li>
+        <li>Scan this code. It refreshes by itself.</li>
+      </ol>
+      <div class="qrbox" id="link-qr"><span class="hint" id="link-wait">Getting a code…</span><img alt="WhatsApp link code" width="220" height="220" hidden></div>
+      <p class="msg" id="link-msg" role="status"></p>
+    </div>
+    <footer><span class="grow"></span><button id="link-close">Close</button></footer>
+  </div>
+</dialog>
+
+<dialog id="set-dlg" aria-labelledby="set-title">
+  <form class="dlg" id="set-form">
+    <header><h2 id="set-title">Settings</h2><p id="set-sub"></p></header>
+    <div class="body">
+      <fieldset>
+        <legend>What it does</legend>
+        <div class="modes">
+          <label class="mode"><input type="radio" name="mode" value="reply">Answers chats<small>Talks with you and the people you approve.</small></label>
+          <label class="mode"><input type="radio" name="mode" value="monitor">Monitor only<small>Reads a branch's chats and reports to you. Never sends anything.</small></label>
+        </div>
+      </fieldset>
+      <fieldset data-reply>
+        <legend>Who can message it</legend>
+        <label class="f">Strangers<select name="dmPolicy">
+          <option value="pairing">Get a code that you approve</option><option value="allowlist">Ignored: approved numbers only</option>
+          <option value="open">Anyone (not recommended)</option><option value="disabled">Nobody</option></select></label>
+        <label class="f">Approved numbers<input name="allowFrom" placeholder="6281234567890, 6289876543210" inputmode="tel" autocomplete="off"><span class="hint">With country code, separated by commas.</span></label>
+        <label class="f">Your own numbers<input name="ownerNumbers" placeholder="6281234567890" inputmode="tel" autocomplete="off"><span class="hint">Phones you write from. They count as you: approvals and owner messages go there.</span></label>
+      </fieldset>
+      <fieldset data-reply>
+        <legend>How it answers</legend>
+        <div class="pair">
+          <label class="f">In groups<select name="groupPolicy"><option value="mention">When @mentioned or replied to</option><option value="off">Never</option></select></label>
+          <label class="f">Voice notes<select name="voiceReplies"><option value="false">Reply in text</option><option value="true">Reply in text and voice</option></select></label>
+          <label class="f">Several quick messages<select name="batchMs"><option value="0">Answer each one</option><option value="2500">Wait 2 s, answer together</option><option value="5000">Wait 5 s, answer together</option></select></label>
+        </div>
+      </fieldset>
+      <p class="hint" data-monitor>Staff keep using the phone as normal. The agent sees customers' messages and staff replies, and reports new numbers, complaints, reply times and chat quality.</p>
+      <p class="msg" id="set-msg" role="status"></p>
+    </div>
+    <footer>
+      <button type="button" class="danger" id="set-unlink">Unlink number</button>
+      <span class="grow"></span>
+      <button type="button" id="set-cancel">Cancel</button>
+      <button class="primary" type="submit">Save</button>
+    </footer>
+  </form>
+</dialog>
+
 <script>
+'use strict';
 // Inside the console's own frame the page header would repeat the console's.
-if (window.self !== window.top) document.querySelector('header').hidden = true;
+if (window.self !== window.top) document.querySelector('body > header').hidden = true;
 const $ = (sel, root = document) => root.querySelector(sel);
-const STATUS = { unlinked: 'Not linked', starting: 'Starting…', qr: 'Waiting for scan', connected: 'Connected', reconnecting: 'Reconnecting…', logged_out: 'Logged out on phone', error: 'Connection failed' };
-const DM = { pairing: 'Pairing: strangers get a code you approve here', allowlist: 'Allowlist only', open: 'Anyone (not recommended)', disabled: 'Nobody' };
-const GROUP = { off: 'Ignore groups', mention: 'Answer when @mentioned or replied to' };
-const polls = {};
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const STATUS = { unlinked: 'Not linked', starting: 'Starting', qr: 'Waiting for scan', connected: 'Connected', reconnecting: 'Reconnecting', logged_out: 'Logged out on phone', error: 'Connection failed' };
+let agents = []; let contacts = []; let groupRows = []; let groupPicked = [];
+let linking = null; let qrTimer = null;
 
 async function api(path, body) {
   const res = await fetch(`/whatsapp/api/${path}`, body === undefined ? {} : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (res.status === 401) { location.href = '/'; throw new Error('signed out'); }
+  if (res.status === 401) { location.href = '/'; throw new Error('Signed out'); }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
+const numbers = (text) => String(text || '').split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean);
 
-function options(map, current) {
-  return Object.entries(map).map(([v, t]) => `<option value="${v}" ${v === current ? 'selected' : ''}>${esc(t)}</option>`).join('');
-}
-
-function card(agent) {
-  const wa = agent.whatsapp;
-  const linked = ['connected', 'reconnecting'].includes(wa.status);
-  const busy = ['qr', 'starting'].includes(wa.status);
-  const pending = wa.pending.length ? `
-    <div class="pending"><h3>Waiting for approval</h3>${wa.pending.map((p) => `
-      <div class="pending-row"><span>+${esc(p.phone)}</span><code>${esc(p.code)}</code>
-      <button class="primary" data-approve="${esc(p.code)}">Approve</button></div>`).join('')}</div>` : '';
-  return `
-  <section class="card" data-agent="${esc(agent.id)}">
-    <div class="card-head">
-      <h2>${esc(agent.name)}</h2><span class="id">${esc(agent.id)}</span>
-      <span class="badge ${esc(wa.status)}">${esc(STATUS[wa.status] || wa.status)}</span>
-      ${wa.settings.mode === 'monitor' ? '<span class="badge" title="Records chats for reports; never sends anything">Monitor only</span>' : ''}
-      <div class="actions">
-        ${linked ? `<button class="danger" data-unlink>Unlink</button>` : `<button class="primary" data-link ${busy ? 'disabled' : ''}>${busy ? 'Waiting…' : 'Link WhatsApp'}</button>`}
-      </div>
-    </div>
-    ${wa.phone ? `<div class="meta">Linked number: <b>+${esc(wa.phone)}</b>${wa.name ? ` (${esc(wa.name)})` : ''}. Message it, or use “Message yourself” on that phone to talk to this agent.</div>` : ''}
-    ${wa.error ? `<div class="error">${esc(wa.error)}</div>` : ''}
-    <div class="qr" data-qr hidden>
-      <img alt="WhatsApp link QR code">
-      <ol><li>Open WhatsApp on the phone for this agent.</li><li>Settings → <b>Linked devices</b> → <b>Link a device</b>.</li><li>Scan this code. It refreshes automatically and expires after 3 minutes.</li></ol>
-    </div>
-    ${pending}
-    <details>
-      <summary>Who can talk to this agent, and how it answers</summary>
-      <form class="form" data-settings>
-        <div class="full"><label>Mode</label><select name="mode" aria-label="Mode">${options({ reply: 'Answer chats (agent replies)', monitor: 'Monitor only: read and report, never send anything' }, wa.settings.mode || 'reply')}</select>
-          <div class="hint">Monitor only is for a branch's own WhatsApp: staff keep using the phone; the agent sees customers' messages and staff replies, sends nothing (no replies, read ticks or typing), and reports to you (new numbers, complaints, reply times, chat quality).</div></div>
-        <div><label>Direct messages</label><select name="dmPolicy" aria-label="Direct messages">${options(DM, wa.settings.dmPolicy)}</select></div>
-        <div><label>Groups</label><select name="groupPolicy" aria-label="Groups">${options(GROUP, wa.settings.groupPolicy)}</select></div>
-        <div><label>Quick messages in a row</label><select name="batchMs" aria-label="Quick messages in a row">${options({ 0: 'Answer each one', 2500: 'Wait 2 seconds, answer together', 5000: 'Wait 5 seconds, answer together' }, String(wa.settings.batchMs ?? 2500))}</select></div>
-        <div><label>Voice notes</label><select name="voiceReplies" aria-label="Voice notes">${options({ false: 'Reply in text', true: 'Reply in text and voice' }, String(Boolean(wa.settings.voiceReplies)))}</select></div>
-        <div class="full"><label>Your own numbers</label>
-          <textarea name="ownerNumbers" aria-label="Your own numbers" placeholder="6281234567890">${esc((wa.settings.ownerNumbers || []).join(', '))}</textarea>
-          <div class="hint">Phones you write to the agent from. They count as you: your plans (Codex, Claude…), approvals, error details and owner messages go there.</div></div>
-        <div class="full"><label>Approved numbers</label>
-          <textarea name="allowFrom" aria-label="Approved numbers" placeholder="6281234567890, 6289876543210">${esc(wa.settings.allowFrom.join(', '))}</textarea>
-          <div class="hint">With country code, separated by commas. The linked phone itself can always use “Message yourself”.</div></div>
-        <div class="full"><button class="primary" type="submit">Save</button> <span data-saved class="hint"></span></div>
-      </form>
-    </details>
-  </section>`;
-}
-
-async function load() {
-  const root = $('#agents');
-  try {
-    const { agents } = await api('agents');
-    if (!agents.length) { root.innerHTML = '<p class="empty">No agents yet. Create one under Agents first.</p>'; return; }
-    root.innerHTML = agents.map(card).join('');
-    for (const agent of agents) if (['qr', 'starting'].includes(agent.whatsapp.status)) pollQr(agent.id);
-  } catch (e) {
-    root.innerHTML = `<p class="error">Could not load agents: ${esc(e.message)}</p>`;
+// Tabs (arrow keys move between them; the open tab is kept in the address).
+const TABS = ['numbers', 'contacts', 'groups'];
+const PANEL = { numbers: 'p-numbers', contacts: 'designated', groups: 'groups' };
+function openTab(name, focus) {
+  for (const t of TABS) {
+    const on = t === name; const tab = $(`#t-${t}`);
+    tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1;
+    $(`#${PANEL[t]}`).hidden = !on;
   }
+  if (focus) $(`#t-${name}`).focus();
+  history.replaceState(null, '', name === 'numbers' ? location.pathname : `#${name}`);
 }
+for (const t of TABS) $(`#t-${t}`).addEventListener('click', () => openTab(t));
+$('.tabs').addEventListener('keydown', (e) => {
+  const i = TABS.findIndex((t) => $(`#t-${t}`).getAttribute('aria-selected') === 'true');
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); openTab(TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length], true); }
+});
+openTab(TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : 'numbers');
 
-function pollQr(agentId) {
-  clearTimeout(polls[agentId]);
-  const tick = async () => {
-    const section = document.querySelector(`[data-agent="${CSS.escape(agentId)}"]`);
-    if (!section) return;
-    try {
-      const data = await api(`agents/${agentId}/qr`);
-      const box = $('[data-qr]', section);
-      if (data.qr) { $('img', box).src = data.qr; box.hidden = false; }
-      if (['qr', 'starting'].includes(data.status)) { polls[agentId] = setTimeout(tick, 2000); return; }
-      load();
-    } catch { polls[agentId] = setTimeout(tick, 4000); }
-  };
-  tick();
+// Numbers
+function drawAgents() {
+  const linked = agents.filter((a) => a.whatsapp.status === 'connected').length;
+  $('#n-numbers').textContent = agents.length ? `${linked}/${agents.length}` : '';
+  $('#summary').textContent = agents.length ? `${linked} of ${agents.length} agents connected` : 'No agents yet';
+  $('#agents').innerHTML = agents.length ? agents.map((a) => {
+    const wa = a.whatsapp; const linkedNow = ['connected', 'reconnecting'].includes(wa.status);
+    const mode = wa.settings.mode === 'monitor' ? 'Monitor only' : 'Answers chats';
+    return `<div class="row" data-agent="${esc(a.id)}">
+      <div class="who"><b>${esc(a.name)}</b><small>${wa.phone ? `+${esc(wa.phone)}` : 'No number linked'}</small></div>
+      <span class="chip ${esc(wa.status)}">${esc(STATUS[wa.status] || wa.status)}</span>
+      <span class="sub">${mode}</span>
+      <div class="acts">${linkedNow ? '' : `<button class="primary" data-link>${wa.status === 'unlinked' ? 'Link' : 'Link again'}</button>`}<button data-settings aria-label="Settings for ${esc(a.name)}">Settings</button></div>
+    </div>`;
+  }).join('') : '<p class="empty">No agents yet. Create one on the Agents page first.</p>';
+  drawTodo();
 }
+function drawTodo() {
+  const rows = [];
+  for (const a of agents) {
+    for (const p of a.whatsapp.pending || []) rows.push(`<div class="todo-row"><span><b>+${esc(p.phone)}</b> wants to talk to ${esc(a.name)} · code <code>${esc(p.code)}</code></span><button class="primary" data-approve="${esc(p.code)}" data-for="${esc(a.id)}">Approve</button></div>`);
+    if (['logged_out', 'error'].includes(a.whatsapp.status)) rows.push(`<div class="todo-row bad"><span><b>${esc(a.name)}</b>: ${esc(a.whatsapp.error || STATUS[a.whatsapp.status])}</span><button data-relink="${esc(a.id)}">Link again</button></div>`);
+  }
+  $('#todo').innerHTML = rows.join('');
+}
+async function loadAgents() {
+  try { agents = (await api('agents')).agents; drawAgents(); }
+  catch (e) { $('#agents').innerHTML = `<p class="empty">Could not load the agents: ${esc(e.message)}. Reload the page to try again.</p>`; $('#summary').textContent = ''; }
+}
+const agentOf = (id) => agents.find((a) => a.id === id);
 
-document.addEventListener('click', async (event) => {
-  const section = event.target.closest('[data-agent]');
-  if (!section) return;
-  const agentId = section.dataset.agent;
-  const button = event.target.closest('button');
-  try {
-    if (button?.hasAttribute('data-link')) {
-      button.disabled = true; button.textContent = 'Starting…';
-      await api(`agents/${agentId}/link`, {});
-      pollQr(agentId);
-    } else if (button?.hasAttribute('data-unlink')) {
-      if (!confirm('Unlink this WhatsApp number from the agent? You can link it again later.')) return;
-      await api(`agents/${agentId}/unlink`, {});
-      load();
-    } else if (button?.dataset.approve) {
-      await api(`agents/${agentId}/approve`, { code: button.dataset.approve });
-      load();
+// Linking: start, show the code, close by itself once connected.
+async function startLink(id) {
+  const a = agentOf(id); linking = id;
+  $('#link-sub').textContent = a ? `For ${a.name}` : '';
+  $('#link-steps').hidden = false; $('#link-msg').textContent = '';
+  $('#link-qr').innerHTML = '<span class="hint" id="link-wait">Getting a code…</span><img alt="WhatsApp link code" width="220" height="220" hidden>';
+  $('#link-dlg').showModal();
+  try { await api(`agents/${id}/link`, {}); pollQr(); } catch (e) { $('#link-msg').textContent = e.message; }
+}
+function pollQr() {
+  clearTimeout(qrTimer);
+  if (!linking || !$('#link-dlg').open) return;
+  api(`agents/${linking}/qr`).then((d) => {
+    if (d.status === 'connected') {
+      $('#link-steps').hidden = true;
+      $('#link-qr').innerHTML = `<div class="done"><b>Linked</b>${d.phone ? `+${esc(d.phone)} is now connected.` : ''}</div>`;
+      loadAgents(); return;
     }
-  } catch (e) { alert(e.message); load(); }
-});
-
-document.addEventListener('submit', async (event) => {
-  const form = event.target.closest('[data-settings]');
-  if (!form) return;
-  event.preventDefault();
-  const agentId = form.closest('[data-agent]').dataset.agent;
-  const data = new FormData(form);
-  try {
-    await api(`agents/${agentId}/settings`, {
-      mode: data.get('mode'), dmPolicy: data.get('dmPolicy'), groupPolicy: data.get('groupPolicy'),
-      batchMs: Number(data.get('batchMs')), voiceReplies: data.get('voiceReplies') === 'true',
-      allowFrom: String(data.get('allowFrom')).split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean),
-      ownerNumbers: String(data.get('ownerNumbers')).split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean),
-    });
-    $('[data-saved]', form).textContent = 'Saved.';
-  } catch (e) { $('[data-saved]', form).textContent = e.message; }
-});
-
-// ---- designated contacts --------------------------------------------------------
-let contacts = [];
-function drawContacts() {
-  $('#d-list').innerHTML = contacts.length
-    ? contacts.map((c, i) => `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);flex-wrap:wrap"><b style="min-width:120px">${esc(c.name || 'Unnamed')}</b><span style="color:var(--text-2)">+${esc(c.phone)}</span>
-        <select data-dmode="${i}" style="margin-left:auto;width:auto">${options({ listen: 'Listen only (Lorium tells me)', reply: 'Agent may reply' }, c.mode || 'listen')}</select>
-        <button data-dremove="${i}">Remove</button></div>`).join('')
-    : '<p style="color:var(--text-3);margin:0">None yet: agents can only message you.</p>';
+    const img = $('#link-qr img');
+    if (d.qr && img) { img.src = d.qr; img.hidden = false; $('#link-wait')?.remove(); }
+    if (['error', 'logged_out'].includes(d.status)) $('#link-msg').textContent = d.error || 'Linking failed. Close and try again.';
+    qrTimer = setTimeout(pollQr, 2000);
+  }).catch(() => { qrTimer = setTimeout(pollQr, 4000); });
 }
-async function saveContacts(next) {
-  try { contacts = (await api('designated', { contacts: next })).contacts; drawContacts(); $('#d-msg').textContent = 'Saved.'; } catch (e) { $('#d-msg').textContent = e.message; }
+$('#link-close').onclick = () => $('#link-dlg').close();
+$('#link-dlg').addEventListener('close', () => { clearTimeout(qrTimer); linking = null; loadAgents(); });
+
+// Settings
+let editing = null;
+function openSettings(id) {
+  const a = agentOf(id); if (!a) return;
+  editing = id; const s = a.whatsapp.settings; const f = $('#set-form');
+  $('#set-title').textContent = `${a.name} settings`;
+  $('#set-sub').textContent = a.whatsapp.phone ? `+${a.whatsapp.phone} · ${STATUS[a.whatsapp.status] || a.whatsapp.status}` : 'No number linked yet';
+  f.mode.value = s.mode === 'monitor' ? 'monitor' : 'reply';
+  f.dmPolicy.value = s.dmPolicy || 'pairing'; f.groupPolicy.value = s.groupPolicy || 'mention';
+  f.batchMs.value = String(s.batchMs ?? 2500); f.voiceReplies.value = String(Boolean(s.voiceReplies));
+  f.allowFrom.value = (s.allowFrom || []).join(', '); f.ownerNumbers.value = (s.ownerNumbers || []).join(', ');
+  $('#set-unlink').hidden = !['connected', 'reconnecting', 'logged_out', 'error'].includes(a.whatsapp.status);
+  $('#set-msg').textContent = ''; showMode();
+  $('#set-dlg').showModal();
+}
+function showMode() {
+  const monitor = $('#set-form').mode.value === 'monitor';
+  for (const el of document.querySelectorAll('[data-reply]')) el.hidden = monitor;
+  $('[data-monitor]').hidden = !monitor;
+}
+$('#set-form').addEventListener('change', (e) => { if (e.target.name === 'mode') showMode(); });
+$('#set-cancel').onclick = () => $('#set-dlg').close();
+$('#set-form').addEventListener('submit', async (e) => {
+  e.preventDefault(); const f = e.target;
+  try {
+    await api(`agents/${editing}/settings`, {
+      mode: f.mode.value, dmPolicy: f.dmPolicy.value, groupPolicy: f.groupPolicy.value,
+      batchMs: Number(f.batchMs.value), voiceReplies: f.voiceReplies.value === 'true',
+      allowFrom: numbers(f.allowFrom.value), ownerNumbers: numbers(f.ownerNumbers.value),
+    });
+    $('#set-dlg').close(); loadAgents();
+  } catch (err) { $('#set-msg').textContent = err.message; }
+});
+$('#set-unlink').onclick = async () => {
+  if (!confirm('Unlink this number from the agent? You can link it again later.')) return;
+  try { await api(`agents/${editing}/unlink`, {}); $('#set-dlg').close(); loadAgents(); } catch (err) { $('#set-msg').textContent = err.message; }
+};
+
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  const row = b.closest('[data-agent]');
+  try {
+    if (b.hasAttribute('data-link')) startLink(row.dataset.agent);
+    else if (b.hasAttribute('data-settings')) openSettings(row.dataset.agent);
+    else if (b.dataset.relink) startLink(b.dataset.relink);
+    else if (b.dataset.approve) { b.disabled = true; await api(`agents/${b.dataset.for}/approve`, { code: b.dataset.approve }); loadAgents(); }
+  } catch (err) { alert(err.message); loadAgents(); }
+});
+
+// Contacts
+const CMODE = { listen: 'Listen only', reply: 'Agent may reply' };
+function drawContacts() {
+  $('#n-contacts').textContent = contacts.length || '';
+  $('#d-list').innerHTML = contacts.length ? contacts.map((c, i) => `<div class="row contact">
+      <div class="who"><b>${esc(c.name || 'No name')}</b><small>+${esc(c.phone)}</small></div>
+      <select data-dmode="${i}" aria-label="When ${esc(c.name || c.phone)} writes back">${Object.entries(CMODE).map(([v, t]) => `<option value="${v}" ${v === (c.mode || 'listen') ? 'selected' : ''}>${t}</option>`).join('')}</select>
+      <button data-dremove="${i}" aria-label="Remove ${esc(c.name || c.phone)}">Remove</button></div>`).join('')
+    : '<p class="empty">None yet: agents can only message you.</p>';
+}
+async function saveContacts(next, done) {
+  try { contacts = (await api('designated', { contacts: next })).contacts; drawContacts(); $('#d-msg').textContent = done || 'Saved.'; } catch (e) { $('#d-msg').textContent = e.message; }
 }
 $('#d-add').addEventListener('submit', async (e) => {
-  e.preventDefault(); e.stopPropagation();
+  e.preventDefault();
   const f = new FormData(e.target); const phone = String(f.get('phone')).replace(/\D/g, '');
   if (!/^[1-9]\d{7,14}$/.test(phone)) { $('#d-msg').textContent = 'Use the full number with country code, e.g. 6281234567890.'; return; }
-  await saveContacts([...contacts, { name: f.get('name'), phone, mode: f.get('mode') }]); e.target.reset();
-}, true);
-$('#d-list').addEventListener('click', (e) => { const b = e.target.closest('[data-dremove]'); if (b && confirm('Remove this contact? Agents will no longer be able to message them.')) saveContacts(contacts.filter((_, i) => i !== Number(b.dataset.dremove))); });
+  await saveContacts([...contacts, { name: String(f.get('name')).trim(), phone, mode: f.get('mode') }], 'Added.'); e.target.reset();
+});
+$('#d-list').addEventListener('click', (e) => { const b = e.target.closest('[data-dremove]'); if (b && confirm('Remove this contact? Agents will no longer be able to message them.')) saveContacts(contacts.filter((_, i) => i !== Number(b.dataset.dremove)), 'Removed.'); });
 $('#d-list').addEventListener('change', (e) => { const sel = e.target.closest('[data-dmode]'); if (sel) saveContacts(contacts.map((c, i) => (i === Number(sel.dataset.dmode) ? { ...c, mode: sel.value } : c))); });
-// ---- groups agents may post to ------------------------------------------------------
-let groupRows = []; let groupPicked = [];
+
+// Groups
 function drawGroups() {
+  $('#n-groups').textContent = groupPicked.length || '';
   const known = new Map(groupRows.map((g) => [g.jid, g]));
   for (const g of groupPicked) if (!known.has(g.jid)) known.set(g.jid, { jid: g.jid, name: g.name, agents: [g.agent], members: 0, gone: true });
-  const rows = [...known.values()];
-  $('#g-list').innerHTML = rows.length ? rows.map((g) => {
-    const on = groupPicked.some((p) => p.jid === g.jid);
-    return `<label style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px;font-weight:500;color:var(--text)">
-      <input type="checkbox" data-gjid="${esc(g.jid)}" ${on ? 'checked' : ''} style="width:auto">
-      <b style="min-width:0;flex:1">${esc(g.name)}</b><span style="color:var(--text-3);font-size:12px">${g.gone ? 'no longer listed' : `${g.members} members · via ${esc((g.agents || []).join(', '))}`}</span></label>`;
-  }).join('') : '<p style="color:var(--text-3);margin:0">No groups found. Add an agent\'s number to a WhatsApp group, then press Show my groups.</p>';
+  const rows = [...known.values()].sort((a, b) => (groupPicked.some((p) => p.jid === b.jid) - groupPicked.some((p) => p.jid === a.jid)) || a.name.localeCompare(b.name));
+  $('#g-list').innerHTML = rows.length ? rows.map((g) => `<label class="row group">
+      <input type="checkbox" data-gjid="${esc(g.jid)}" ${groupPicked.some((p) => p.jid === g.jid) ? 'checked' : ''}>
+      <span class="who"><b>${esc(g.name)}</b><small>${g.gone ? 'No longer listed' : `${g.members} members`}</small></span>
+      <span class="sub">${g.gone ? '' : `via ${esc((g.agents || []).map((id) => agentOf(id)?.name || id).join(', '))}`}</span></label>`).join('')
+    : '<p class="empty">No groups found. Add an agent\'s number to a WhatsApp group, then press Refresh list.</p>';
 }
 async function loadGroups() {
-  try { const d = await api('groups'); groupRows = d.groups; groupPicked = d.designated; drawGroups(); $('#g-msg').textContent = ''; } catch (e) { $('#g-msg').textContent = e.message; }
+  try { const d = await api('groups'); groupRows = d.groups; groupPicked = d.designated; drawGroups(); } catch (e) { $('#g-msg').textContent = e.message; }
 }
-$('#g-load').addEventListener('click', loadGroups);
+$('#g-load').addEventListener('click', async () => { $('#g-msg').textContent = 'Refreshing…'; await loadGroups(); if ($('#g-msg').textContent === 'Refreshing…') $('#g-msg').textContent = ''; });
 $('#g-add').addEventListener('submit', async (e) => {
-  e.preventDefault(); e.stopPropagation();
+  e.preventDefault();
   const f = new FormData(e.target); const jid = String(f.get('jid')).trim();
   if (!/^[0-9-]{6,40}@g\.us$/.test(jid)) { $('#g-msg').textContent = 'A group id looks like 120363402009619635@g.us.'; return; }
   const known = groupRows.find((g) => g.jid === jid);
   const next = [...groupPicked.filter((p) => p.jid !== jid), { jid, name: String(f.get('name')).trim() || known?.name || jid, agent: known?.agents?.[0] || 'default' }];
-  try { groupPicked = (await api('groups', { groups: next })).designated; drawGroups(); e.target.reset(); $('#g-msg').textContent = 'Agents may now post in this group (sent from Lorium\'s number unless another agent is in it).'; } catch (err) { $('#g-msg').textContent = err.message; }
-}, true);
+  try { groupPicked = (await api('groups', { groups: next })).designated; drawGroups(); e.target.reset(); $('#g-msg').textContent = 'Added. Agents may post in it (from Lorium\'s number unless another agent is in the group).'; } catch (err) { $('#g-msg').textContent = err.message; }
+});
 $('#g-list').addEventListener('change', async (e) => {
   const box = e.target.closest('[data-gjid]'); if (!box) return;
   const g = groupRows.find((x) => x.jid === box.dataset.gjid) || groupPicked.find((x) => x.jid === box.dataset.gjid);
   const next = box.checked ? [...groupPicked.filter((p) => p.jid !== g.jid), { jid: g.jid, name: g.name, agent: (g.agents || [g.agent])[0] }] : groupPicked.filter((p) => p.jid !== g.jid);
   try { groupPicked = (await api('groups', { groups: next })).designated; drawGroups(); $('#g-msg').textContent = box.checked ? `Agents may now post in ${g.name}.` : `Closed: ${g.name}.`; } catch (err) { $('#g-msg').textContent = err.message; box.checked = !box.checked; }
 });
-loadGroups();
 
-api('designated').then((d) => { contacts = d.contacts; drawContacts(); }).catch(() => {});
-
-load();
-// The refresh skips while the owner is editing, so an open settings form is never reset.
-setInterval(() => { if (!document.querySelector('.qr:not([hidden])') && !document.querySelector('#agents details[open]') && !document.activeElement?.closest('#agents, #designated, #groups')) load(); }, 30000);
+loadAgents().then(loadGroups);
+api('designated').then((d) => { contacts = d.contacts; drawContacts(); }).catch((e) => { $('#d-msg').textContent = e.message; });
+// Refresh the numbers every 30 s, but never while a dialog is open or the owner is typing.
+setInterval(() => { if (!document.querySelector('dialog[open]') && !document.activeElement?.closest('form, .list')) loadAgents(); }, 30000);
 </script>
 </body>
 </html>
