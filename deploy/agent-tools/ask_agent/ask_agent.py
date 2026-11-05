@@ -52,11 +52,28 @@ class AskAgent(BaseTool):
         # Nobody asks themselves; only the owner reaches Sora (her matters are private).
         others = [p for p in agents if p.id != me and p.id != ID]
         action = (args.get("action") or "").strip()
+        # The Team page: a Level 2 agent reaches only its Level 1 and its own group.
+        try:
+            from agent import lrm_org
+            org = lrm_org.view()
+            places = {r["id"]: r for r in org["agents"]}
+            reachable = lambda target_id: lrm_org.can_ask(me, target_id, org)
+        except Exception as e:
+            logger.warning(f"[ask_agent] org chart not read: {e}")
+            places, reachable = {}, (lambda target_id: (True, ""))
         if action == "list":
             if not others:
                 return ToolResult.success("There are no other agents yet.")
-            return ToolResult.success("Agents:\n" + "\n".join(f"- {p.id}: {p.name}" + (f" ({p.description})" if getattr(p, "description", None) else "")
-                                                             for p in others))
+
+            def line(p):
+                pl = places.get(p.id) or {}
+                where = f" [Level {pl['level']}{', ' + pl['group_name'] if pl.get('group_name') else ''}]" if pl.get("level") else ""
+                return f"- {p.id}: {p.name}{where}" + (f" ({p.description})" if getattr(p, "description", None) else "")
+            mine = [p for p in others if reachable(p.id)[0]]
+            text = "Agents:\n" + "\n".join(line(p) for p in mine)
+            if len(mine) < len(others):
+                text += "\n\n" + reachable(next(p.id for p in others if not reachable(p.id)[0]))[1]
+            return ToolResult.success(text)
         if action != "ask":
             return ToolResult.fail("action must be 'list' or 'ask'.")
         wanted = str(args.get("agent") or "").strip().lower()
@@ -64,6 +81,9 @@ class AskAgent(BaseTool):
         target = next((p for p in others if p.id.lower() == wanted or (p.name or "").lower() == wanted), None)
         if target is None:
             return ToolResult.fail("No such agent. Use action 'list' first.")
+        allowed, why = reachable(target.id)
+        if not allowed:
+            return ToolResult.fail(why)
         if not question:
             return ToolResult.fail("Say what to ask.")
         token = str(conf().get("external_api_token") or "")

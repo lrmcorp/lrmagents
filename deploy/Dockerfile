@@ -22,6 +22,9 @@ COPY deploy/agent-tools/lrm_browser_keep.py /app/agent/lrm_browser_keep.py
 COPY deploy/agent-tools/lrm_busy.py /app/agent/lrm_busy.py
 COPY deploy/agent-tools/lrm_logins.py /app/agent/lrm_logins.py
 COPY deploy/agent-tools/lrm_team.py /app/agent/lrm_team.py
+# Team page: groups and levels (who reports to whom).
+COPY deploy/agent-tools/lrm_org.py /app/agent/lrm_org.py
+COPY deploy/agent-tools/lrm_org_api.py /app/channel/web/api/lrm_org.py
 COPY deploy/agent-tools/lrm_busy_api.py /app/channel/web/api/lrm_busy.py
 # Approvals and activity log: recorder/gate, API and page (page copied with the brand files).
 COPY deploy/agent-tools/lrm_activity.py /app/agent/lrm_activity.py
@@ -63,7 +66,7 @@ RUN set -eux; \
     python -m compileall -q /app/agent /app/channel /app/bridge /app/models > /tmp/compile.log || { cat /tmp/compile.log; exit 1; }; \
     static=/app/channel/web/static; \
     mkdir -p "$static/brand"; \
-    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/topology.js /tmp/brand/personal.html /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html "$static/brand/"; \
+    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/topology.js /tmp/brand/personal.html /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html /tmp/brand/team.html "$static/brand/"; \
     cp -r /tmp/brand/vendor "$static/brand/vendor"; \
     python /tmp/brand/fetch_mediapipe.py "$static/brand/vendor/mediapipe"; \
     cp /tmp/brand/img/logo.jpg "$static/logo.jpg"; \

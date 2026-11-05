@@ -91,7 +91,7 @@ patch("agent/registry.py", 'name=builtin_name or "CowAgent",', f'name=builtin_na
 # the entry is merged into it (and restored if a saved menu lacks it).
 patch("static/js/core/menu.js",
       "    star: 'fa-star',",
-      "    whatsapp: 'fa-comments', vault: 'fa-gem', safe: 'fa-lock', personal: 'fa-circle-dot', star: 'fa-star',")
+      "    whatsapp: 'fa-comments', vault: 'fa-gem', safe: 'fa-lock', personal: 'fa-circle-dot', org: 'fa-sitemap', star: 'fa-star',")
 patch("static/js/core/menu.js",
       "function menuMerge(saved) {",
       """function menuMerge(saved) {
@@ -106,6 +106,7 @@ function _lrmEnsureWhatsApp(doc) {
         { after: 'chat', item: { id: 'lrm-personal', type: 'url', url: '/assets/brand/personal.html', open: 'frame', title: 'Personal', icon: 'personal', hidden: false } },
         { after: 'knowledge', hide: ['memory', 'knowledge'], item: { id: 'lrm-vault', type: 'url', url: '/assets/brand/vault.html', open: 'frame', title: 'Vault', icon: 'vault', hidden: false } },
         { after: 'knowledge', item: { id: 'lrm-safe', type: 'url', url: '/whatsapp/safe/', open: 'frame', title: 'Private vault', icon: 'safe', hidden: false } },
+        { after: 'agents', item: { id: 'lrm-team', type: 'url', url: '/assets/brand/team.html', open: 'frame', title: 'Team', icon: 'org', hidden: false } },
         { after: 'skills', item: { id: 'lrm-teammates', type: 'url', url: '/teammates/', open: 'frame', title: 'Teammates', icon: 'robot', hidden: false } },
         { after: 'channels', item: { id: 'lrm-whatsapp', type: 'url', url: '/whatsapp/', open: 'frame', title: 'WhatsApp', icon: 'whatsapp', hidden: false } },
         { after: 'tasks', item: { id: 'lrm-browser', type: 'url', url: '/assets/brand/browser.html', open: 'frame', title: 'Browser', icon: 'globe', hidden: false } },
@@ -128,7 +129,7 @@ function _lrmEnsureWhatsApp(doc) {
 function _lrmGroup(doc) {
     const sections = [
         { id: 'chat', title: '', keys: ['chat', 'artifacts'] },
-        { id: 'lrm-assistants', title: 'Assistants', keys: ['lrm-personal', 'agents'] },
+        { id: 'lrm-assistants', title: 'Assistants', keys: ['lrm-personal', 'agents', 'lrm-team'] },
         { id: 'lrm-knowledge', title: 'Knowledge', keys: ['lrm-vault', 'lrm-safe', 'skills', 'memory', 'knowledge'] },
         { id: 'lrm-connect', title: 'Connect', keys: ['lrm-whatsapp', 'lrm-connections', 'channels'] },
         { id: 'lrm-work', title: 'Work', keys: ['tasks', 'lrm-activity', 'lrm-browser'] },
@@ -239,7 +240,8 @@ patch("web_channel.py", "\nURLS = (\n",
       "from channel.web.api.lrm_voice import LrmVoiceHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_chats import LrmChatsHandler  # noqa: F401,E402\n"
       "from channel.web.api.lrm_vault_updates import LrmVaultUpdatesHandler  # noqa: F401,E402\n"
-      "from channel.web.api.lrm_busy import LrmBusyHandler  # noqa: F401,E402\n\nURLS = (\n")
+      "from channel.web.api.lrm_busy import LrmBusyHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_org import LrmOrgHandler  # noqa: F401,E402\n\nURLS = (\n")
 patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/update/status', 'UpdateStatusHandler',\n    '/api/lrm/usage', 'LrmUsageHandler',\n"
       "    '/api/lrm/vault', 'LrmVaultHandler',\n"
@@ -251,7 +253,8 @@ patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/lrm/voice', 'LrmVoiceHandler',\n"
       "    '/api/lrm/chats', 'LrmChatsHandler',\n"
       "    '/api/lrm/vault-updates', 'LrmVaultUpdatesHandler',\n"
-      "    '/api/lrm/busy', 'LrmBusyHandler',\n")
+      "    '/api/lrm/busy', 'LrmBusyHandler',\n"
+      "    '/api/lrm/org', 'LrmOrgHandler',\n")
 # Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",

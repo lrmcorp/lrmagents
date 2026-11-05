@@ -138,33 +138,97 @@ def roster():
     return rows
 
 
-def _block(me, rows):
+def _org():
+    try:
+        from agent import lrm_org
+        return lrm_org.view()
+    except Exception as e:
+        logger.warning(f"[Team] org chart not read: {e}")
+        return None
+
+
+def _place_lines(me, org):
+    """Where this agent sits on the Team page: who it reports to, who reports to it."""
+    if not org:
+        return []
+    by_id = {r["id"]: r for r in org["agents"]}
+    mine = by_id.get(me)
+    if not mine or mine["private"]:
+        return []
+    team = [r for r in org["agents"] if r["reports_to"] == me]
+    who = lambda r: f"{r['name']} [id {r['id']}]"
+    lines = ["", "### Your place on the team (Team page)"]
+    if mine["lead"]:
+        if not team:
+            return []
+        lines.append("You are the lead. Level 1 agents report to you: " + ", ".join(
+            who(r) + (f" ({r['group_name']})" if r["group_name"] else "") for r in team) + ".")
+        lines.append("For a group's figures ask its Level 1 agent: it collects from its own Level 2 agents.")
+        return lines
+    if not mine["level"]:
+        return []
+    group = f" in {mine['group_name']}" if mine["group_name"] else ""
+    boss = by_id.get(mine["reports_to"])
+    if mine["level"] == 1:
+        lines.append(f"You are Level 1{group}. You report to {who(boss) if boss else 'the lead'}.")
+        if team:
+            lines.append("Level 2 agents report to you: " + ", ".join(who(r) for r in team) + ". Collect their reports "
+                         "with ask_agent (parallel calls), check and combine them, then report to the lead.")
+    else:
+        if boss:
+            lines.append(f"You are Level 2{group}. You report to {who(boss)}: your reports and questions go to them "
+                         "(ask_agent), not straight to the lead or the owner, unless the owner asks you directly.")
+        else:
+            lines.append(f"You are Level 2{group}, but nobody is set as your Level 1 yet: the owner sets it on the Team page.")
+        lines.append("With ask_agent you can reach your Level 1 and the agents of your own group only.")
+    return lines
+
+
+def _block(me, rows, org=None):
     lines = [MARK, "## Your teammates (LRMagent)",
              "Ask them for their own area with ask_agent (several at once with parallel calls) instead of fetching "
              "it yourself; answer them when they ask you. The same list is in the vault: 10 Wiki/Who does what."]
+    places = {r["id"]: r for r in (org or {}).get("agents", [])}
     for r in rows:
         if r["id"] == me:
             continue
         if r["private"]:
             lines.append(f"- {r['name']}: the owner's personal assistant. Private: not reachable by other agents.")
             continue
-        tag = " (the lead)" if r["lead"] else ""
+        pl = places.get(r["id"]) or {}
+        tag = " (the lead)" if r["lead"] else (f" (Level {pl['level']}{', ' + pl['group_name'] if pl.get('group_name') else ''})" if pl.get("level") else "")
         lines.append(f"- {r['name']}{tag} [id {r['id']}]: {r['description'] or 'no description yet: the owner sets it on the Agents page'}")
+    lines += _place_lines(me, org)
     return "\n".join(lines) + "\n" + MARK + "\n"
 
 
-def _note(rows):
+def _note(rows, org=None):
     day = time.strftime("%d-%m-%Y")
-    body = ["---", "tags: [team, agents]", f"updated: {time.strftime('%Y-%m-%d')}", "source: Agents page (refreshed every hour)", "---", "",
+    body = ["---", "tags: [team, agents]", f"updated: {time.strftime('%Y-%m-%d')}", "source: Agents and Team pages (refreshed every hour)", "---", "",
             "# Who does what", "",
-            "Each agent's job and what it can be asked for. Kept up to date from the Agents page: change a description "
-            "there, not here.", "", "| Agent | Role |", "|---|---|"]
+            "Each agent's job and what it can be asked for. Kept up to date from the Agents page (descriptions) and the "
+            "Team page (groups and levels): change them there, not here.", "", "| Agent | Role |", "|---|---|"]
     for r in rows:
         role = PERSONAL_DESC if r["private"] else (r["description"] or "(no description yet)")
         body.append(f"| **{r['name']}**{' (lead)' if r['lead'] else ''} | {role.replace('|', '/')} |")
+    placed = [a for a in (org or {}).get("agents", []) if a["level"]]
+    if placed:
+        names = {a["id"]: a["name"] for a in org["agents"]}
+        body += ["", "## Who reports to whom", ""]
+        groups = [(g["id"], g["name"]) for g in org["groups"]] + [("", "No group")]
+        for gid, gname in groups:
+            members = [a for a in placed if a["group"] == gid]
+            if not members:
+                continue
+            body.append(f"**{gname}**")
+            for a in sorted(members, key=lambda a: (a["level"], a["name"].lower())):
+                body.append(f"- Level {a['level']}: {a['name']} → reports to {names.get(a['reports_to'], 'nobody yet')}")
+            body.append("")
+    lead = next((r["name"] for r in rows if r["lead"]), LEAD_NAME)
     body += ["", "## How they work together", "",
-             f"- {next((r['name'] for r in rows if r['lead']), LEAD_NAME)} collects each team's figures for the owner's reports by asking the agent responsible.",
-             "- Any agent may ask another for its own area; nobody but the owner reaches the personal assistant.",
+             f"- {lead} collects each team's figures for the owner's reports by asking the agent responsible.",
+             "- Level 2 agents report to their Level 1; Level 1 agents check, combine and report to the lead.",
+             "- Any other agent may ask another for its own area; nobody but the owner reaches the personal assistant.",
              "- Finished results go to the vault through vault updates (the lead checks, the owner approves).",
              "", f"_Refreshed {day}._", ""]
     return "\n".join(body)
@@ -173,13 +237,14 @@ def _note(rows):
 def refresh():
     """Teammate blocks in every USER.md and the vault note; writes only what changed."""
     rows = roster()
+    org = _org()
     for r in rows:
         try:
             p = _registry().get(r["id"], require_enabled=False)
             path = Path(p.workspace) / "USER.md"
             text = path.read_text(encoding="utf-8") if path.exists() else ""
             new = re.sub(re.escape(MARK) + r".*?" + re.escape(MARK) + r"\n?", "", text, flags=re.S).rstrip()
-            new = (new + "\n\n" if new else "") + _block(r["id"], rows)
+            new = (new + "\n\n" if new else "") + _block(r["id"], rows, org)
             if new != text:
                 path.write_text(new, encoding="utf-8")
         except Exception as e:
@@ -188,7 +253,7 @@ def refresh():
         from agent.lrm_vault_flow import _vault
         vault = _vault()
         section, rel, full = vault.resolve(NOTE_PATH)
-        note = _note(rows)
+        note = _note(rows, org)
         old = full.read_text(encoding="utf-8") if full.exists() else ""
         # compare without the refresh date, so the note only changes when the team does
         strip = lambda t: re.sub(r"(updated: .*|_Refreshed .*_)", "", t)
