@@ -24,6 +24,22 @@ REFUSAL = ("This uses the owner's personal accounts, so only the owner can use i
 def owner_session(session_id):
     """(allowed, whatsapp target {agentId, chat} or None)."""
     session_id = str(session_id or "")
+    if session_id.startswith("scheduler_"):
+        # A scheduled run (its own session "scheduler_<receiver>_<task id>"): the owner's only
+        # when the task was set up by the owner (console, Tasks page, their own WhatsApp chat),
+        # never because a contact or a group member got an agent to schedule it.
+        try:
+            from agent.tools.scheduler.integration import get_task_store
+            task = get_task_store().get_task(session_id.rsplit("_", 1)[-1])
+        except Exception as e:
+            logger.warning(f"[owner] scheduled task not found for {session_id[-12:]}: {e}")
+            return False, None
+        if not task:
+            return False, None
+        origin = str((task.get("action") or {}).get("origin_session_id") or "")
+        if not origin:
+            return True, None  # made on the console's Tasks page (signed-in owner)
+        return owner_session(origin)
     if not session_id.startswith("openai:"):
         return True, None
     if session_id.startswith(OWNER_PREFIXES):

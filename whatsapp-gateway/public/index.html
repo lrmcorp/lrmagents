@@ -89,6 +89,11 @@
     <div class="card-head"><h2>Groups</h2><div class="actions"><button id="g-load">Show my groups</button></div></div>
     <p class="lede" style="margin:6px 0 12px;font-size:13px">Groups your linked numbers are in. Tick the ones agents may post to (reports, reminders, messages you ask for); every other group stays closed. In a group, agents answer only when someone @mentions them or replies to them.</p>
     <div id="g-list"><p style="color:var(--text-3);margin:0" id="g-none">Loading…</p></div>
+    <form id="g-add" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <input name="name" placeholder="Group name" style="flex:1 1 160px">
+      <input name="jid" placeholder="Or add by group id, e.g. 120363…@g.us" style="flex:2 1 240px" spellcheck="false">
+      <button>Add group</button>
+    </form>
     <p class="hint" id="g-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
   </section>
   <div id="agents" class="grid"><p class="empty">Loading agents…</p></div>
@@ -261,6 +266,14 @@ async function loadGroups() {
   try { const d = await api('groups'); groupRows = d.groups; groupPicked = d.designated; drawGroups(); $('#g-msg').textContent = ''; } catch (e) { $('#g-msg').textContent = e.message; }
 }
 $('#g-load').addEventListener('click', loadGroups);
+$('#g-add').addEventListener('submit', async (e) => {
+  e.preventDefault(); e.stopPropagation();
+  const f = new FormData(e.target); const jid = String(f.get('jid')).trim();
+  if (!/^[0-9-]{6,40}@g\.us$/.test(jid)) { $('#g-msg').textContent = 'A group id looks like 120363402009619635@g.us.'; return; }
+  const known = groupRows.find((g) => g.jid === jid);
+  const next = [...groupPicked.filter((p) => p.jid !== jid), { jid, name: String(f.get('name')).trim() || known?.name || jid, agent: known?.agents?.[0] || 'default' }];
+  try { groupPicked = (await api('groups', { groups: next })).designated; drawGroups(); e.target.reset(); $('#g-msg').textContent = 'Agents may now post in this group (sent from Lorium\'s number unless another agent is in it).'; } catch (err) { $('#g-msg').textContent = err.message; }
+}, true);
 $('#g-list').addEventListener('change', async (e) => {
   const box = e.target.closest('[data-gjid]'); if (!box) return;
   const g = groupRows.find((x) => x.jid === box.dataset.gjid) || groupPicked.find((x) => x.jid === box.dataset.gjid);

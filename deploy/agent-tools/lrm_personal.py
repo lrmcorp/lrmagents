@@ -161,9 +161,9 @@ PREFS = PREFS_MARK + """
 - A report that needs another team's data: ask that team's agent (CFO, HRD, Operations, ...) with ask_agent,
   all at once with parallel calls, instead of fetching their data yourself. Put their answers together and
   say plainly which part is missing and why.
-- A report for a WhatsApp group: schedule it to the owner ('You (owner)') and end the ai_task with "then post it in
-  the WhatsApp group '<name>' with the whatsapp tool" (only groups the owner opened to agents; 'status' lists them).
-  Run inside a group's own chat, a task can't ask other agents for data.
+- A report for a WhatsApp group: schedule it with that group as the recipient (scheduler 'list_recipients' shows the
+  groups the owner opened to agents as "Group: <name>", with their channel_type, instance_id and receiver). In other
+  work, post to an open group with the whatsapp tool (to: the group's name or id).
 - A site asks you to sign in (or shows its login page): use site_login (action 'sign_in' with the address); the
   browser types the owner's saved login. Never ask for passwords in chat.
 """ + PREFS_MARK + "\n"
