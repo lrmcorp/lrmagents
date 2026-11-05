@@ -79,6 +79,7 @@
   <button id="camera" title="Camera: let it see" aria-pressed="false"><i class="fa-solid fa-camera"></i><span class="l">Camera</span></button>
   <button id="keyboard" title="Type a message" aria-pressed="false"><i class="fa-regular fa-keyboard"></i></button>
   <button id="mute" title="Spoken answers on/off" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
+  <select id="voice" title="Sora's voice"><option value="device">Fast voice</option><option value="server">Sora voice (slower)</option></select>
   <select id="lang" title="Language you speak"><option value="">Auto</option><option value="en">English</option><option value="id">Bahasa Indonesia</option><option value="zh">中文</option></select>
 </div>
 <div class="toast" id="toast"></div>
@@ -272,6 +273,7 @@
   function unlock() {
     try { S.ctx = S.ctx || new (window.AudioContext || window.webkitAudioContext)(); if (S.ctx.state === 'suspended') S.ctx.resume(); } catch { /* no Web Audio */ }
     if (!S.unlocked && !S.speaking) { player.src = SILENT; player.play().then(() => { S.unlocked = true; }).catch(() => {}); }
+    try { if (window.speechSynthesis && !S.synthUnlocked) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); S.synthUnlocked = true; } } catch { /* none */ }
   }
   function session(type) { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch { /* not Safari */ } }
 
@@ -312,14 +314,56 @@
     if (!r.ok) { let m = `HTTP ${r.status}`; try { m = (await r.json()).error || m; } catch { /* audio */ } throw new Error(m); }
     return r.arrayBuffer();
   }
+  // ---- the device's own voices: they start at once (the server needs seconds per sentence) --
+  const FEMALE = /female|samantha|karen|moira|tessa|serena|victoria|zira|aria|jenny|ava|allison|susan|fiona|veena|damayanti|tingting|meijia|sinji|xiaoxiao|xiaoyi|huihui|yaoyao|google (uk english female|us english|bahasa indonesia|普通话|國語)/i;
+  const MALE = /\bmale\b|daniel|alex|fred|thomas|rishi|aaron|arthur|gordon|oliver|reed|rocko|eddy|grandpa|ralph|albert|bruce|junior|kangkang|yunyang|yunxi|ardi/i;
+  function guessLang(text) {
+    if (/[\u4e00-\u9fff]/.test(text)) return 'zh';
+    const id = (text.toLowerCase().match(/\b(yang|dan|tidak|saya|anda|kamu|ini|itu|untuk|dengan|sudah|akan|bisa|ada|ya|juga|dari)\b/g) || []).length;
+    return id >= 2 ? 'id' : 'en';
+  }
+  function deviceVoice(lang) {
+    if (!window.speechSynthesis) return null;
+    const all = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().replace('_', '-').startsWith(lang));
+    if (!all.length) return null;
+    const score = (v) => (FEMALE.test(v.name) ? 4 : 0) - (MALE.test(v.name) ? 4 : 0) + (v.localService ? 1 : 0)
+      + (/premium|enhanced|natural|neural/i.test(v.name) ? 2 : 0) + (lang === 'en' && /en-(us|gb)/i.test(v.lang) ? 1 : 0);
+    return all.sort((a, b) => score(b) - score(a))[0];
+  }
+  try { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => {}; } catch { /* none */ }
+  function speakDevice(text, voice, token) {
+    return new Promise((resolve, reject) => {
+      const synth = speechSynthesis; synth.cancel();
+      const parts = sentences(text); let i = 0;
+      token.stop = () => { synth.cancel(); resolve(); };
+      const t0 = performance.now();
+      (function meter() { if (S.speaking !== token) return; const t = (performance.now() - t0) / 1000; S.out = synth.speaking ? 0.35 + 0.25 * Math.abs(Math.sin(t * 7.3)) + 0.15 * Math.abs(Math.sin(t * 13.1)) : 0; requestAnimationFrame(meter); })();
+      const next = () => {
+        if (S.speaking !== token || i >= parts.length) return resolve();
+        const u = new SpeechSynthesisUtterance(parts[i++]);
+        u.voice = voice; u.lang = voice.lang; u.rate = 1.03; u.pitch = 1.05;
+        u.onend = next;
+        u.onerror = (e) => (['interrupted', 'canceled'].includes(e.error) ? resolve() : reject(Object.assign(new Error(e.error), { device: true })));
+        synth.speak(u);
+      };
+      next();
+    });
+  }
+
   async function speak(text, lang) {
     releaseMic(); session('playback');
     const token = {}; S.speaking = token; setState('speaking');
-    const parts = sentences(text); let next = tts(parts[0], lang);
+    const L = guessLang(text); // the language of the answer decides the voice
+    const voice = $('#voice').value === 'device' ? deviceVoice(L) : null;
+    if (voice) {
+      try { await speakDevice(text, voice, token); if (S.speaking === token) { S.speaking = null; S.out = 0; setState('idle'); } return; }
+      catch (e) { if (S.speaking !== token) return; /* the device voice failed: Sora's voice from the server instead */ }
+    }
+    const parts = sentences(text); let next = tts(parts[0], lang || L);
     try {
       for (let i = 0; i < parts.length; i++) {
         const wav = await next;
-        if (i + 1 < parts.length) next = tts(parts[i + 1], lang);
+        if (i + 1 < parts.length) next = tts(parts[i + 1], lang || L);
         if (S.speaking !== token) return;
         await play(wav, token);
       }
@@ -453,6 +497,7 @@
   $('#mute').onclick = () => { unlock(); S.muted = !S.muted; store.set('lrm_p_muted', S.muted); if (S.muted) stopSpeaking(); muteIcon(); };
   muteIcon();
   $('#lang').value = store.get('lrm_p_lang', ''); $('#lang').onchange = () => store.set('lrm_p_lang', $('#lang').value);
+  $('#voice').value = store.get('lrm_p_voice', 'device'); $('#voice').onchange = () => { store.set('lrm_p_voice', $('#voice').value); unlock(); };
 
   fetch('/api/lrm/voice', { credentials: 'same-origin' }).then(readJson).then((d) => {
     S.agent = d.agent;

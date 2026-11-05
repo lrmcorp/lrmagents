@@ -453,6 +453,89 @@ patch("api/sessions.py",
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
 
+# ---- Scheduler tool: in English (models picked it less from the Chinese text), "act, don't
+# promise", and from the console it can deliver to the owner's WhatsApp (the lrm-wa:<agent>
+# recipients of channel/lrm_whatsapp_relay.py, as on the Tasks page).
+_sched = "agent/tools/scheduler/scheduler_tool.py"
+_text = (app / _sched).read_text(encoding="utf-8")
+_start = _text.index('    description: str = (\n        "创建')
+_end = _text.index("    params: dict = {", _start)
+_desc = (
+    "Create and manage scheduled tasks: anything that should happen at a time or on repeat (daily or weekly "
+    "reports, reminders, checks at 12:00 and 17:00, a message in 2 hours). When the owner asks for one, CREATE IT "
+    "NOW with this tool in the same reply; never only promise it. Actions: 'create' (name, message for a fixed "
+    "text OR ai_task for work the agent does at that time, schedule_type, schedule_value, timezone), 'list', 'get', "
+    "'delete', 'enable', 'disable' (task_id), 'list_recipients'. schedule_type: 'cron' for repeats (e.g. '0 12 * * *' "
+    "every day 12:00, '0 12,17 * * 1-5' weekdays 12:00 and 17:00), 'interval' (seconds), 'once' (+10m, +2h, +1d or an "
+    "ISO time). Use timezone 'Asia/Jakarta' unless the owner says otherwise. From the console, results come back to "
+    "this chat unless you name a recipient: for the owner's WhatsApp call 'list_recipients' and pass the 'You (owner)' "
+    "entry's channel_type, instance_id and receiver. Tasks appear on the console's Tasks page."
+)
+(app / _sched).write_text(_text[:_start] + "    description: str = " + repr(_desc) + "\n" + _text[_end:], encoding="utf-8")
+for _old, _new in (
+        ('"description": "操作类型: create(创建), list(列表), get(查询), delete(删除), enable(启用), disable(禁用)"',
+         '"description": "What to do: create, list, list_recipients, get, delete, enable or disable"'),
+        ('"description": "任务ID (用于 get/delete/enable/disable 操作)"', '"description": "Task id (for get, delete, enable, disable)"'),
+        ('"description": "任务名称 (用于 create 操作)"', '"description": "Task name (for create), e.g. Daily report 12:00"'),
+        ('"description": "固定消息内容 (与ai_task二选一)"', '"description": "A fixed message to send (or use ai_task instead)"'),
+        ('"description": "Optional IANA timezone (e.g. Asia/Shanghai) used for cron wall-clock times and naive ISO timestamps"',
+         '"description": "IANA timezone for cron times and plain ISO times, normally Asia/Jakarta"'),
+):
+    patch(_sched, _old, _new, root=app)
+patch(_sched,
+      "            target = self.recipient_store.get(target_instance, target_receiver)\n",
+      "            target = self.recipient_store.get(target_instance, target_receiver)\n"
+      "            if not target:\n"
+      "                from channel.lrm_whatsapp_relay import task_recipient as _lrm_wa_recipient\n"
+      "                target = _lrm_wa_recipient(target_instance, target_receiver)\n", root=app)
+patch(_sched,
+      "        recipients = self.recipient_store.list()\n        if not recipients:\n",
+      "        try:\n"
+      "            from channel.lrm_whatsapp_relay import task_recipients as _lrm_wa_recipients\n"
+      "            recipients = _lrm_wa_recipients() + self.recipient_store.list()\n"
+      "        except Exception:\n"
+      "            recipients = self.recipient_store.list()\n"
+      "        if not recipients:\n", root=app)
+# The scheduler's replies are read by the agents and often repeated to the owner: English.
+_sched_text = (app / _sched).read_text(encoding="utf-8")
+for _zh, _en in (
+        ("任务描述 (与message二选一)，描述到点时需要 Agent 执行的任务，例如执行什么操作、交付什么内容，", "What the agent should do each time it runs (or use message instead): the work and what to report. "),
+        ("无需重复声明调度时间（由 schedule 决定）。", ""),
+        ("调度类型 (用于 create 操作): cron(cron表达式), interval(固定间隔秒数), once(一次性)", "cron (repeating, a cron expression), interval (every N seconds) or once"),
+        ("调度值: cron表达式/间隔秒数/时间(+5s,+10m,+1h或ISO格式)", "The cron expression, the seconds, or the time (+5s, +10m, +1h, +1d or ISO)"),
+        ("错误: 定时任务系统未初始化", "Error: the scheduler is not running"),
+        ("未知操作: ", "Unknown action: "), ("操作失败: ", "Failed: "),
+        ("错误: 缺少任务名称 (name)", "Error: missing name"),
+        ("错误: 必须提供 message（固定消息）或 ai_task（AI任务）之一", "Error: give message (a fixed text) or ai_task (work to do)"),
+        ("错误: message 和 ai_task 只能提供其中一个", "Error: give message or ai_task, not both"),
+        ("错误: 缺少调度类型 (schedule_type)", "Error: missing schedule_type"),
+        ("错误: 缺少调度值 (schedule_value)", "Error: missing schedule_value"),
+        ("错误: 无效的调度配置 - type: ", "Error: invalid schedule - type: "),
+        ("错误: 无法获取当前对话上下文", "Error: no conversation context"),
+        ("错误: 定时时间已过去 - ", "Error: that time has passed - "),
+        ("一次性任务只能安排在将来的时间，请改用一个将来的时间", " A one-time task needs a future time: use a later time"),
+        ("或 +10m 这类相对时间。", " or a relative time like +10m."),
+        ("💬 固定消息: ", "💬 Message: "), ("🤖 AI任务: ", "🤖 Task: "),
+        ("🔇 静默模式: 执行后不会推送结果", "🔇 Silent: the result is not sent"),
+        ("✅ 定时任务创建成功", "✅ Scheduled task created"),
+        ("📋 任务ID: ", "📋 Task id: "), ("📝 名称: ", "📝 Name: "), ("⏰ 调度: ", "⏰ Schedule: "),
+        ("👤 接收者: ", "👤 Delivered to: "), ("🕐 下次执行: ", "🕐 Next run: "),
+        ("📋 暂无定时任务", "📋 No scheduled tasks"), ("📋 定时任务列表 (共 ", "📋 Scheduled tasks ("), (" 个)", ")"),
+        (" | 下次: ", " | next: "), ("错误: 缺少任务ID (task_id)", "Error: missing task_id"),
+        ("错误: 任务 '", "Error: task '"), ("' 不存在", "' does not exist"),
+        ('"启用"', '"enabled"'), ('"禁用"', '"disabled"'), ('"从未执行"', '"never"'), ("📋 任务详情", "📋 Task"),
+        ("名称: ", "Name: "), ("状态: ", "Status: "), ("调度: ", "Schedule: "), ("接收者: ", "Delivered to: "),
+        ("消息: ", "Message: "), ("下次执行: ", "Next run: "), ("上次执行: ", "Last run: "), ("创建时间: ", "Created: "),
+        ("✅ 任务 '", "✅ Task '"), ("已删除", "deleted"), ("已启用", "enabled"), ("已禁用", "disabled"),
+        ('"每天 9:00"', '"every day 9:00"'), ('"每小时"', '"every hour"'), ('"每30分钟"', '"every 30 minutes"'),
+        ("每 {days} 天", "every {days} days"), ("每 {hours} 小时", "every {hours} hours"),
+        ("每 {minutes} 分钟", "every {minutes} minutes"), ("每 {seconds} 秒", "every {seconds} seconds"),
+        ("一次性 (", "once ("), ('"一次性"', '"once"'), ('"群聊"', '"group"'), ('"用户"', '"user"'),
+        ("'未知'", "'unknown'"), ('"未知"', '"unknown"'),
+):
+    _sched_text = _sched_text.replace(_zh, _en)
+(app / _sched).write_text(_sched_text, encoding="utf-8")
+
 # ---- Browser: logins survive the browser closing itself (agent/lrm_browser_keep.py).
 # Session cookies (no expiry) are lost when Chromium closes after its idle timeout, which
 # signed the owner out of their apps; they are saved on close and put back on launch.

@@ -151,6 +151,13 @@ PREFS = PREFS_MARK + """
   summaries), check it against the vault (memory_search covers it; read the note). If memory and the vault
   disagree, the vault wins: it is what the owner approved. Say so when your memory was out of date.
 - Finished results go to the vault only through vault_update (Lorium checks, the owner approves).
+- Act, don't promise: when the owner asks for something to be set up, do it yourself in the same reply with
+  your tools, then confirm what now exists. Anything at a time or on repeat (daily reports at 12:00 and 17:00,
+  reminders, weekly summaries) is a scheduled task: create it with the scheduler tool (action 'create',
+  schedule_type 'cron', timezone 'Asia/Jakarta', ai_task saying exactly what to do and report). Results go to
+  the owner's WhatsApp: call scheduler action 'list_recipients' and use the 'You (owner)' WhatsApp entry
+  (its channel_type, instance_id and receiver). Reply with the task name, the times and where it will arrive;
+  it is listed in the console's Tasks page. Never say something is set up unless the tool call succeeded.
 """ + PREFS_MARK + "\n"
 
 
