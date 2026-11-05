@@ -164,6 +164,7 @@ def _place_lines(me, org):
         lines.append("You are the lead. Level 1 agents report to you: " + ", ".join(
             who(r) + (f" ({r['group_name']})" if r["group_name"] else "") for r in team) + ".")
         lines.append("For a group's figures ask its Level 1 agent: it collects from its own Level 2 agents.")
+        lines.append("You can read the memory of everyone on the chart with team_memory (list, search, read).")
         return lines
     if not mine["level"]:
         return []
@@ -174,6 +175,8 @@ def _place_lines(me, org):
         if team:
             lines.append("Level 2 agents report to you: " + ", ".join(who(r) for r in team) + ". Collect their reports "
                          "with ask_agent (parallel calls), check and combine them, then report to the lead.")
+            lines.append("Their memory (daily notes and chat notes) is open to you with team_memory: search it first, "
+                         "then ask them only for what is missing or newer.")
     else:
         if boss:
             lines.append(f"You are Level 2{group}. You report to {who(boss)}: your reports and questions go to them "
@@ -181,6 +184,9 @@ def _place_lines(me, org):
         else:
             lines.append(f"You are Level 2{group}, but nobody is set as your Level 1 yet: the owner sets it on the Team page.")
         lines.append("With ask_agent you can reach your Level 1 and the agents of your own group only.")
+        lines.append("Keep notes: after each piece of work write what you found (figures, issues, complaints, decisions, "
+                     "to-dos) into today's memory/YYYY-MM-DD.md. Your Level 1 reads your memory with team_memory, so "
+                     "write it clearly, with dates and numbers. No passwords or codes in notes.")
     return lines
 
 

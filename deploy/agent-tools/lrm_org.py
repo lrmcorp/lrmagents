@@ -153,3 +153,16 @@ def can_ask(me, target_id, v=None):
         return False, (f"You are Level 2 and report to {boss['name']} [id {boss['id']}]: send it to them "
                        f"(ask_agent agent={boss['id']}), and they take it further.")
     return False, "You are Level 2 but have no Level 1 agent to report to yet: the owner sets it on the Team page."
+
+
+def below(agent_id, v=None):
+    """Everyone under agent_id on the chart: a Level 1's Level 2 agents; for the lead, every placed agent."""
+    v = v or view()
+    out, todo = [], [agent_id]
+    while todo:
+        boss = todo.pop()
+        for r in team_of(boss, v):
+            if r["id"] not in {o["id"] for o in out} and r["id"] != agent_id and not r["private"]:
+                out.append(r)
+                todo.append(r["id"])
+    return out

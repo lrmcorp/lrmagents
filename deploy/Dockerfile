@@ -47,6 +47,7 @@ COPY deploy/agent-tools/lrm_vault_flow.py /app/agent/lrm_vault_flow.py
 COPY deploy/agent-tools/lrm_vault_updates_api.py /app/channel/web/api/lrm_vault_updates.py
 COPY deploy/agent-tools/vault_update /app/agent/tools/vault_update/
 COPY deploy/agent-tools/ask_agent /app/agent/tools/ask_agent/
+COPY deploy/agent-tools/team_memory /app/agent/tools/team_memory/
 COPY deploy/agent-tools/site_login /app/agent/tools/site_login/
 COPY deploy/agent-tools/chat_monitor /app/agent/tools/chat_monitor/
 COPY deploy/agent-tools/lrm_google_api.py /app/channel/web/api/lrm_google.py
