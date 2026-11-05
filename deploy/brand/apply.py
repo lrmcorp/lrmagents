@@ -538,6 +538,63 @@ patch(_sched,
       "        except Exception:\n"
       "            recipients = self.recipient_store.list()\n"
       "        if not recipients:\n", root=app)
+
+# ---- Several recipients per scheduled task (channel/lrm_whatsapp_relay.py: clean_receivers,
+# fanout): the agent works once, the result goes to each receiver, each one's outcome is
+# noted in the run history ("Delivered: Reyner ✓, Hansel ✓").
+_integ = "agent/tools/scheduler/integration.py"
+patch(_integ,
+      '\n        channel = _resolve_delivery_channel(channel_type, action.get("instance_id") or "", receiver)\n',
+      '\n        channel = _resolve_delivery_channel(channel_type, action.get("instance_id") or "", receiver)\n'
+      '        if channel is not None:\n'
+      '            from channel.lrm_whatsapp_relay import fanout as _lrm_fanout\n'
+      '            channel = _lrm_fanout(channel, action, channel_type)\n', count="all", root=app)
+patch(_integ,
+      '\n            channel = _resolve_delivery_channel(channel_type, action.get("instance_id") or "", receiver)\n',
+      '\n            channel = _resolve_delivery_channel(channel_type, action.get("instance_id") or "", receiver)\n'
+      '            if channel is not None:\n'
+      '                from channel.lrm_whatsapp_relay import fanout as _lrm_fanout\n'
+      '                channel = _lrm_fanout(channel, action, channel_type)\n', count="all", root=app)
+patch(_integ, '                output_sink["preview"] = str(reply.content)\n',
+      '                output_sink["preview"] = str(reply.content) + getattr(channel, "delivery_note", "")\n', root=app)
+patch(_integ, '            output_sink["preview"] = str(content)\n',
+      '            output_sink["preview"] = str(content) + getattr(channel, "delivery_note", "")\n', count="all", root=app)
+# Tasks page: create and update accept action.receivers (checked against the allow-list)
+patch("api/scheduler.py",
+      '            if action_type == "send_message":\n                action["content"] = content\n',
+      '            if action_in.get("receivers"):\n'
+      '                from channel.lrm_whatsapp_relay import clean_receivers as _lrm_clean\n'
+      '                try:\n'
+      '                    action["receivers"] = _lrm_clean(action["instance_id"], action["receiver"], [r for r in action_in.get("receivers") if isinstance(r, str)])\n'
+      '                except ValueError as _e:\n'
+      '                    return json.dumps({"status": "error", "message": str(_e)})\n'
+      '            if action_type == "send_message":\n                action["content"] = content\n')
+patch("api/scheduler.py",
+      '                updates["action"] = action\n',
+      '                if action.get("receivers"):\n'
+      '                    from channel.lrm_whatsapp_relay import clean_receivers as _lrm_clean\n'
+      '                    try:\n'
+      '                        action["receivers"] = _lrm_clean(action.get("instance_id"), action.get("receiver"), [r for r in action["receivers"] if isinstance(r, str)])\n'
+      '                    except ValueError as _e:\n'
+      '                        return json.dumps({"status": "error", "message": str(_e)})\n'
+      '                updates["action"] = action\n')
+# The agents' scheduler tool: receivers too
+patch(_sched,
+      '            "receiver": {\n                "type": "string",\n                "description": "Trusted target receiver returned by list_recipients. It cannot be an arbitrary user ID."\n            },\n',
+      '            "receiver": {\n                "type": "string",\n                "description": "Trusted target receiver returned by list_recipients. It cannot be an arbitrary user ID."\n            },\n'
+      '            "receivers": {\n                "type": "array", "items": {"type": "string"},\n'
+      '                "description": "Further receivers (from list_recipients, same instance_id) who get the same result: e.g. the owner, a designated contact and a group. The agent works once."\n            },\n', root=app)
+patch(_sched,
+      '        # 针对钉钉单聊，额外存储 sender_staff_id\n',
+      '        _extra = [r for r in (kwargs.get("receivers") or []) if isinstance(r, str) and r.strip()]\n'
+      '        if _extra:\n'
+      '            from channel.lrm_whatsapp_relay import clean_receivers as _lrm_clean\n'
+      '            try:\n'
+      '                action["receivers"] = _lrm_clean(instance_id, receiver, _extra)\n'
+      '            except ValueError as _e:\n'
+      '                return _SchedulerError(f"Error: {_e}")\n'
+      '        # 针对钉钉单聊，额外存储 sender_staff_id\n', root=app)
+
 # The scheduler's replies are read by the agents and often repeated to the owner: English.
 _sched_text = (app / _sched).read_text(encoding="utf-8")
 for _zh, _en in (

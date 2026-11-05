@@ -24,10 +24,27 @@ class WhatsAppRelay:
         self.agent_id = agent_id
         self.chat = chat
 
+    def post(self, text):
+        """(ok, error) for one message, without raising."""
+        try:
+            self._post(text)
+            return True, ""
+        except urllib.error.HTTPError as e:
+            try:
+                why = json.loads(e.read() or b"{}").get("error") or ""
+            except Exception:
+                why = ""
+            return False, (why or f"gateway answered {e.code}")[:160]
+        except Exception as e:
+            return False, str(e)[:160]
+
     def send(self, reply, context=None):
         text = str(getattr(reply, "content", "") or "").strip()
         if not text:
             return
+        self._post(text, swallow_refusal=True)
+
+    def _post(self, text, swallow_refusal=False):
         token = str(conf().get("external_api_token") or "")
         request = urllib.request.Request(
             f"{GATEWAY_URL}/whatsapp/internal/send",
@@ -44,7 +61,7 @@ class WhatsAppRelay:
                 if response.status != 200:
                     raise RuntimeError(f"WhatsApp gateway answered {response.status}")
         except urllib.error.HTTPError as e:
-            if e.code in (400, 403):
+            if swallow_refusal and e.code in (400, 403):
                 logger.warning(f"[WhatsAppRelay] gateway refused {self.agent_id}/...{self.chat[-8:]}: {e.read()[:200]!r}")
                 return
             raise
@@ -145,3 +162,56 @@ def task_recipient(instance_id, receiver):
 def instance_agent(instance_id):
     instance_id = str(instance_id or "")
     return instance_id[len(INSTANCE_PREFIX):] if instance_id.startswith(INSTANCE_PREFIX) else ""
+
+
+# ---- several recipients for one scheduled task ----------------------------------------------
+# The agent works once; the result goes to each recipient (the owner, designated contacts,
+# ticked groups) through the same WhatsApp number. action["receivers"] lists them all.
+
+def clean_receivers(instance_id, primary, extras):
+    """The full, checked list of receivers, or ValueError naming what is not allowed."""
+    wanted = list(dict.fromkeys([r for r in [primary, *(extras or [])] if r]))
+    if len(wanted) <= 1:
+        return wanted
+    if not str(instance_id or "").startswith(INSTANCE_PREFIX):
+        raise ValueError("several recipients work on the WhatsApp channels only")
+    allowed = {r["receiver"]: r for r in task_recipients() if r["instance_id"] == instance_id}
+    bad = [r for r in wanted if r not in allowed]
+    if bad:
+        raise ValueError("not allowed as a recipient (only the owner, designated contacts and ticked groups): "
+                         + ", ".join(b.rsplit(":", 1)[-1] for b in bad))
+    return wanted
+
+
+class FanOut:
+    """Sends one result to every receiver of the task and notes how each went."""
+
+    def __init__(self, channel, action):
+        self.channel = channel
+        self.action = action
+        self.results = []
+        self.delivery_note = ""
+
+    def send(self, reply, context=None):
+        text = str(getattr(reply, "content", "") or "").strip()
+        if not text:
+            return
+        names = {r["receiver"]: r["name"] for r in task_recipients()}
+        for receiver in self.action.get("receivers") or []:
+            relay = relay_for(receiver)
+            if relay is None:
+                self.results.append((receiver, False, "not a WhatsApp recipient"))
+                continue
+            ok, why = relay.post(text)
+            self.results.append((names.get(receiver, receiver.rsplit(":", 1)[-1]), ok, why))
+        self.delivery_note = "\n\n— Delivered: " + ", ".join(f"{n} {'✓' if ok else '✗ (' + why + ')'}" for n, ok, why in self.results)
+        logger.info(f"[WhatsAppRelay] fan-out {self.delivery_note.strip()}")
+        if self.results and not any(ok for _, ok, _ in self.results):
+            raise RuntimeError("no recipient got it: " + "; ".join(f"{n}: {why}" for n, _, why in self.results))
+
+
+def fanout(channel, action, channel_type):
+    """The task's delivery: to every receiver when it has several, else the usual channel."""
+    if channel_type == "openai_api" and len((action or {}).get("receivers") or []) > 1:
+        return FanOut(channel, action)
+    return channel

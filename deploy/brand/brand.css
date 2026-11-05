@@ -259,3 +259,10 @@ div:has(> #cfg-password-save),
 .lrm-picker b { display: block; font-size: 14px; font-weight: 600; }
 .lrm-picker small { display: block; font-size: 12px; color: var(--lrm-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
 .lrm-picker-orb { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--lrm-sidebar-active); flex: none; overflow: hidden; }
+
+/* Tasks form: "Also send to" (several WhatsApp recipients) */
+#lrm-receivers { margin-top: 10px; display: grid; gap: 4px; }
+#lrm-receivers .lrm-recv-title { font-size: 12px; font-weight: 600; color: var(--text-3, #64646c); }
+#lrm-receivers .lrm-recv { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; cursor: pointer; }
+#lrm-receivers .lrm-recv input { width: auto; margin: 0; }
+#lrm-receivers .lrm-recv small, #lrm-receivers .lrm-recv-none { color: var(--text-3, #64646c); font-size: 12px; }

@@ -382,6 +382,53 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
     window.addEventListener('load', () => { start(); keepPanelOpen(); });
 
+    // ---- Tasks form: several WhatsApp recipients ("Also send to" checkboxes) -------------
+    // The agent works once and the result goes to each ticked recipient (the owner,
+    // designated contacts, ticked groups); the server checks every one against that list.
+    const lrmEsc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    function lrmTaskState() {
+        try {
+            const inst = selectedTaskInstanceId || '';
+            const all = (taskAllRecipients || []).filter((r) => (r.instance_id || r.channel_type) === inst);
+            let primary = '';
+            try { primary = (taskRecipientMap[getDropdownValue(document.getElementById('task-edit-recipient'))] || {}).receiver || ''; } catch { /* none */ }
+            const saved = taskModalMode !== 'create' && currentEditingTask ? (currentEditingTask.action?.receivers || []) : [];
+            return { inst, all, primary, saved };
+        } catch { return null; }
+    }
+    function lrmReceiversBox() {
+        const wrap = document.getElementById('task-edit-recipient-wrap');
+        let box = document.getElementById('lrm-receivers');
+        const st = lrmTaskState();
+        if (!wrap || !st || !st.inst.startsWith('lrm-wa:') || wrap.classList.contains('hidden')) { box?.remove(); return; }
+        const others = st.all.filter((r) => r.receiver !== st.primary);
+        const key = `${st.inst}|${st.primary}|${others.map((r) => r.receiver).join(',')}`;
+        if (box && box.dataset.key === key) return;
+        const ticked = new Set(box ? [...box.querySelectorAll('input:checked')].map((i) => i.value) : st.saved);
+        if (!box) { box = document.createElement('div'); box.id = 'lrm-receivers'; wrap.after(box); }
+        box.dataset.key = key;
+        box.innerHTML = '<div class="lrm-recv-title">Also send to</div>' + (others.length
+            ? others.map((r) => `<label class="lrm-recv"><input type="checkbox" value="${lrmEsc(r.receiver)}" ${ticked.has(r.receiver) ? 'checked' : ''}><span>${lrmEsc(r.name)}</span><small>${lrmEsc(r.hint || '')}</small></label>`).join('')
+            : '<small class="lrm-recv-none">No one else yet: add designated contacts or tick groups on the WhatsApp page.</small>');
+    }
+    setInterval(() => { if (document.getElementById('task-edit-recipient-wrap')) lrmReceiversBox(); }, 500);
+    const lrmFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+        try {
+            const url = typeof input === 'string' ? input : input?.url || '';
+            if (/\/api\/scheduler\/(create|update)$/.test(url.split('?')[0]) && init && typeof init.body === 'string') {
+                const box = document.getElementById('lrm-receivers');
+                const body = JSON.parse(init.body);
+                if (box && body.action && String(body.action.instance_id || '').startsWith('lrm-wa:')) {
+                    const extra = [...box.querySelectorAll('input:checked')].map((i) => i.value);
+                    body.action.receivers = extra.length ? [body.action.receiver, ...extra].filter(Boolean) : [];
+                    init = { ...init, body: JSON.stringify(body) };
+                }
+            }
+        } catch { /* leave the request as it was */ }
+        return lrmFetch(input, init);
+    };
+
     // The private vault's 7-day clock: using the console counts as the owner being around.
     let seenAt = 0;
     const seen = () => {

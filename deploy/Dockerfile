@@ -58,6 +58,7 @@ COPY deploy/agent-tools/lrm_vault_api.py /app/channel/web/api/lrm_vault.py
 # owner, so make it the gateway's user (node, uid 1000) here too.
 RUN set -eux; \
     python /tmp/brand/apply.py /app /tmp/brand/theme.json; \
+    python -m compileall -q /app/agent /app/channel /app/bridge /app/models > /tmp/compile.log || { cat /tmp/compile.log; exit 1; }; \
     static=/app/channel/web/static; \
     mkdir -p "$static/brand"; \
     cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/topology.js /tmp/brand/personal.html /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html "$static/brand/"; \
