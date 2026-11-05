@@ -10,6 +10,8 @@ const connect = process.env.CDP_URL ? { cdpEndpoint: async () => (await (await f
 
 export default {
   tests: 'tests/gateway/**/*.e2e.ts',
+  // One gateway, one private vault: the desktop and phone runs must not create it at the same time.
+  workers: 1,
   targets: [
     { name: 'desktop', engine: web({ viewport: { width: 1280, height: 800 }, initScripts, ...(connect ? { connect } : {}) }), app },
     { name: 'phone', engine: web({ viewport: { width: 390, height: 844 }, initScripts, ...(connect ? { connect } : {}) }), app },

@@ -27,6 +27,9 @@ class LrmVaultUpdatesHandler:
 
     def POST(self):
         _require_auth()
+        from agent import lrm_origin
+        if not lrm_origin.owner_browser(web.ctx.env):
+            return _out("403 Forbidden", {"error": lrm_origin.REFUSED})
         from agent import lrm_vault_flow as flow
         try:
             body = json.loads(web.data() or b"{}")

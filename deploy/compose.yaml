@@ -34,6 +34,8 @@ services:
       # English only, and the agent introduces itself by the LRM name.
       COW_LANG: en
       DEFAULT_AGENT_NAME: Lorium
+      # Owner decisions must come through Caddy from outside this server (agent/lrm_origin.py).
+      SERVER_PUBLIC_IP: ${LRMAGENT_SERVER_IP:-43.152.240.47}
     ports:
       # For an SSH tunnel: ssh -L 9899:127.0.0.1:9899 ubuntu@43.152.240.47
       - "127.0.0.1:9899:9899"

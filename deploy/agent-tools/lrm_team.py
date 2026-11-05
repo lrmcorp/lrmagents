@@ -33,6 +33,8 @@ ROLES = (
 )
 LEAD_DESC = "The lead: collects data from the other agents, checks vault updates and sends the owner's reports."
 PERSONAL_DESC = "The owner's personal assistant (voice, camera, private memory). Private: other agents can't ask her."
+BRANCH_DESC = ("Branch monitor: reads this branch's WhatsApp (Monitor only, never sends) and reports customer chats, "
+               "new numbers, complaints, reply times, staff chat quality and sales (chat_monitor).")
 
 
 def _admin():
@@ -101,18 +103,21 @@ def _cheap_model_for_monitors(reg):
         logger.debug(f"[Team] monitor model check skipped: {e}")
         return []
     done = []
-    if not model or not provider:
-        return done
     for agent_id in monitored:
         try:
             p = reg.get(agent_id, require_enabled=False)
         except Exception:
             continue
-        if getattr(p, "model", None):
+        update = {}
+        if not (p.description or "").strip():
+            update["description"] = BRANCH_DESC
+        if not getattr(p, "model", None) and model and provider:
+            update.update(model=model, bot_type=provider)
+        if not update:
             continue
         try:
-            _admin().update_agent(agent_id, model=model, bot_type=provider)
-            done.append((agent_id, {"model": model}))
+            _admin().update_agent(agent_id, **update)
+            done.append((agent_id, update))
         except Exception as e:
             logger.warning(f"[Team] could not set the cheap model for {agent_id}: {e}")
     return done

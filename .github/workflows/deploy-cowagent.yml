@@ -55,6 +55,36 @@ jobs:
       # brand patch no longer matches the pinned upstream image.
       - name: Build images
         run: docker compose -f deploy/compose.yaml build
+      # The console and the gateway pages in a real browser, desktop and phone sizes: no page errors,
+      # no sideways scrolling. No AI model involved.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: End-to-end tests
+        env:
+          E2E_TELEMETRY_DISABLED: '1'
+          CDP_URL: http://127.0.0.1:9222
+        run: |
+          docker run -d --name e2e-console --network host -e CHANNEL_TYPE=web -e WEB_HOST=127.0.0.1 -e WEB_PORT=9899 \
+            -e AGENT=True -e WEB_PASSWORD=testpassword123 -e EXTERNAL_API_TOKEN=e2e lrm-agents
+          node e2e/support/mock-console.mjs &
+          mkdir -p "$RUNNER_TEMP/gateway-data"
+          (cd whatsapp-gateway && COWAGENT_URL=http://127.0.0.1:9998 PORT=8181 DATA_DIR="$RUNNER_TEMP/gateway-data" \
+            node src/server.js > "$RUNNER_TEMP/gateway.log" 2>&1 &)
+          google-chrome --headless=new --no-sandbox --remote-debugging-port=9222 about:blank > /dev/null 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf -o /dev/null http://127.0.0.1:9899/ && curl -s -o /dev/null http://127.0.0.1:8181/whatsapp/ && curl -sf -o /dev/null http://127.0.0.1:9222/json/version && break
+            sleep 2
+          done
+          cd e2e && npm ci --no-audit --no-fund
+          status=0
+          npx e2e run || status=1
+          npx e2e run --config e2e.gateway.config.ts || status=1
+          if [ "$status" != 0 ]; then
+            docker logs --tail 80 e2e-console
+            tail -n 80 "$RUNNER_TEMP/gateway.log"
+          fi
+          exit "$status"
 
   deploy:
     needs: validate

@@ -196,7 +196,8 @@
   const until = (t) => { const h = Math.round((t - Date.now()) / 3600000); return h <= 0 ? 'any moment' : h < 48 ? `in ${h} hours` : `in ${Math.round(h / 24)} days`; };
   function renderStatus() {
     const b = $('#banner'); b.innerHTML = '';
-    if (st.lorium !== 'connected') b.innerHTML = `<div class="banner warn">Lorium's WhatsApp is not connected (${esc(st.lorium || 'unlinked')}). Warnings and the vault can't be sent until it is: link it on the WhatsApp page.</div>`;
+    // Only when it matters: sending is on and Lorium could not send the warnings or the vault.
+    if (st.exists && st.armed && !st.released && st.lorium !== 'connected') b.innerHTML = `<div class="banner warn">Lorium's WhatsApp is not connected (${esc(st.lorium || 'unlinked')}). Warnings and the vault can't be sent until it is: link it on the WhatsApp page.</div>`;
     if (st.error) b.innerHTML += `<div class="banner bad">Last attempt failed: ${esc(st.error)}. It is tried again every few minutes.</div>`;
     $('#state-card').hidden = !st.exists;
     if (!st.exists) return;

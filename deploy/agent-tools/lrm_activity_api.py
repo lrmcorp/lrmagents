@@ -38,14 +38,20 @@ class LrmActivityHandler:
                            "approvals": decided, "rows": rows, "timeout": act.TIMEOUT}, ensure_ascii=False)
 
     def POST(self):
-        if not _internal_caller():
+        internal = _internal_caller()
+        if not internal:
             _require_auth()
         web.header("Content-Type", "application/json; charset=utf-8")
         from agent import lrm_activity as act
+        from agent import lrm_origin
         try:
             body = json.loads(web.data() or b"{}")
         except ValueError:
             return json.dumps({"status": "error", "message": "invalid JSON"})
+        # Agents share this container, so a session or token alone does not prove the owner.
+        if not (lrm_origin.from_gateway(web.ctx.env) if internal else lrm_origin.owner_browser(web.ctx.env)):
+            web.ctx.status = "403 Forbidden"
+            return json.dumps({"status": "error", "message": lrm_origin.REFUSED})
         if body.get("op") == "decide" and body.get("all"):
             # "yes all" / "no all": every vault update waiting for the owner.
             from agent import lrm_vault_flow as flow
@@ -57,7 +63,7 @@ class LrmActivityHandler:
             return json.dumps({"status": "success", "message": (f"✅ Saved {len(saved)} to the vault: {names}" if saved
                                                                  else f"🚫 Rejected {len(items)}: {names}")}, ensure_ascii=False)
         if body.get("op") == "decide":
-            via = "whatsapp" if _internal_caller() else "console"
+            via = "whatsapp" if internal else "console"
             code = str(body.get("code") or "").strip().upper()
             if not code:
                 # A plain "yes"/"no": the newest request waiting for the owner, tool approval or vault update.
@@ -88,10 +94,18 @@ class LrmActivityHandler:
             what = done.get("summary") or done.get("tool_name") or ""
             return json.dumps({"status": "success", "approval": done, "message":
                                (f"✅ Allowed: {what}" if done.get("status") == "approved" else f"🚫 Refused: {what}")}, ensure_ascii=False)
-        if body.get("op") == "mode" and not _internal_caller():
+        if body.get("op") == "mode" and not internal:
             try:
                 act.set_mode(body.get("mode"))
             except ValueError as e:
                 return json.dumps({"status": "error", "message": str(e)})
             return json.dumps({"status": "success", "mode": act.get_mode()})
         return json.dumps({"status": "error", "message": "unknown op"})
+
+
+try:
+    from agent import lrm_origin as _origin
+    from common.log import logger as _log
+    _log.info(f"[Origin] owner decisions accepted from: {_origin.describe()}")
+except Exception:  # a log line must never stop the console
+    pass

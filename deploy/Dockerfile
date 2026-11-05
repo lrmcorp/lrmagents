@@ -25,6 +25,7 @@ COPY deploy/agent-tools/lrm_team.py /app/agent/lrm_team.py
 COPY deploy/agent-tools/lrm_busy_api.py /app/channel/web/api/lrm_busy.py
 # Approvals and activity log: recorder/gate, API and page (page copied with the brand files).
 COPY deploy/agent-tools/lrm_activity.py /app/agent/lrm_activity.py
+COPY deploy/agent-tools/lrm_origin.py /app/agent/lrm_origin.py
 COPY deploy/agent-tools/lrm_activity_api.py /app/channel/web/api/lrm_activity.py
 # Gmail, Google Calendar and the morning brief: core, owner check, tool, API (page copied with the brand files).
 COPY deploy/agent-tools/lrm_google.py /app/agent/lrm_google.py
