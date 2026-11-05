@@ -85,6 +85,12 @@
     </form>
     <p class="hint" id="d-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
   </section>
+  <section class="card" id="groups" style="margin-bottom:16px">
+    <div class="card-head"><h2>Groups</h2><div class="actions"><button id="g-load">Show my groups</button></div></div>
+    <p class="lede" style="margin:6px 0 12px;font-size:13px">Groups your linked numbers are in. Tick the ones agents may post to (reports, reminders, messages you ask for); every other group stays closed. In a group, agents answer only when someone @mentions them or replies to them.</p>
+    <div id="g-list"><p style="color:var(--text-3);margin:0" id="g-none">Loading…</p></div>
+    <p class="hint" id="g-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
+  </section>
   <div id="agents" class="grid"><p class="empty">Loading agents…</p></div>
 </main>
 <script>
@@ -238,6 +244,31 @@ $('#d-add').addEventListener('submit', async (e) => {
 }, true);
 $('#d-list').addEventListener('click', (e) => { const b = e.target.closest('[data-dremove]'); if (b && confirm('Remove this contact? Agents will no longer be able to message them.')) saveContacts(contacts.filter((_, i) => i !== Number(b.dataset.dremove))); });
 $('#d-list').addEventListener('change', (e) => { const sel = e.target.closest('[data-dmode]'); if (sel) saveContacts(contacts.map((c, i) => (i === Number(sel.dataset.dmode) ? { ...c, mode: sel.value } : c))); });
+// ---- groups agents may post to ------------------------------------------------------
+let groupRows = []; let groupPicked = [];
+function drawGroups() {
+  const known = new Map(groupRows.map((g) => [g.jid, g]));
+  for (const g of groupPicked) if (!known.has(g.jid)) known.set(g.jid, { jid: g.jid, name: g.name, agents: [g.agent], members: 0, gone: true });
+  const rows = [...known.values()];
+  $('#g-list').innerHTML = rows.length ? rows.map((g) => {
+    const on = groupPicked.some((p) => p.jid === g.jid);
+    return `<label style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px;font-weight:500;color:var(--text)">
+      <input type="checkbox" data-gjid="${esc(g.jid)}" ${on ? 'checked' : ''} style="width:auto">
+      <b style="min-width:0;flex:1">${esc(g.name)}</b><span style="color:var(--text-3);font-size:12px">${g.gone ? 'no longer listed' : `${g.members} members · via ${esc((g.agents || []).join(', '))}`}</span></label>`;
+  }).join('') : '<p style="color:var(--text-3);margin:0">No groups found. Add an agent\'s number to a WhatsApp group, then press Show my groups.</p>';
+}
+async function loadGroups() {
+  try { const d = await api('groups'); groupRows = d.groups; groupPicked = d.designated; drawGroups(); $('#g-msg').textContent = ''; } catch (e) { $('#g-msg').textContent = e.message; }
+}
+$('#g-load').addEventListener('click', loadGroups);
+$('#g-list').addEventListener('change', async (e) => {
+  const box = e.target.closest('[data-gjid]'); if (!box) return;
+  const g = groupRows.find((x) => x.jid === box.dataset.gjid) || groupPicked.find((x) => x.jid === box.dataset.gjid);
+  const next = box.checked ? [...groupPicked.filter((p) => p.jid !== g.jid), { jid: g.jid, name: g.name, agent: (g.agents || [g.agent])[0] }] : groupPicked.filter((p) => p.jid !== g.jid);
+  try { groupPicked = (await api('groups', { groups: next })).designated; drawGroups(); $('#g-msg').textContent = box.checked ? `Agents may now post in ${g.name}.` : `Closed: ${g.name}.`; } catch (err) { $('#g-msg').textContent = err.message; box.checked = !box.checked; }
+});
+loadGroups();
+
 api('designated').then((d) => { contacts = d.contacts; drawContacts(); }).catch(() => {});
 
 load();

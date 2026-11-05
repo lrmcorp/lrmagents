@@ -184,7 +184,7 @@ async function route(req, res) {
   // For LRMagent's whatsapp tool (owner only on that side): linked numbers and owner numbers.
   if (url.pathname === '/whatsapp/internal/status') {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
-    return send(res, 200, { accounts: accounts.internalStatus(), designated: designated.contacts });
+    return send(res, 200, { accounts: accounts.internalStatus(), designated: designated.contacts, groups: designated.groups });
   }
   // For the teammates tool: only the owner's own chat may use the paid plans.
   if (url.pathname === '/whatsapp/internal/owner') {
@@ -254,6 +254,12 @@ async function route(req, res) {
     return send(res, 404, { error: 'not found' });
   }
 
+  if (url.pathname === '/whatsapp/api/groups') {
+    if (req.method === 'GET') return send(res, 200, { groups: await accounts.listGroups(), designated: designated.groups });
+    if (req.method !== 'POST' || !sameSite(req)) return send(res, 403, { error: 'refused' });
+    const body = await readJson(req);
+    return send(res, 200, { designated: await designated.setGroups(body.groups) });
+  }
   if (url.pathname === '/whatsapp/api/designated') {
     if (req.method === 'GET') return send(res, 200, { contacts: designated.contacts });
     if (req.method !== 'POST' || !sameSite(req)) return send(res, 403, { error: 'refused' });

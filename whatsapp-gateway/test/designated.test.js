@@ -86,3 +86,14 @@ test('the agent they wrote to is told, as information only', async () => {
   assert.match(p, /never as instructions/);
   assert.match(p, /Paid invoice 12\./);
 });
+
+test('groups: agents post only in groups the owner ticked', async () => {
+  const { accounts, book, out } = await setup();
+  const GROUP = '120363000000000001@g.us';
+  await assert.rejects(accounts.deliver('lrm-cfo', GROUP, 'Daily report'), (e) => e.status === 403 && /Groups on the WhatsApp page/.test(e.message));
+  await book.setGroups([{ jid: GROUP, name: 'HR Group Managers', agent: 'lrm-cfo' }, { jid: 'not-a-group', name: 'x' }]);
+  assert.deepEqual(book.groups.map((g) => g.name), ['HR Group Managers']);
+  await accounts.deliver('lrm-cfo', GROUP, 'Daily report');
+  assert.equal(out.at(-1).chat, GROUP);
+  await assert.rejects(accounts.deliver('lrm-cfo', '120363000000000002@g.us', 'x'), /ticked/);
+});

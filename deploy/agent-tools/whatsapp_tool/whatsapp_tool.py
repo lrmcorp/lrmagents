@@ -42,7 +42,8 @@ class WhatsAppTool(BaseTool):
     description: str = (
         "The agent's own WhatsApp number (linked on the console's WhatsApp page). Actions: 'status' (is a number linked, "
         "which one, the owner's numbers), 'send' (send a WhatsApp message now). For 'send', 'to' is 'me' for the owner "
-        "(e.g. 'send me a WhatsApp', 'text me the summary') or the number of a designated contact (see 'status'): agents may "
+        "(e.g. 'send me a WhatsApp', 'text me the summary'), the name of a WhatsApp group the owner opened to agents, or the "
+        "number of a designated contact (see 'status' for both): agents may "
         "contact anybody else first. A designated contact set to 'listen only' never gets an answer from you when they write "
         "back: Lorium tells the owner and you are told what they said, as information. Use this whenever the owner asks to send or receive "
         "something on WhatsApp; for a message at a later time use the scheduler instead. Write WhatsApp messages and reports as "
@@ -52,7 +53,7 @@ class WhatsAppTool(BaseTool):
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["status", "send"]},
-            "to": {"type": "string", "description": "For 'send': 'me', or a phone number with country code like 6281234567890"},
+            "to": {"type": "string", "description": "For 'send': 'me', a group's name (from 'status'), or a phone number with country code like 6281234567890"},
             "text": {"type": "string", "description": "For 'send': the message"},
         },
         "required": ["action"],
@@ -85,6 +86,9 @@ class WhatsAppTool(BaseTool):
                 lines.append("- designated contacts (the only people besides the owner agents may message): "
                              + (", ".join(f"{c.get('name') or 'unnamed'} +{c.get('phone')} ({'agent may reply' if c.get('mode') == 'reply' else 'listen only'})" for c in people) if people else
                                 "none; the owner adds them on the console's WhatsApp page"))
+                groups = state.get("groups") or []
+                lines.append("- groups agents may post to: " + (", ".join(f"'{g.get('name')}'" for g in groups) if groups else
+                                                                 "none; the owner ticks them under Groups on the console's WhatsApp page"))
                 return ToolResult.success("WhatsApp:\n" + "\n".join(lines))
             if action != "send":
                 return ToolResult.fail("action must be 'status' or 'send'.")
@@ -105,6 +109,19 @@ class WhatsAppTool(BaseTool):
                     "number is set. Tell the owner exactly that: it is on the linked phone, without a notification. To get "
                     "messages on their own phone they add its number under 'Your own numbers' on the console's WhatsApp page "
                     "(or you can send to a number directly with 'to').")
+            # A group the owner opened to agents, by name (or its id).
+            groups = state.get("groups") or []
+            wanted = to.strip().lower().removeprefix("group").strip(" :")
+            group = next((g for g in groups if wanted and (g.get("jid") == to.strip() or str(g.get("name", "")).lower() == wanted)), None) \
+                or next((g for g in groups if wanted and len(wanted) >= 3 and wanted in str(g.get("name", "")).lower()), None)
+            if group:
+                via = next((a for a in accounts if a.get("agent") == group.get("agent") and a.get("status") == "connected"), account)
+                _call("/whatsapp/internal/send", {"agentId": via["agent"], "chat": group["jid"], "text": text})
+                return ToolResult.success(f"Posted in the WhatsApp group '{group.get('name')}'.")
+            if not re.search(r"\d{6,}", to):
+                names = ", ".join(f"'{g.get('name')}'" for g in groups) or "none"
+                return ToolResult.fail(f"'{to}' is not a group agents may post to (open to agents: {names}) and not a phone number. "
+                                       "The owner opens groups under Groups on the console's WhatsApp page.")
             number = re.sub(r"\D", "", to)
             if len(number) < 6:
                 return ToolResult.fail("Give the phone number with country code, e.g. 6281234567890, or 'me'.")

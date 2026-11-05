@@ -19,10 +19,23 @@ export function cleanContacts(list) {
   return [...out.values()].slice(0, 500);
 }
 
+// Groups agents may post to (the owner ticks them on the WhatsApp page). `agent` is the
+// linked number that is in the group and sends there.
+export function cleanGroups(list) {
+  const out = new Map();
+  for (const g of Array.isArray(list) ? list : []) {
+    const jid = String(g?.jid || '').trim();
+    if (!/^[0-9-]{6,40}@g\.us$/.test(jid)) continue;
+    out.set(jid, { jid, name: String(g?.name || '').trim().slice(0, 100), agent: /^[A-Za-z0-9_-]{1,64}$/.test(String(g?.agent || '')) ? String(g.agent) : '' });
+  }
+  return [...out.values()].slice(0, 200);
+}
+
 export class Designated {
   constructor(dir) {
     this.file = path.join(dir, '.designated.json');
     this.contacts = [];
+    this.groups = [];
     this.last = {}; // phone -> { agent, text, at }: what an agent last sent them
   }
 
@@ -30,6 +43,7 @@ export class Designated {
     try {
       const data = JSON.parse(await fs.readFile(this.file, 'utf8'));
       this.contacts = cleanContacts(data.contacts);
+      this.groups = cleanGroups(data.groups);
       this.last = data.last && typeof data.last === 'object' ? data.last : {};
     } catch { /* none yet */ }
     return this;
@@ -37,7 +51,7 @@ export class Designated {
 
   async persist() {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
-    await fs.writeFile(`${this.file}.tmp`, JSON.stringify({ contacts: this.contacts, last: this.last }), { mode: 0o600 });
+    await fs.writeFile(`${this.file}.tmp`, JSON.stringify({ contacts: this.contacts, groups: this.groups, last: this.last }), { mode: 0o600 });
     await fs.rename(`${this.file}.tmp`, this.file);
   }
 
@@ -48,6 +62,14 @@ export class Designated {
     await this.persist();
     return this.contacts;
   }
+
+  async setGroups(list) {
+    this.groups = cleanGroups(list);
+    await this.persist();
+    return this.groups;
+  }
+
+  group(jid) { return this.groups.find((g) => g.jid === jid) || null; }
 
   get(phone) { return this.contacts.find((c) => c.phone === digits(phone)) || null; }
 

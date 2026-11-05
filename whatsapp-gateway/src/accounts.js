@@ -644,7 +644,11 @@ export class Accounts {
     // Approved people who have talked with this agent may get what they asked it for
     // (a reminder set in their chat). Anyone else only if designated by the owner.
     const followUp = Boolean(phone) && account.settings.allowFrom.includes(phone) && account.knownChats.has(chat);
-    if (!own && !account.isOwner(chat, account.sock) && !designated && !followUp) {
+    const group = chat.endsWith('@g.us') && Boolean(directory?.group(chat));
+    if (chat.endsWith('@g.us') && !group) {
+      throw Object.assign(new Error('agents may only post in groups the owner ticked under Groups on the WhatsApp page; this group is not one'), { status: 403 });
+    }
+    if (!own && !account.isOwner(chat, account.sock) && !designated && !followUp && !group) {
       throw Object.assign(new Error(`agents may only message the owner, designated contacts, and approved people who talk with them; +${phone || chat} is none of these. `
         + 'The owner can add it under Designated contacts on the WhatsApp page.'), { status: 403 });
     }
@@ -695,6 +699,25 @@ export class Accounts {
     }
     await this.notifyOwner(LORIUM, note).catch((e) => log.error({ err: e.message }, 'relay note to the owner failed'));
     await told;
+  }
+
+  // Every group the linked numbers are in (for the WhatsApp page's Groups card).
+  async listGroups() {
+    const out = new Map();
+    for (const account of this.byAgent.values()) {
+      if (account.status !== 'connected' || !account.sock?.groupFetchAllParticipating) continue;
+      try {
+        const groups = await account.sock.groupFetchAllParticipating();
+        for (const g of Object.values(groups || {})) {
+          const row = out.get(g.id) || { jid: g.id, name: g.subject || g.id, members: (g.participants || []).length, agents: [] };
+          row.agents.push(account.agentId);
+          out.set(g.id, row);
+        }
+      } catch (e) {
+        log.warn({ agent: account.agentId, err: e.message }, 'could not list groups');
+      }
+    }
+    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   // Whether a number has WhatsApp, asked through this agent's linked number.

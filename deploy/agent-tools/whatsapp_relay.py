@@ -108,6 +108,14 @@ def task_recipients(state=None):
             out.append({"channel_type": "openai_api", "instance_id": instance, "receiver": receiver,
                         "name": person.get("name") or f"+{phone}", "is_group": False, "session_id": receiver,
                         "hint": f"+{phone}", "instance_name": "WhatsApp"})
+    for group in state.get("groups") or []:
+        agent = group.get("agent")
+        if not agent or not any(a.get("agent") == agent and a.get("status") != "unlinked" for a in state.get("accounts") or []):
+            continue
+        receiver = f"{SESSION_PREFIX}{agent}:{group['jid']}"
+        out.append({"channel_type": "openai_api", "instance_id": INSTANCE_PREFIX + agent, "receiver": receiver,
+                    "name": f"Group: {group.get('name') or group['jid']}", "is_group": True, "session_id": receiver,
+                    "hint": "WhatsApp group", "instance_name": "WhatsApp"})
     return out
 
 
