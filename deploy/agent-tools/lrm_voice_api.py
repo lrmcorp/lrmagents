@@ -83,6 +83,20 @@ def _save_image(data_url, ws):
     return path
 
 
+def voice_model():
+    """A fast model for spoken turns (LRMAGENT_VOICE_MODEL, else the first 'flash'-like model on
+    offer): the full chain (Codex, then DeepSeek Pro) takes far too long for a conversation."""
+    wanted = os.environ.get("LRMAGENT_VOICE_MODEL", "").strip()
+    try:
+        from channel.web.api.openai_compat import _model_catalog
+        models = [m for p in _model_catalog() for m in (p.get("models") or [])]
+    except Exception:
+        return None
+    if wanted:
+        return wanted if wanted in models else None
+    return next((m for m in models if re.search(r"flash|mini|haiku|fast|lite", m, re.I)), None)
+
+
 def chat(text, image=None, lang=None):
     from agent import lrm_personal
     from config import conf
@@ -90,7 +104,8 @@ def chat(text, image=None, lang=None):
     profile = lrm_personal.profile()
     if profile is None:
         raise RuntimeError("the personal assistant does not exist yet")
-    parts = ["[Voice conversation on the Personal page: answer in one to three short spoken sentences; put details in a ```hud block.]"]
+    parts = ["[Voice conversation on the Personal page: answer at once in one to three short spoken sentences, like a person "
+             "talking; use tools only when the question needs them; put details in a ```hud block.]"]
     if lang:
         parts.append(f"[The owner spoke {({'id': 'Bahasa Indonesia', 'zh': 'Mandarin', 'en': 'English'}).get(lang, lang)}.]")
     if image:
@@ -102,11 +117,23 @@ def chat(text, image=None, lang=None):
     day = datetime.date.today().isoformat()
     body = {"agent_id": profile.id, "conversation_id": f"lrm-voice:{profile.id}:{day}", "stream": False,
             "messages": [{"role": "user", "content": "\n".join(parts)}]}
-    request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", method="POST", data=json.dumps(body).encode(),
-                                     headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"})
-    try:
+    fast = voice_model()
+    if fast:
+        body["model"] = fast
+
+    def ask(payload):
+        request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", method="POST", data=json.dumps(payload).encode(),
+                                         headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=900) as r:
-            answer = str(json.loads(r.read())["choices"][0]["message"]["content"]).strip()
+            return str(json.loads(r.read())["choices"][0]["message"]["content"]).strip()
+    try:
+        try:
+            answer = ask(body)
+        except urllib.error.HTTPError as e:
+            if not fast or e.code != 404:
+                raise
+            body.pop("model", None)  # the fast model went away: the agent's own model
+            answer = ask(body)
     except urllib.error.HTTPError as e:
         try:
             why = json.loads(e.read() or b"{}").get("error", {}).get("message")

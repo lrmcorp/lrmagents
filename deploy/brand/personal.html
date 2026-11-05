@@ -252,7 +252,7 @@
     S.rec.onstop = () => {
       releaseMic(); const blob = new Blob(S.chunks, { type: S.rec?.mimeType || type || 'audio/webm' }); S.rec = null;
       $('#talk').classList.remove('on'); $('#talk-l').textContent = 'Talk';
-      if (S.discard) { S.discard = false; liveStop(); setState('idle', "didn't hear anything"); return; }
+      if (S.discard) { S.discard = false; liveStop(); S.conversation = false; releaseMic(true); setState('idle', S.turns ? 'tap to talk again' : "didn't hear anything"); S.turns = 0; return; }
       if (blob.size > 2500) heard(blob); else setState('idle');
     };
     S.rec.start(); S.recAt = performance.now(); S.lastVoice = 0; S.voiceRun = 0; S.spoke = false; S.discard = false;
@@ -262,8 +262,10 @@
   function stopRec() { if (S.rec && S.rec.state !== 'inactive') S.rec.stop(); }
   // An open microphone keeps iPhones in call mode, where speech plays from the quiet
   // earpiece. Outside hands-free the microphone is closed after each recording.
-  function releaseMic() {
+  const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function releaseMic(force) {
     if (S.handsFree || !S.stream) return;
+    if (!IOS && !force) return; // elsewhere the microphone stays open between turns (faster)
     S.stream.getTracks().forEach((t) => t.stop()); S.stream = null; S.analyser = null; S.level = 0;
   }
   // iPhones only play sound that a tap started: unlock the player on every tap, then the
@@ -286,10 +288,17 @@
       const r = await fetch('/api/lrm/voice?op=stt', { method: 'POST', body: blob, headers: lang ? { 'X-Lang': lang } : {}, credentials: 'same-origin' });
       const data = await readJson(r);
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-      if (!data.text) { S.busy = false; setState('idle', "didn't catch that"); return; }
+      if (!data.text) { S.busy = false; setState('idle', "didn't catch that"); listenAgain(); return; }
       if (['en', 'id', 'zh'].includes(data.language)) store.set('lrm_p_heard', data.language); // live transcription follows it
       await ask(data.text, { lang: data.language });
     } catch (e) { S.busy = false; setState('idle'); toast(`Couldn't understand the audio: ${e.message}`); }
+  }
+
+  // A conversation: after Sora answers she listens again by herself, until the owner says
+  // nothing for a few seconds (or taps Talk to end it). Hands-free does its own listening.
+  function listenAgain() {
+    if (!S.conversation || S.handsFree || S.rec || S.busy || S.speaking) return;
+    setTimeout(() => { if (S.conversation && !S.rec && !S.busy && !S.speaking) startRec(); }, 350);
   }
 
   // ---- talking to the assistant ------------------------------------------------------
@@ -304,7 +313,9 @@
       $('#it').textContent = data.text || '';
       S.busy = false;
       if (data.text && !S.muted) await speak(data.text, lang); else setState('idle');
-    } catch (e) { S.busy = false; setState('idle'); toast(e.message); }
+      S.turns = (S.turns || 0) + 1;
+      listenAgain();
+    } catch (e) { S.busy = false; S.conversation = false; setState('idle'); toast(e.message); }
   }
 
   // ---- audio out: sentence by sentence, so it starts talking quickly --------------------
@@ -472,16 +483,22 @@
 
   // ---- controls ----------------------------------------------------------------------
   const talk = $('#talk'); let pressAt = 0;
-  talk.addEventListener('pointerdown', (e) => { e.preventDefault(); unlock(); pressAt = Date.now(); if (S.rec) { S.held = false; stopRec(); } else { S.held = true; startRec(); } });
+  talk.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); unlock(); pressAt = Date.now();
+    if (S.rec) { S.held = false; stopRec(); return; }
+    if (S.conversation && (S.busy || S.speaking)) { S.conversation = false; stopSpeaking(); setState(S.busy ? 'thinking' : 'idle'); toast('Conversation ended. Tap Talk to start again.'); return; }
+    S.conversation = true; S.turns = 0; S.held = true; startRec();
+  });
   // Held = push-to-talk (ends on release); a tap = talk, and it ends by itself when you stop.
-  const release = () => { const held = S.held; S.held = false; if (S.rec && held && Date.now() - pressAt > 450) stopRec(); };
+  const release = () => { const held = S.held; S.held = false; if (S.rec && held && Date.now() - pressAt > 450) { S.conversation = false; stopRec(); } };
   talk.addEventListener('pointerup', release);
   talk.addEventListener('pointercancel', release);
-  cv.addEventListener('click', () => { unlock(); if (S.state === 'speaking') { stopSpeaking(); setState('idle'); } else if (S.rec) stopRec(); else startRec(); });
+  // The orb: while Sora speaks, a tap interrupts her and listens at once; otherwise it talks / sends.
+  cv.addEventListener('click', () => { unlock(); if (S.state === 'speaking') { stopSpeaking(); S.conversation = true; setState('idle'); startRec(); } else if (S.rec) stopRec(); else { S.conversation = true; S.turns = 0; startRec(); } });
   addEventListener('keydown', (e) => {
     if (e.target.closest('input, select, textarea')) return;
-    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); unlock(); if (S.rec) stopRec(); else startRec(); }
-    if (e.key === 'Escape') { stopSpeaking(); stopRec(); setState('idle'); }
+    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); unlock(); if (S.rec) stopRec(); else { S.conversation = true; S.turns = 0; startRec(); } }
+    if (e.key === 'Escape') { S.conversation = false; stopSpeaking(); stopRec(); setState('idle'); }
   });
   $('#handsfree').onclick = async () => {
     unlock();
