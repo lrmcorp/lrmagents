@@ -99,3 +99,14 @@ for lang, text in (("en", "Yes, I can hear you loud and clear. What can I do for
     except Exception as e:
         print(f"{lang} failed: {e} {getattr(e, 'read', lambda: b'')()[:200]!r}")
 PY
+echo "== scheduled tasks"
+sudo -n docker compose -f deploy/compose.yaml exec -T cowagent python - <<'PY' 2>&1 | grep -v '^\[' | tail -20
+import sys; sys.path.insert(0, "/app")
+from config import load_config; load_config()
+from agent.tools.scheduler.integration import get_task_store
+for t in get_task_store().list_tasks() if hasattr(get_task_store(), "list_tasks") else []:
+    a = t.get("action") or {}
+    print(t.get("id"), t.get("agent_id"), repr(t.get("name"))[:40], t.get("schedule"), a.get("type"), a.get("channel_type"), str(a.get("receiver"))[-30:], "enabled" if t.get("enabled") else "off", "next", t.get("next_run_at"))
+PY
+echo "== recent tool calls and scheduler"
+dc logs --no-color --since 24h cowagent 2>&1 | grep -E '🔧|\[Scheduler\]|scheduler' | cut -c1-260 | tail -40
