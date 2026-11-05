@@ -17,7 +17,7 @@
         return `${part}, what would you like to work on?`;
     }
 
-    // ---- sidebar ------------------------------------------------------------
+    // Sidebar
     function buildSidebar() {
         const sidebar = $('#sidebar');
         const panel = $('#session-panel');
@@ -116,7 +116,7 @@
         if (typeof loadSessionList === 'function') loadSessionList();
     }
 
-    // ---- Chats page: who each chat is with, filters, and the WhatsApp chats -------------
+    // Chats page: who each chat is with, filters, and the WhatsApp chats
     const chatFilter = { agent: '' };
     const dmy = (t) => { const d = new Date(t * 1000); return `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`; };
     const when = (t) => { if (!t) return ''; const d = new Date(t * 1000); const today = new Date().toDateString() === d.toDateString();
@@ -203,7 +203,7 @@
         filterSessions();
     }
 
-    // ---- new chat: pick the agent (the stock picker lives in the chat list, out of sight) --------
+    // New chat: pick the agent (the stock picker lives in the chat list, out of sight)
     function newChatPicker(anchor, event, before) {
         event?.stopPropagation();
         document.querySelector('.lrm-picker')?.remove();
@@ -243,7 +243,7 @@
         };
     }
 
-    // ---- tool steps: one line per answer -------------------------------------------
+    // Tool steps: one line per answer
     // An answer that used tools shows "✓ 24 steps" instead of the full list; click it to
     // see them. While it works, only the step in progress shows under that line.
     function syncSteps() {
@@ -274,7 +274,7 @@
         requestAnimationFrame(() => { stepsQueued = false; syncSteps(); });
     }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
 
-    // ---- new chat screen --------------------------------------------------------
+    // New chat screen
     function agents() {
         try { return typeof enabledAgents === 'function' ? enabledAgents() : []; } catch (e) { return []; }
     }
@@ -335,7 +335,7 @@
         }, 250);
     }
 
-    // ---- approvals inside the chat ---------------------------------------------
+    // Approvals inside the chat
     // A risky tool call waits with "Waiting for your approval (code K7QP)" in its
     // card; put Approve / Deny right there.
     function approvalButtons() {
@@ -380,7 +380,7 @@
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
     window.addEventListener('load', () => { start(); keepPanelOpen(); });
 
-    // ---- Tasks form: several WhatsApp recipients ("Also send to" checkboxes) -------------
+    // Tasks form: several WhatsApp recipients ("Also send to" checkboxes)
     // The agent works once and the result goes to each ticked recipient (the owner,
     // designated contacts, ticked groups); the server checks every one against that list.
     const lrmEsc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

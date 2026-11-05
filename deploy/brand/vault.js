@@ -14,7 +14,7 @@ const store = {
   set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* private mode */ } },
 };
 
-// ---- paths -------------------------------------------------------------------
+// Paths
 const dirname = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
 const basename = (p) => p.slice(p.lastIndexOf('/') + 1);
 const stem = (p) => basename(p).replace(/\.md$/i, '');
@@ -48,7 +48,7 @@ function ago(t) {
   return dmy(t * 1000);
 }
 
-// ---- state -------------------------------------------------------------------
+// State
 const S = {
   agent: '', agents: [], entries: [], notes: new Map(), lc: new Map(), byStem: new Map(), byName: new Map(),
   aliases: new Map(), dirs: new Set(), out: new Map(), back: new Map(), unresolved: new Map(), tags: new Map(),
@@ -70,7 +70,7 @@ function buildAndDraw() { if (buildPanes()) S.panes.forEach((_, i) => withPane(i
 const activeTab = () => S.tabs[S.active] || null;
 const allTabs = () => S.panes.flatMap((p) => p.tabs);
 
-// ---- API ---------------------------------------------------------------------
+// API
 async function api(op, params = {}, body = null) {
   const url = new URL('/api/lrm/vault', location.origin);
   url.searchParams.set('op', op);
@@ -87,7 +87,7 @@ async function api(op, params = {}, body = null) {
 }
 const post = (op, body) => api(op, {}, body);
 
-// ---- theme: follow the console ------------------------------------------------
+// Theme: follow the console
 function syncTheme() {
   const dark = false; // LRMagent is light only
   document.documentElement.classList.toggle('dark', dark);
@@ -102,7 +102,7 @@ try {
   }
 } catch { /* not same-origin */ }
 
-// ---- toasts, menus, modals ------------------------------------------------------
+// Toasts, menus, modals
 function toast(message, error = false) {
   const el = document.createElement('div');
   el.className = `toast${error ? ' error' : ''}`;
@@ -164,7 +164,7 @@ function ask({ title, text = '', value = null, ok = 'OK', danger = false, select
   });
 }
 
-// ---- index: links, backlinks, tags --------------------------------------------
+// Index: links, backlinks, tags
 function resolveLink(raw, from = '', markdown = false) {
   let t = String(raw || '').trim().replace(/\\/g, '/');
   try { t = decodeURIComponent(t); } catch { /* keep as written */ }
@@ -266,7 +266,7 @@ async function refreshOpenNotes() {
   }
 }
 
-// ---- markdown rendering ----------------------------------------------------------
+// Markdown rendering
 const CALLOUT_ICONS = { note: 'fa-pencil', abstract: 'fa-clipboard-list', summary: 'fa-clipboard-list', info: 'fa-circle-info', todo: 'fa-circle-check', tip: 'fa-fire', success: 'fa-check', check: 'fa-check', done: 'fa-check', question: 'fa-circle-question', faq: 'fa-circle-question', help: 'fa-circle-question', warning: 'fa-triangle-exclamation', caution: 'fa-triangle-exclamation', attention: 'fa-triangle-exclamation', failure: 'fa-xmark', danger: 'fa-bolt', error: 'fa-bolt', bug: 'fa-bug', example: 'fa-list', quote: 'fa-quote-left', cite: 'fa-quote-left' };
 
 function slug(text) { return String(text).toLowerCase().trim().replace(/[^\p{L}\p{N}\s-]/gu, '').replace(/\s+/g, '-'); }
@@ -543,7 +543,7 @@ function toggleTask(text, n) {
   return null;
 }
 
-// ---- file tree ---------------------------------------------------------------------
+// File tree
 function treeChildren() {
   const kids = new Map();
   const add = (parent, entry) => { if (!kids.has(parent)) kids.set(parent, []); kids.get(parent).push(entry); };
@@ -693,7 +693,7 @@ $('#tree').addEventListener('drop', (e) => {
   movePath(from, `${rowEl.dataset.path}/${basename(from)}`);
 });
 
-// ---- file operations -------------------------------------------------------------------
+// File operations
 function uniquePath(folder, name, ext = '.md') {
   let path = `${folder}/${name}${ext}`; let i = 1;
   while (S.lc.has(path.toLowerCase()) || S.dirs.has(path)) path = `${folder}/${name} ${i++}${ext}`;
@@ -815,7 +815,7 @@ async function deletePath(path, dir = S.dirs.has(path)) {
   } catch (e) { fail(e); }
 }
 
-// ---- tabs --------------------------------------------------------------------------------
+// Tabs
 function saveState() {
   store.set(`lrm_vault:${S.agent}`, {
     panes: S.panes.map((p) => ({ tabs: p.tabs.map((t) => ({ kind: t.kind, path: t.path, mode: t.mode, center: t.center || null })), active: p.active })),
@@ -907,7 +907,7 @@ function tabsHtml(tabs, active) {
   }).join('') + '<button class="icon-btn tab-new" title="New tab (quick switcher)" style="margin:0 0 4px 2px"><i class="fa-solid fa-plus"></i></button>';
 }
 
-// ---- panes: one, or two side by side (split view) ------------------------------------------------
+// Panes: one, or two side by side (split view)
 function buildPanes() {
   const host = $('#panes');
   let rebuilt = false;
@@ -957,7 +957,7 @@ $('#panes').addEventListener('click', (e) => {
 });
 $('#panes').addEventListener('auxclick', (e) => { const tab = e.target.closest('.tabbar .tab'); if (tab && e.button === 1) closeTab(Number(tab.dataset.i)); });
 
-// ---- saving --------------------------------------------------------------------------------
+// Saving
 let saveTimer = null;
 function scheduleSave(tab) { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveTab(tab), 900); }
 async function flush(tab) { if (isText(tab) && tab.content !== tab.saved && !tab.conflict) { clearTimeout(saveTimer); await saveTab(tab); } }
@@ -985,7 +985,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushAll(); });
 
-// ---- the note view -------------------------------------------------------------------------
+// The note view
 function setMode(mode) {
   const tab = activeTab();
   if (tab?.kind !== 'note') return;
@@ -1099,7 +1099,7 @@ function scrollToHeading(heading) {
 
 function caretToLine(line) { curEd()?.gotoLine(line); }
 
-// ---- the editor: CodeMirror live preview (vendor/lrm-editor.js) ----------------------------
+// The editor: CodeMirror live preview (vendor/lrm-editor.js)
 function mountEditor(tab) {
   const host = $v('#editor');
   if (!window.LrmEditor) {
@@ -1147,7 +1147,7 @@ function mountEditor(tab) {
   if (tab.focusEditor) { tab.focusEditor = false; editor.focus(); }
 }
 
-// ---- formulas (KaTeX) and diagrams (Mermaid), loaded the first time a note needs them -------
+// Formulas (KaTeX) and diagrams (Mermaid), loaded the first time a note needs them
 const loading = {};
 function loadScript(src) {
   return (loading[src] ||= new Promise((resolve, reject) => {
@@ -1194,7 +1194,7 @@ function fillRich(root) {
   });
 }
 
-// ---- attachments: pasted or dropped images and PDFs ---------------------------------------------
+// Attachments: pasted or dropped images and PDFs
 const ATTACH = /\.(png|jpe?g|gif|webp|svg|pdf)$/i;
 async function attachFiles(files, notePath, folder = null) {
   const out = [];
@@ -1223,7 +1223,7 @@ async function attachFiles(files, notePath, folder = null) {
   return out.map((p) => `![[${basename(p)}]]`).join('\n');
 }
 
-// ---- templates: notes in knowledge/templates, with {{title}}, {{date}}, {{time}} ---------------
+// Templates: notes in knowledge/templates, with {{title}}, {{date}}, {{time}}
 const TEMPLATE_DIR = 'knowledge/templates';
 const STARTER_TEMPLATES = {
   'Meeting notes': '---\ntags: [meeting]\ndate: {{date}}\nattendees: []\n---\n\n# {{title}}\n\n## Agenda\n- \n\n## Notes\n\n## Decisions\n- \n\n## Action items\n- [ ] \n',
@@ -1372,7 +1372,7 @@ view.addEventListener('focusout', (e) => {
   movePath(tab.path, `${dirname(tab.path)}/${name}.md`);
 });
 
-// ---- finding notes by name -----------------------------------------------------------------
+// Finding notes by name
 function fuzzy(query, text) {
   const q = query.toLowerCase(); const t = text.toLowerCase();
   if (!q) return 1;
@@ -1393,7 +1393,7 @@ function rankNotes(query, limit = 50) {
   }
   return out.sort((a, b) => b.score - a.score || (S.notes.get(b.path).mtime - S.notes.get(a.path).mtime)).slice(0, limit);
 }
-// ---- bookmarks (saved on the server per agent) ----------------------------------------------------
+// Bookmarks (saved on the server per agent)
 async function loadPrefs() {
   try { S.bookmarks = (await api('prefs')).prefs.bookmarks || []; } catch { S.bookmarks = []; }
   renderBookmarks();
@@ -1442,7 +1442,7 @@ $('#bookmark-list').addEventListener('drop', (e) => {
   bmDrag = null; savePrefs();
 });
 
-// ---- unlinked mentions: notes that name this one without linking to it -------------------------------
+// Unlinked mentions: notes that name this one without linking to it
 let mentionList = [];
 async function loadMentions(tab) {
   const box = $('#mentions');
@@ -1476,7 +1476,7 @@ async function linkMention(i) {
   } catch (e) { fail(e); }
 }
 
-// ---- calendar of daily notes (memory/YYYY-MM-DD.md) --------------------------------------------------
+// Calendar of daily notes (memory/YYYY-MM-DD.md)
 function calendarHtml() {
   const now = new Date();
   const base = S.calMonth ?? 0;
@@ -1501,7 +1501,7 @@ function calendarHtml() {
     <div class="hint">${count} daily note${count === 1 ? '' : 's'} this month. Click a day to open it, or to create it.${base ? ' <button class="link-btn" data-month="0">Today</button>' : ''}</div></div>`;
 }
 
-// ---- right pane: backlinks, outgoing, outline, info -------------------------------------------
+// Right pane: backlinks, outgoing, outline, info
 function headingsOf(text) {
   const out = []; let fence = false;
   const { body } = splitFrontmatter(text);
@@ -1585,7 +1585,7 @@ $('#right-body').addEventListener('click', (e) => {
 });
 document.querySelectorAll('[data-right]').forEach((b) => b.addEventListener('click', () => { S.rightTab = b.dataset.right; saveState(); renderRight(); }));
 
-// ---- status bar -----------------------------------------------------------------------------
+// Status bar
 let statusTimer = null;
 const renderStatusSoon = () => { clearTimeout(statusTimer); statusTimer = setTimeout(renderStatus, 300); };
 function renderStatus() {
@@ -1598,7 +1598,7 @@ function renderStatus() {
   el.innerHTML = `<span>${back} backlink${back === 1 ? '' : 's'}</span><span>${words.toLocaleString('en-US')} words</span><span class="hide-sm">${chars.toLocaleString('en-US')} characters</span><span>${state}</span>`;
 }
 
-// ---- search & tags (left pane) -----------------------------------------------------------------
+// Search & tags (left pane)
 function setLeftTab(name) {
   S.leftTab = name;
   for (const n of ['files', 'search', 'tags', 'bookmarks']) $(`#left-${n}`).hidden = n !== name;
@@ -1644,7 +1644,7 @@ function renderTags() {
 }
 $('#tag-list').addEventListener('click', (e) => { const t = e.target.closest('[data-tag]'); if (t) searchFor(`tag:#${t.dataset.tag}`); });
 
-// ---- graph view -----------------------------------------------------------------------------------
+// Graph view
 // Docked on the right (the default layout): Topologies of Thoughts around the open note,
 // or the classic graph (this note's neighbourhood or the whole vault).
 const dock = { sim: null, key: '', topo: null, topoKey: '' };
@@ -1909,7 +1909,7 @@ function drawGraph(tab, wrap = null, { settings = S.graph, keep = null, sameTab 
   if (keep) keep(sim); else S.panes[S.focus].sim = sim;
 }
 
-// ---- Canvas: Obsidian's JSON Canvas boards (.canvas) ------------------------------------------------
+// Canvas: Obsidian's JSON Canvas boards (.canvas)
 // Cards (text, notes, images, links) and groups on an endless board, joined by arrows.
 // Drag to move, drag the corner to resize, drag a side dot onto another card to connect,
 // double-click the board for a new card, double-click a card to edit it, Delete removes.
@@ -2102,7 +2102,7 @@ function renderCanvas(view, tab) {
     if (label != null) { n.label = label; drawNodes(); save(); }
   }
 
-  // ---- pointer interactions ----
+  // Pointer interactions
   let drag = null;
   root.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.cv-tools, .cv-node-bar, textarea, a, [data-open]')) return;
@@ -2240,7 +2240,7 @@ function renderCanvas(view, tab) {
   if (tab.cv.fit) { tab.cv.fit = false; requestAnimationFrame(fit); }
 }
 
-// ---- Bases: table views of notes by their properties (.base, Obsidian's format) --------------------
+// Bases: table views of notes by their properties (.base, Obsidian's format)
 // Supported filters: file.inFolder("x"), file.hasTag("a"), file.hasLink("x"), file.hasProperty("p"),
 // prop.contains("x"), prop.isEmpty(), comparisons (prop == "x", file.name != "y", rating >= 3), with
 // and / or / not groups. Anything else is skipped and named above the table.
@@ -2489,7 +2489,7 @@ function baseYaml(tab, done) {
   };
 }
 
-// ---- quick switcher & command palette -----------------------------------------------------------------
+// Quick switcher & command palette
 function picker({ placeholder, items, onPick, footer }) {
   const { overlay, close } = modal(`<input class="q" placeholder="${esc(placeholder)}" spellcheck="false" autocomplete="off"><div class="list"></div><div class="foot">${footer}</div>`);
   const input = $('.q', overlay); const list = $('.list', overlay);
@@ -2536,7 +2536,7 @@ function quickSwitcher(newTab = false) {
   });
 }
 
-// ---- Git: sync with a private GitHub repo, opened as a vault in Obsidian ---------------------------
+// Git: sync with a private GitHub repo, opened as a vault in Obsidian
 const GIT_STATE = {
   OK: ['ok', 'Synced'], RETRY: ['busy', 'Will retry'], CONFLICT: ['bad', 'Conflict'], FAIL: ['bad', 'Problem'],
 };
@@ -2557,7 +2557,7 @@ async function gitDot() {
   } catch { /* ignore */ }
 }
 
-// ---- Vault updates: what agents propose, Lorium checked, waiting for the owner --------------
+// Vault updates: what agents propose, Lorium checked, waiting for the owner
 async function updatesDot() {
   try {
     const r = await fetch('/api/lrm/vault-updates', { credentials: 'same-origin' });
@@ -2741,7 +2741,7 @@ function palette() {
   });
 }
 
-// ---- panes, top bar, keyboard -----------------------------------------------------------------------
+// Panes, top bar, keyboard
 function setPane(side, open) {
   const body = $('#body');
   const cls = side === 'left' ? 'no-left' : 'no-right';
@@ -2789,7 +2789,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeMenus();
 });
 
-// ---- agents & start-up ------------------------------------------------------------------------------
+// Agents & start-up
 async function switchAgent(id) {
   await flushAll();
   stopGraph();

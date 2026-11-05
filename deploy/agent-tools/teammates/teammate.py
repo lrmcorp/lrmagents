@@ -68,7 +68,7 @@ class AskTeammate(BaseTool):
         "required": ["action"],
     }
 
-    # ---- who is asking ---------------------------------------------------------
+    # Who is asking
 
     def _session(self):
         model = getattr(self, "model", None)
@@ -92,7 +92,7 @@ class AskTeammate(BaseTool):
                                  "from the LRMagent console or the WhatsApp number's own chat (Message yourself).")
         return True, {"agentId": agent_id, "chat": chat}, ""
 
-    # ---- actions ---------------------------------------------------------------
+    # Actions
 
     def execute(self, args: dict) -> ToolResult:
         action = (args.get("action") or "").strip()

@@ -84,7 +84,7 @@ def whisper():
         return _whisper
 
 
-# ---- language --------------------------------------------------------------------------
+# Language
 _ID_WORDS = set("""yang dan di ini itu aku saya kamu anda tidak apa sudah akan bisa untuk dengan dari ke juga ada
 mau tolong terima kasih bagaimana kenapa kapan dimana siapa berapa hari ini besok kemarin sekarang nanti tapi atau
 karena jadi lagi sama banget gak nggak enggak dong ya kok sih deh nih buat bikin lihat cari kirim laporan rapat""".split())
@@ -192,7 +192,7 @@ def transcribe(data, lang=None):
     return {"text": text, "language": language, "duration": round(info.duration, 2)}
 
 
-# ---- http ------------------------------------------------------------------------------
+# Http
 class Handler(BaseHTTPRequestHandler):
     server_version = "lrm-voice"
 

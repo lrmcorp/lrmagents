@@ -18,7 +18,7 @@ const PAGE = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'publ
 const accounts = new Accounts();
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
-// ---- private vault (src/safe.js): kept in this container only, out of the agents' reach.
+// Private vault (src/safe.js): kept in this container only, out of the agents' reach.
 const SAFE_AGENT = LORIUM;
 const designated = await new Designated(process.env.DATA_DIR || '/data').load();
 useDesignated(designated);
@@ -37,10 +37,8 @@ const safe = await new Safe({
 onOwnerMessage((agentId) => (agentId === SAFE_AGENT ? safe.seen('WhatsApp') : null));
 setInterval(() => safe.tick(openerPage), Number(process.env.SAFE_TICK_MS || 5 * 60 * 1000)).unref();
 
-// Console use counts for the private vault only when it truly comes from the owner's
-// browser: through Caddy (checked by its address on the shared network, which nothing
-// can fake) from a public address that is not this server. An agent can call the
-// gateway, or even the public site from this server, but neither passes.
+// Console use counts for the private vault only through Caddy (checked by its address) from a public
+// client that is not this server, so an agent cannot fake the owner being around.
 const SERVER_IPS = new Set(String(process.env.SERVER_PUBLIC_IP || '').split(',').map((x) => x.trim()).filter(Boolean));
 let caddyIps = { at: 0, ips: null };
 async function caddyAddresses() {

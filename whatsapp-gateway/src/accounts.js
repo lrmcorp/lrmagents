@@ -678,10 +678,8 @@ export class Accounts {
     await this.deliver(account.agentId, mine ? `${mine}@s.whatsapp.net` : `${bareJid(account.sock.user.id)}@s.whatsapp.net`, text);
   }
 
-  // A message the agent sends on its own (a scheduled report, a reminder), not a reply. Only
-  // to the owner, designated contacts, ticked groups, and approved people who talk with this
-  // agent, so a misled agent can't use the number to message strangers. The scheduler
-  // retries on errors; the key makes sure a retry never sends twice.
+  // A message the agent sends on its own (report, reminder): only to the owner, designated contacts,
+  // ticked groups and approved people who talk with it. The key de-duplicates scheduler retries.
   async deliver(agentId, chat, text) {
     const account = this.get(agentId);
     if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });

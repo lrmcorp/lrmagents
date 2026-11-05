@@ -79,11 +79,8 @@ exec 9>"$BASE/lock"
 flock -n 9 || { log "another sync is running; skipping"; exit 0; }
 [[ -f "$KEY" || -n "${VAULT_REMOTE_URL:-}" ]] || finish FAIL "no deploy key at $KEY"
 
-# Every agent can read the vault, and it must never be published: refuse to sync with a
-# repository anyone can see. GitHub's API answers 200 without sign-in only for a public
-# repository (404 for a private one). A network error is not proof either way.
-# Only a clear "not found" (private) lets the sync go ahead: a rate limit, a redirect or no
-# answer could hide a public repository.
+# The vault must never be published: sync only when GitHub confirms the repo is private (404).
+# A 200 means public; a rate limit, a redirect or no answer proves nothing.
 if [[ -z "${VAULT_REMOTE_URL:-}" ]]; then
   visibility=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://api.github.com/repos/$REPO" || true)
   [[ "$visibility" == 200 ]] && finish FAIL "the repository $REPO is public: make it private on GitHub (Settings → General → Danger Zone → Change visibility); nothing was synced"

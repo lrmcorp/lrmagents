@@ -76,7 +76,7 @@ def headers_for(url):
     return {}
 
 
-# ---- plans as the last fallback ------------------------------------------------------
+# Plans as the last fallback
 # When the main model and its configured fallbacks fail (out of credit, outage), the
 # owner's own chats continue on a signed-in plan. Other chats never use the plans.
 FALLBACK = os.environ.get("LRMAGENT_PLANS_FALLBACK", "on").lower() not in ("0", "off", "false", "no")

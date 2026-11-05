@@ -108,7 +108,7 @@
   function toast(t) { const el = $('#toast'); el.textContent = t; el.title = 'Tap to close'; el.onclick = () => { el.style.display = 'none'; }; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => { el.style.display = 'none'; }, Math.max(6000, String(t).length * 60)); }
   function setState(s, label) { S.state = s; $('#state').textContent = label || ({ idle: 'tap to talk', listening: 'listening', thinking: 'thinking', speaking: 'speaking' }[s] || s); }
 
-  // ---- the orb ---------------------------------------------------------------------
+  // The orb
   const cv = $('#orb'); const g = cv.getContext('2d'); let t0 = performance.now();
   function size() { const d = Math.min(devicePixelRatio || 1, 2); const r = cv.getBoundingClientRect(); cv.width = r.width * d; cv.height = r.height * d; g.setTransform(d, 0, 0, d, 0, 0); }
   addEventListener('resize', () => { size(); if (S.panels) showHud(S.panels); }); size();
@@ -163,7 +163,7 @@
   }
   requestAnimationFrame(draw);
 
-  // ---- audio in ----------------------------------------------------------------------
+  // Audio in
   async function mic() {
     if (S.stream) return S.stream;
     S.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -206,7 +206,7 @@
   }
   const SILENCE_MS = 1300; // this long a pause after speaking ends the recording
 
-  // ---- live transcription in the browser (Chrome, Edge, Safari) -------------------------
+  // Live transcription in the browser (Chrome, Edge, Safari)
   // It writes down what the owner says while they speak, so the words are ready the moment
   // they stop; the server (Whisper) is only the fallback, as it needs several seconds.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -314,7 +314,7 @@
     setTimeout(() => { if (S.conversation && !S.rec && !S.busy && !S.speaking) startRec(); }, 350);
   }
 
-  // ---- talking to the assistant ------------------------------------------------------
+  // Talking to the assistant
   async function ask(text, { lang = '', image = null } = {}) {
     S.busy = true; $('#you').textContent = text ? `“${text}”` : ''; $('#it').textContent = ''; setState('thinking');
     try {
@@ -331,14 +331,14 @@
     } catch (e) { S.busy = false; S.conversation = false; setState('idle'); toast(e.message); }
   }
 
-  // ---- audio out: sentence by sentence, so it starts talking quickly --------------------
+  // Audio out: sentence by sentence, so it starts talking quickly
   function sentences(text) { return (text.match(/[^.!?。！？]+[.!?。！？]*/g) || [text]).map((s) => s.trim()).filter(Boolean).reduce((a, s) => { if (a.length && (a[a.length - 1] + ' ' + s).length < 140) a[a.length - 1] += ' ' + s; else a.push(s); return a; }, []); }
   async function tts(text, lang) {
     const r = await fetch('/api/lrm/voice?op=tts', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text, lang }) });
     if (!r.ok) { let m = `HTTP ${r.status}`; try { m = (await r.json()).error || m; } catch { /* audio */ } throw new Error(m); }
     return r.arrayBuffer();
   }
-  // ---- the device's own voices: they start at once (the server needs seconds per sentence) --
+  // The device's own voices: they start at once (the server needs seconds per sentence)
   const FEMALE = /female|samantha|karen|moira|tessa|serena|victoria|zira|aria|jenny|ava|allison|susan|fiona|veena|damayanti|tingting|meijia|sinji|xiaoxiao|xiaoyi|huihui|yaoyao|google (uk english female|us english|bahasa indonesia|普通话|國語)/i;
   const MALE = /\bmale\b|daniel|alex|fred|thomas|rishi|aaron|arthur|gordon|oliver|reed|rocko|eddy|grandpa|ralph|albert|bruce|junior|kangkang|yunyang|yunxi|ardi/i;
   function guessLang(text) {
@@ -413,7 +413,7 @@
   }
   function stopSpeaking() { const t = S.speaking; S.speaking = null; S.out = 0; if (t?.stop) t.stop(); }
 
-  // ---- HUD panels --------------------------------------------------------------------
+  // HUD panels
   function chart(labels, values) {
     const max = Math.max(1, ...values.map(Number).filter(Number.isFinite)); const n = values.length || 1; const bw = 100 / n;
     return `<svg viewBox="0 0 100 60" preserveAspectRatio="none">${values.map((v, i) => { const h = (Number(v) || 0) / max * 48; return `<rect x="${i * bw + bw * 0.18}" y="${52 - h}" width="${bw * 0.64}" height="${h}" fill="#f4f4f6"/>`; }).join('')}
@@ -445,7 +445,7 @@
     });
   }
 
-  // ---- camera: live object boxes, and "what do you see" -----------------------------
+  // Camera: live object boxes, and "what do you see"
   async function camera(on) {
     const box = $('#cam'); const video = $('#video');
     $('#camera').setAttribute('aria-pressed', String(on));
@@ -494,7 +494,7 @@
     c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.82);
   }
 
-  // ---- controls ----------------------------------------------------------------------
+  // Controls
   const talk = $('#talk'); let pressAt = 0;
   talk.addEventListener('pointerdown', (e) => {
     e.preventDefault(); unlock(); pressAt = Date.now();

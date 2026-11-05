@@ -120,7 +120,7 @@ def find(url):
     return best
 
 
-# ---- signing in -----------------------------------------------------------------------------
+# Signing in
 
 _USER_SEL = ("input[autocomplete=username]:visible, input[type=email]:visible, "
              "input[name*=user i]:visible, input[id*=user i]:visible, input[name*=email i]:visible, input[id*=email i]:visible, "

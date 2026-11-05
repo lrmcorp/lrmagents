@@ -58,7 +58,7 @@ def _connect():
     return conn
 
 
-# ---- what counts as risky -------------------------------------------------------
+# What counts as risky
 
 _SECRET = re.compile(r"(sk-[A-Za-z0-9_-]{12,}|sk-ant-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}"
                      r"|xox[abp]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{30,}"
@@ -162,7 +162,7 @@ def risk(tool, args, mode, refs=None):
     return ""
 
 
-# ---- settings ---------------------------------------------------------------------
+# Settings
 
 def get_mode():
     try:
@@ -180,7 +180,7 @@ def set_mode(mode):
         conn.execute("INSERT INTO settings (key, value) VALUES ('mode', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (mode,))
 
 
-# ---- the owner driving the browser ---------------------------------------------------------
+# The owner driving the browser
 
 BROWSER_IDLE_RELEASE = 180  # the owner's browser turn ends after 3 idle minutes (or when they leave the page)
 _browser = {"who": "agent", "since": 0.0, "last": 0.0}
@@ -226,7 +226,7 @@ def _wait_for_browser(executor, tool_call_id):
     return "The owner is still using the browser, so this browser action did not run. Ask them to press Hand back on the Browser page."
 
 
-# ---- approvals ------------------------------------------------------------------------
+# Approvals
 
 def _where(executor):
     model = getattr(executor, "model", None)
@@ -374,7 +374,7 @@ def gate(executor, tool_name, arguments, tool_call_id):
         return "LRMagent's safety check could not run for this action, so it did not run. Try again in a moment."
 
 
-# ---- the log ---------------------------------------------------------------------------
+# The log
 
 _last_prune = [0.0]
 

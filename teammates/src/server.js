@@ -24,7 +24,7 @@ const ASSETS = {
   'addon-fit.js': ['node_modules/@xterm/addon-fit/lib/addon-fit.js', 'text/javascript'],
 };
 
-// ---- settings (chosen model per teammate) --------------------------------------
+// Settings (chosen model per teammate)
 const SETTINGS_FILE = path.join(DATA, 'settings.json');
 let saved = {};
 try { saved = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')); } catch { /* first start */ }
@@ -56,7 +56,7 @@ function prepareHome() {
   if (RUN_AS.uid != null) for (const p of [path.join(HOME, '.config'), dir, file]) fs.chownSync(p, RUN_AS.uid, RUN_AS.gid);
 }
 
-// ---- status cache ---------------------------------------------------------------
+// Status cache
 let cache = { at: 0, rows: [] };
 async function teammateRows(force = false) {
   if (!force && Date.now() - cache.at < 60_000) return cache.rows;
@@ -70,7 +70,7 @@ async function teammateRows(force = false) {
   return rows;
 }
 
-// ---- helpers ---------------------------------------------------------------------
+// Helpers
 function send(res, code, body, type = 'application/json; charset=utf-8') {
   const data = typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body);
   res.writeHead(code, { 'Content-Type': type, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin' });
@@ -111,7 +111,7 @@ async function consoleUser(cookie) {
   } catch { return false; }
 }
 
-// ---- routes ----------------------------------------------------------------------
+// Routes
 async function route(req, res) {
   const url = new URL(req.url, 'http://teammates');
   const p = url.pathname;
@@ -195,7 +195,7 @@ const server = http.createServer((req, res) => {
   route(req, res).catch((e) => send(res, e.status || 500, { error: e.message || 'error' }));
 });
 
-// ---- terminals: sign-in flows and a shell, in a real terminal --------------------
+// Terminals: sign-in flows and a shell, in a real terminal
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const terminals = new Set();
 server.on('upgrade', async (req, socket, head) => {

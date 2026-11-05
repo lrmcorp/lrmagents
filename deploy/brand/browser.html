@@ -148,7 +148,7 @@ $('#go').addEventListener('submit', async (e) => {
 $('#control').addEventListener('click', async () => {
   try { const d = await post({ op: 'control', take: state.control?.who !== 'owner' }); state.control = d.control; renderState(); toast(state.control.who === 'owner' ? 'You are driving; agents wait' : 'Handed back to the agents'); } catch (e) { toast(e.message, true); }
 });
-// ---- keep signed in ---------------------------------------------------------------
+// Keep signed in
 const ST = { signed_in: 'Signed in', signed_out: 'Signed out', error: 'Could not check', unchecked: 'Not checked yet' };
 async function keepPanel() {
   const get = async () => (await (await fetch('/api/lrm/browser?op=keep', { credentials: 'same-origin' })).json());

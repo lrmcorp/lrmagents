@@ -38,7 +38,7 @@ DIGEST_HOUR = 20  # the daily list of small corrections saved on their own
 SMALL_RATIO = 0.9  # an edit keeping this much of the note (and few lines changed) counts as small
 SMALL_LINES = 12
 
-# ---- secrets never go into the shared vault -------------------------------------------
+# Secrets never go into the shared vault
 _SECRET_PATTERNS = (
     (r"(?i)\b(password|passwd|pwd|passcode|kata ?sandi|sandi|pin|otp|cvv|cvc|secret|api[ _-]?key|token)\b\s*[:=]\s*\S{3,}", "a password, PIN or key"),
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "a private key"),
@@ -162,7 +162,7 @@ def _view(p):
     return p
 
 
-# ---- steps -----------------------------------------------------------------------------
+# Steps
 
 def propose(agent_id, session_id, title, content, summary, folder="", path="", sources=None):
     content = str(content or "").strip()
@@ -358,7 +358,7 @@ def recent(n=30):
     return [_view(i) for i in list(reversed(_load()))[:n]]
 
 
-# ---- the people in the loop ------------------------------------------------------------
+# The people in the loop
 
 def _token_port():
     from config import conf
@@ -398,7 +398,7 @@ def _send_owner(text):
     urllib.request.urlopen(req, timeout=30).read()
 
 
-# ---- reminders, expiry and the daily digest ----------------------------------------------
+# Reminders, expiry and the daily digest
 
 def housekeeping(now=None, send=None):
     """Runs every half hour: one reminder for updates waiting 3 days, expiry after 14,
@@ -487,7 +487,7 @@ def _notify_owner(item):
         logger.info(f"[VaultFlow] owner not notified on WhatsApp: {e}")
 
 
-# ---- only the flow writes knowledge/ ----------------------------------------------------
+# Only the flow writes knowledge/
 
 _WRITE_TOOLS = ("write", "edit")
 _SHELL_WRITE = re.compile(r"(>|\btee\b|\bmv\b|\bcp\b|\brm\b|\bsed\s+-i|\btruncate\b|\bmkdir\b|\btouch\b|\bln\b|\brsync\b|\bgit\b)")

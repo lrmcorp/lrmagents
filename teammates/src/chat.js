@@ -74,10 +74,8 @@ function run(t, { dir, prompt, model, resume, lastFile }) {
   });
 }
 
-// ---- LRMagent's tools, offered to the CLI ------------------------------------------
-// The CLI can't call LRMagent's tools directly, so they are listed in the prompt and the
-// CLI asks for them with <lrm_tool>{...}</lrm_tool>; those become OpenAI tool_calls, and
-// the results come back in the next request as role "tool" messages.
+// LRMagent's tools for the CLI: listed in the prompt, asked for as <lrm_tool>{...}</lrm_tool>,
+// turned into OpenAI tool_calls; the results come back as role "tool" messages.
 
 function toolCatalogue(tools) {
   const lines = [];

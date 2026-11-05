@@ -19,7 +19,7 @@ const TAG = /(^|[\s(])#([\p{L}_][\p{L}\p{N}_/-]*)/gu;
 const MARK = /==([^=\n](?:[^\n]*?[^=\n])?)==/g;
 const INLINE_MATH = /(^|[^\\$])\$([^\s$](?:[^$\n]*?[^\s$])?)\$(?!\d)/g;
 
-// ---- widgets -----------------------------------------------------------------------
+// Widgets
 
 class Checkbox extends WidgetType {
   constructor(checked, pos) { super(); this.checked = checked; this.pos = pos; }
@@ -74,7 +74,7 @@ class Rendered extends WidgetType {
   ignoreEvent() { return false; }
 }
 
-// ---- inline live preview (view plugin) ------------------------------------------------------
+// Inline live preview (view plugin)
 
 function activeLines(state) {
   const lines = new Set();
@@ -229,7 +229,7 @@ function inlinePreview(opts) {
   }, { decorations: (v) => v.decorations });
 }
 
-// ---- block live preview: Mermaid diagrams and $$math$$ (state field: block widgets) ----
+// Block live preview: Mermaid diagrams and $$math$$ (state field: block widgets)
 
 function buildBlocks(state, opts) {
   const o = opts.get();
@@ -280,7 +280,7 @@ function blockPreview(opts) {
   });
 }
 
-// ---- look -----------------------------------------------------------------------------------
+// Look
 
 const highlight = HighlightStyle.define([
   { tag: t.heading, fontWeight: '700' },
@@ -333,7 +333,7 @@ const theme = EditorView.theme({
   '.cm-lrm-mermaid, .cm-lrm-mathblock': { display: 'block', textAlign: 'center', padding: '8px 0' },
 });
 
-// ---- the editor -------------------------------------------------------------------------------
+// The editor
 
 export function create(parent, cfg) {
   let current = { live: cfg.livePreview !== false, resolve: cfg.resolve, fileUrl: cfg.fileUrl, render: cfg.render };

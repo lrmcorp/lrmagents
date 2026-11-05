@@ -61,7 +61,7 @@ Chat ({where}, {when}):
 {conversation}"""
 
 
-# ---- state ----------------------------------------------------------------------------
+# State
 
 def _state_file():
     from config import get_data_root
@@ -84,7 +84,7 @@ def _save_state(state):
     os.replace(tmp, path)
 
 
-# ---- reading chats ----------------------------------------------------------------------
+# Reading chats
 
 def _secs(value):
     value = int(value or 0)
@@ -146,7 +146,7 @@ def _where(session_id, channel):
     return channel or "web", "the LRMagent console", ""
 
 
-# ---- asking a model ----------------------------------------------------------------------
+# Asking a model
 
 def _ask_main(prompt):
     # Name this job so the plans fallback accepts it (owner work, like the brief).
@@ -213,7 +213,7 @@ def _parse(raw):
     return data if isinstance(data, dict) else None
 
 
-# ---- writing notes -----------------------------------------------------------------------
+# Writing notes
 
 def _clean(value, limit=400):
     text = re.sub(r"\s+", " ", str(value or "")).strip()
@@ -284,7 +284,7 @@ def hidden_from(session_id, path):
     return not owner_session(session_id)[0]
 
 
-# ---- the loop ---------------------------------------------------------------------------
+# The loop
 
 def summarise_pass():
     from agent.memory.conversation_store import get_conversation_store

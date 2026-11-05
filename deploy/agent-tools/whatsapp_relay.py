@@ -54,10 +54,8 @@ class WhatsAppRelay:
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             method="POST",
         )
-        # Raising makes the scheduler keep the task and retry on its next tick
-        # (e.g. while the phone is offline or the number is relinking). A refusal
-        # (400/403: not a chat this agent may message) is final: retrying can't help.
-        # The gateway de-duplicates, so a retry after a timeout never sends twice.
+        # Raising keeps the task for the next tick (phone offline); a 400/403 refusal is final.
+        # The gateway de-duplicates, so a retry never sends twice.
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if response.status != 200:
@@ -81,11 +79,8 @@ def relay_for(receiver):
     return WhatsAppRelay(agent_id, chat)
 
 
-# ---- WhatsApp as a delivery channel in the console's Tasks form ---------------------
-# Upstream's task form only lists its own IM integrations. LRMagent's WhatsApp numbers
-# live in the gateway, so each linked number is offered as an instance ("lrm-wa:<agent>")
-# whose recipients are the owner and the designated contacts. Delivery goes through the
-# relay above, so the gateway's rules (owner and designated contacts only) still apply.
+# WhatsApp numbers as delivery channels in the Tasks form (instances "lrm-wa:<agent>"); delivery
+# goes through the relay above, so the gateway's rules still apply.
 
 INSTANCE_PREFIX = "lrm-wa:"
 
@@ -166,7 +161,7 @@ def instance_agent(instance_id):
     return instance_id[len(INSTANCE_PREFIX):] if instance_id.startswith(INSTANCE_PREFIX) else ""
 
 
-# ---- several recipients for one scheduled task ----------------------------------------------
+# Several recipients for one scheduled task
 # The agent works once; the result goes to each recipient (the owner, designated contacts,
 # ticked groups) through the same WhatsApp number. action["receivers"] lists them all.
 

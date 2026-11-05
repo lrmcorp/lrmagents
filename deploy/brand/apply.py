@@ -29,7 +29,7 @@ def pair(cls, black, white, alt):
             f'<img src="/assets/brand/{white}" alt="" aria-hidden="true" class="{cls} lrm-on-dark">')
 
 
-# ---- Color theme: built-in, listed first after the stock one, selected by default.
+# Color theme: built-in, listed first after the stock one, selected by default.
 patch("static/js/core/themes.js",
       "const BUILTIN_COLOR_THEMES = [\n",
       "const BUILTIN_COLOR_THEMES = [\n    " + json.dumps(theme) + ",\n")
@@ -41,7 +41,7 @@ patch("static/js/core/themes.js",
 patch("chat.html", "localStorage.getItem('cow_theme') || 'dark';", "localStorage.getItem('cow_theme') || 'light';")
 patch("static/js/core/theme.js", "|| window.__COW_DEFAULT_THEME__ || 'dark';", "|| window.__COW_DEFAULT_THEME__ || 'light';")
 
-# ---- Stylesheet and layout script: the OpenBot-style shell (Inter, the stock font)
+# Stylesheet and layout script: the OpenBot-style shell (Inter, the stock font)
 # loads after themes.css and after the console's own scripts.
 patch("chat.html", '<script defer src="/assets/js/workspace.js"></script>',
       '<script defer src="/assets/js/workspace.js"></script>\n    <script defer src="/assets/brand/shell.js"></script>')
@@ -50,7 +50,7 @@ patch("chat.html",
       '<link rel="stylesheet" href="/assets/css/themes.css">\n'
       '    <link rel="stylesheet" href="/assets/brand/brand.css">')
 
-# ---- English only: every language lookup resolves to English.
+# English only: every language lookup resolves to English.
 for page in ("chat.html", "templates/guest/page.html"):
     patch(page,
           "window.__cowNormalizeLang__ = function(raw) {",
@@ -61,7 +61,7 @@ patch("static/js/views/config.js",
       "[{ value: 'zh', label: '简体中文' }, { value: 'zh-Hant', label: '繁體中文' }, { value: 'en', label: 'English' }]",
       "[{ value: 'en', label: 'English' }]")
 
-# ---- Brand marks.
+# Brand marks.
 patch("templates/layout/sidebar.html",
       '<span class="text-white font-semibold text-sm truncate">CowAgent</span>\n'
       '                    <span class="text-neutral-500 text-xs" data-i18n="console">控制台</span>',
@@ -76,7 +76,7 @@ patch("templates/layout/login.html",
       '<img src="/assets/logo.jpg" alt="CowAgent" class="w-16 h-16 rounded-2xl mb-4 shadow-lg">',
       pair("lrm-wordmark mb-4", "wordmark.png", "wordmark-white.png", LEGAL))
 
-# ---- Name: every visible upstream product name in the console and its /config title.
+# Name: every visible upstream product name in the console and its /config title.
 for rel in ("chat.html", "templates/layout/sidebar.html", "templates/layout/login.html",
             "templates/views/chat.html", "static/js/chat/new-chat.js", "static/js/chat/state.js",
             "static/js/chat/send.js", "static/js/boot.js", "static/js/views/shares.js",
@@ -86,7 +86,7 @@ for rel in ("chat.html", "templates/layout/sidebar.html", "templates/layout/logi
 # yet (upstream then ignores DEFAULT_AGENT_NAME on the Agents page).
 patch("agent/registry.py", 'name=builtin_name or "CowAgent",', f'name=builtin_name or "{NAME}",', root=app)
 
-# ---- WhatsApp: a built-in menu entry after Channels that opens the gateway page
+# WhatsApp: a built-in menu entry after Channels that opens the gateway page
 # (/whatsapp/) inside the console. The sidebar is drawn from a menu document, so
 # the entry is merged into it (and restored if a saved menu lacks it).
 patch("static/js/core/menu.js",
@@ -150,7 +150,7 @@ function _lrmGroup(doc) {
 
 function _menuMergeStock(saved) {""")
 
-# ---- Memory recall: OpenClaw's tighter default of 6 results (snippets are up to
+# Memory recall: OpenClaw's tighter default of 6 results (snippets are up to
 # 500 characters each), so a lookup costs ~3k characters instead of ~5k.
 for old, new in (('"description": "Maximum number of results to return (default: 10)",',
                   '"description": "Maximum number of results to return (default: 6)",'),
@@ -158,7 +158,7 @@ for old, new in (('"description": "Maximum number of results to return (default:
                  ('max_results = args.get("max_results", 10)', 'max_results = args.get("max_results", 6)')):
     patch("agent/tools/memory/memory_search.py", old, new, root=app)
 
-# ---- Second brain: the knowledge wiki is kept as an Obsidian-compatible vault.
+# Second brain: the knowledge wiki is kept as an Obsidian-compatible vault.
 patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conventions (Obsidian-compatible)
 
 `knowledge/` doubles as an Obsidian vault, so keep every page valid Obsidian Markdown:
@@ -175,9 +175,9 @@ patch("skills/knowledge-wiki/SKILL.md", "## Core Operations", """## Vault conven
 - Never read the whole vault, or long pages end to end, to answer a question.
 
 ## Core Operations""", root=app)
-# ---- English only: the regenerated knowledge/index.md is headed in Chinese upstream.
+# English only: the regenerated knowledge/index.md is headed in Chinese upstream.
 patch("agent/knowledge/service.py", 'lines = ["# 知识库目录", ""]', 'lines = ["# Knowledge Index", ""]', root=app)
-# ---- switch_model tool (deploy/agent-tools/model_switch, copied in by the Dockerfile):
+# Switch_model tool (deploy/agent-tools/model_switch, copied in by the Dockerfile):
 # register it so every agent can change model when asked in chat.
 patch("agent/tools/__init__.py",
       "from agent.tools.subagent.subagent import SubagentTool\n",
@@ -192,7 +192,7 @@ patch("agent/tools/__init__.py",
       "from agent.tools.site_login.site_login import SiteLogin\n"
       "from agent.tools.chat_monitor.chat_monitor import ChatMonitor\n", root=app)
 patch("agent/tools/__init__.py", "    'SubagentTool',\n", "    'SubagentTool',\n    'ModelSwitch',\n    'TranscribeAudio',\n    'AskTeammate',\n    'GoogleTool',\n    'WhatsAppTool',\n    'AskAgent',\n    'VaultUpdate',\n    'SiteLogin',\n    'ChatMonitor',\n", root=app)
-# ---- Scheduled messages from WhatsApp chats go back to WhatsApp through the
+# Scheduled messages from WhatsApp chats go back to WhatsApp through the
 # gateway (deploy/agent-tools/whatsapp_relay.py, installed as channel/lrm_whatsapp_relay.py).
 patch("agent/tools/scheduler/integration.py",
       'def _resolve_delivery_channel(channel_type: str, instance_id: str = "", receiver: str = ""):\n',
@@ -200,7 +200,7 @@ patch("agent/tools/scheduler/integration.py",
       '    if channel_type == "openai_api":\n'
       '        from channel.lrm_whatsapp_relay import relay_for\n'
       '        return relay_for(receiver)\n', root=app)
-# ---- Lock-down: settings the deployment owns can't be changed from the console.
+# Lock-down: settings the deployment owns can't be changed from the console.
 # The password comes from the COWAGENT_WEB_PASSWORD secret; clearing it in the
 # UI would turn login off on a public console whose agent can run commands.
 patch("api/config.py", '"self_evolution_enabled", "web_password",', '"self_evolution_enabled",')
@@ -222,7 +222,7 @@ patch("bridge/agent_bridge.py",
       'agent.apply_permission_mode('
       '("read-only" if (permission_mode or prefs.get("permission")) == "read-only" else "workspace-write") '
       'if str(session_id).startswith("openai:") else (permission_mode or prefs.get("permission")))', root=app)
-# ---- Usage: every model call's tokens are recorded per agent/model/channel
+# Usage: every model call's tokens are recorded per agent/model/channel
 # (agent/lrm_usage.py) and served to the Usage page (channel/web/api/lrm_usage.py).
 patch("agent/protocol/agent_stream.py",
       "        if snapshot:\n            self.run_usage = self._merge_usage(self.run_usage, snapshot)\n",
@@ -252,13 +252,13 @@ patch("web_channel.py", "    '/api/update/status', 'UpdateStatusHandler',\n",
       "    '/api/lrm/chats', 'LrmChatsHandler',\n"
       "    '/api/lrm/vault-updates', 'LrmVaultUpdatesHandler',\n"
       "    '/api/lrm/busy', 'LrmBusyHandler',\n")
-# ---- Plain-language errors: a failed model call showed the provider's raw JSON in
+# Plain-language errors: a failed model call showed the provider's raw JSON in
 # the chat; agent/lrm_errors.py (deploy/agent-tools) explains it instead. Logs keep the raw text.
 patch("agent/protocol/agent_stream.py",
       '            self._emit_event("error", {"error": str(e)})\n',
       '            from agent.lrm_errors import friendly as _lrm_friendly\n'
       '            self._emit_event("error", {"error": _lrm_friendly(e, getattr(self.model, "model", None))})\n', root=app)
-# ---- Approvals and activity log (agent/lrm_activity.py): risky tool calls wait for the
+# Approvals and activity log (agent/lrm_activity.py): risky tool calls wait for the
 # owner's OK, and every call is logged for the Activity page.
 patch("agent/protocol/agent_stream.py",
       """        if not own_cards:
@@ -291,13 +291,13 @@ patch("agent/protocol/agent_stream.py",
       "            # Record failure\n            self._record_tool_result(tool_name, arguments, False)\n",
       "            # Record failure\n            self._record_tool_result(tool_name, arguments, False)\n"
       "            _lrm_record(self, tool_name, arguments, error_result)\n", root=app)
-# ---- Watchable browser: agents hand logins, CAPTCHAs and 2FA to the owner, who can watch
+# Watchable browser: agents hand logins, CAPTCHAs and 2FA to the owner, who can watch
 # and drive on the console's Browser page (channel/web/api/lrm_browser.py).
 patch("agent/tools/browser/browser_tool.py",
       '"For login/CAPTCHA/authorization etc., screenshot and ask the user for help. "',
       '"For login/CAPTCHA/2FA/authorization etc., ask the user to do that step themselves on the console\'s Browser page "'
       '"(they can watch the page live and take over), and continue when they say it is done. "', root=app)
-# ---- Sandbox (agent/lrm_sandbox.py): WhatsApp and API chats run shell commands in the
+# Sandbox (agent/lrm_sandbox.py): WhatsApp and API chats run shell commands in the
 # sandbox container, away from LRMagent's secrets; background jobs stay console-only.
 patch("agent/tools/bash/bash.py",
       "            if run_in_background:\n                # Ownership of temp_script_path passes to the registry",
@@ -320,28 +320,23 @@ patch("agent/tools/bash/bash.py",
                 if result is None:
                     result = self._run_streaming(command, timeout, env, dotenv_vars)
 """, root=app)
-# ---- Logs: upstream masks settings named *key*/*secret* only, so the console
+# Logs: upstream masks settings named *key*/*secret* only, so the console
 # password and the internal API token were written to run.log in clear text.
 patch("config.py", 'if ("key" in k or "secret" in k) and isinstance(v, str):',
       'if any(word in k for word in ("key", "secret", "password", "token")) and isinstance(v, str):', root=app)
-# ---- Login lockout per visitor: behind Caddy every request comes from Caddy's
-# private Docker address, which upstream doesn't treat as a proxy, so all
-# visitors shared one lockout and 5 wrong guesses by anyone locked the owner out.
-# The console is reachable only through Caddy or the host's loopback port, so a
-# private-network peer is our proxy and its X-Forwarded-For is the real client.
+# Login lockout per visitor: behind Caddy every request came from one private address, so anyone's
+# 5 wrong guesses locked the owner out. Only Caddy or loopback reach the console: trust their X-Forwarded-For.
 patch("core/_common.py",
       'if addr in ("::1", "::ffff:127.0.0.1") or addr.startswith("127."):',
       'if addr in ("::1", "::ffff:127.0.0.1") or addr.startswith(("127.", "10.", "172.", "192.168.")):')
-# ---- Files the agent sends (send tool) reach chat-API replies as links to their
+# Files the agent sends (send tool) reach chat-API replies as links to their
 # local path; the WhatsApp gateway turns those into real attachments. Upstream
 # only links files when a cloud URL exists, so self-hosted API replies lost them.
 patch("agent/chat/service.py",
       '                url = data.get("url") or ""\n',
       '                url = data.get("url") or (data.get("path") if channel_type == "openai_api" else "") or ""\n', root=app)
-# ---- Your plans as chat models: the teammates service answers chat requests on the
-# owner's signed-in plans (agent/lrm_plans.py). It is a virtual custom provider that
-# never lands in config, listed in the model picker while a plan is signed in, and
-# each request names its chat so the CLI keeps one session per conversation.
+# Your plans as chat models (agent/lrm_plans.py): a virtual custom provider shown while a plan is
+# signed in; each request names its chat so the CLI keeps one session per conversation.
 patch("models/custom_provider.py",
       '    if not providers or not provider_id:\n        return None\n    for p in providers:',
       '    if provider_id == "lrmplans":\n        from agent.lrm_plans import provider as _lrm_plans\n        return _lrm_plans()\n'
@@ -369,7 +364,7 @@ patch("agent/protocol/agent_stream.py",
 patch("agent/protocol/agent_stream.py",
       '        finally:\n            _ACTIVE_RUN_MODELS.reset(_active_token)\n',
       '        finally:\n            _ACTIVE_RUN_MODELS.reset(_active_token)\n            _lrm_plans_end(_lrm_plans_token)\n', root=app)
-# ---- Skills from GitHub also accept what skill directories publish: an
+# Skills from GitHub also accept what skill directories publish: an
 # `npx skills add owner/repo` line or a skills.sh link (agent/lrm_skills.py).
 patch("api/skills.py",
       '    if source == "github":\n        if value.startswith(',
@@ -385,7 +380,7 @@ patch("static/js/core/i18n.js", "skill_value_github: 'Repository or folder URL'"
 patch("static/js/core/i18n.js", "skill_hint_github: 'A repository URL, a folder URL (/tree/branch/path), or owner/repo'",
       "skill_hint_github: 'A repository URL, a folder URL (/tree/branch/path), owner/repo, a skills.sh link, or an npx skills add command'")
 patch("static/js/views/skills.js", "https://github.com/owner/repo/tree/main/skills/my-skill", "https://github.com/owner/repo  ·  npx skills add owner/repo")
-# ---- Skills installed from the console go to every agent (agent/lrm_skills.py).
+# Skills installed from the console go to every agent (agent/lrm_skills.py).
 patch("api/skills.py",
       '                    _record_staged_fields(staged["dir"], installed, service)\n',
       '                    _record_staged_fields(staged["dir"], installed, service)\n'
@@ -396,7 +391,7 @@ patch("api/skills.py",
       '                service.manager.refresh_skills()\n'
       '                from agent.lrm_skills import share_with_all as _lrm_share\n'
       '                _lrm_share(result.installed, agent_id)\n                # What the caller knows')
-# ---- Chat notes (agent/lrm_memory.py) are the owner's: WhatsApp contacts and API
+# Chat notes (agent/lrm_memory.py) are the owner's: WhatsApp contacts and API
 # callers neither find them in memory_search nor open them with memory_get.
 patch("agent/tools/memory/memory_search.py",
       '            if not results:\n',
@@ -410,7 +405,7 @@ patch("agent/tools/memory/memory_get.py",
       '        if path and _lrm_hidden(getattr(getattr(self, "model", None), "session_id", ""), path):\n'
       '            return ToolResult.fail("Chat notes are private to the owner, so they can\'t be opened from this chat.")\n'
       '        if not path:\n', root=app)
-# ---- Chat API failures say why (out of credit, key rejected, ...) instead of a bare
+# Chat API failures say why (out of credit, key rejected, ...) instead of a bare
 # "failed", so the WhatsApp gateway can tell the owner (agent/lrm_errors.py).
 patch("api/openai_compat.py",
       '        logger.exception("[OpenAI API] Chat completion failed")\n        raise OpenAIAPIError(\n'
@@ -420,7 +415,7 @@ patch("api/openai_compat.py",
       '            500, _lrm_friendly(error), "internal_error"\n        ) from error')
 patch("api/openai_compat.py", '"CowAgent failed to complete the request."', '"LRMagent failed to complete the request."', count="all")
 patch("api/openai_compat.py", '"CowAgent timed out before producing a response."', '"LRMagent timed out before producing a response."')
-# ---- The owner's signed-in plans are the last fallback for the owner's own chats.
+# The owner's signed-in plans are the last fallback for the owner's own chats.
 patch("bridge/agent_bridge.py",
       '            chain.append({"provider": provider, "model": model})\n        return {"chain": chain}\n',
       '            chain.append({"provider": provider, "model": model})\n'
@@ -433,31 +428,31 @@ patch("bridge/agent_bridge.py",
       '        if not isinstance(raw, dict) or not raw.get("enabled"):\n            return empty\n',
       '        if not isinstance(raw, dict) or not raw.get("enabled"):\n'
       '            raw = {"enabled": True, "chain": []}  # LRMagent: the plans below may still apply\n', root=app)
-# ---- Console pages on this server (the Vault's gesture mode) may ask for the camera;
+# Console pages on this server (the Vault's gesture mode) may ask for the camera;
 # the browser still asks the owner. Other sites embedded in the menu get nothing new.
 patch("static/js/core/menu.js",
       "        frame.setAttribute('referrerpolicy', 'no-referrer');\n",
       "        frame.setAttribute('referrerpolicy', 'no-referrer');\n"
       "        if (/^\\/(?!\\/)/.test(String(item.url))) frame.setAttribute('allow', 'camera; microphone; clipboard-write; autoplay');\n")
-# ---- No Chinese flash on reload: the templates carry Chinese text until applyI18n()
+# No Chinese flash on reload: the templates carry Chinese text until applyI18n()
 # swaps in English, a moment after first paint. brand.css keeps the page hidden until
 # that has run (and reveals it after 1.5 s regardless).
 patch("static/js/core/i18n.js", "function applyI18n() {\n",
       "function applyI18n() {\n    requestAnimationFrame(() => document.documentElement.classList.add('lrm-i18n'));\n")
-# ---- Dates as DD-MM-YYYY (the owner's format) on the Tasks page.
+# Dates as DD-MM-YYYY (the owner's format) on the Tasks page.
 patch("static/js/views/tasks.js", "d.toLocaleString()",
       "(d.toLocaleDateString('en-GB').replace(/\\//g, '-') + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }))", count="all")
-# ---- A custom provider may list several models ("models"), e.g. OpenRouter's: the chat
+# A custom provider may list several models ("models"), e.g. OpenRouter's: the chat
 # picker offers them all, not only the default "model".
 patch("api/sessions.py",
       '                cp_model = str(cp.get("model") or "").strip()\n                if cp_model:\n                    models.append(cp_model)\n',
       '                cp_model = str(cp.get("model") or "").strip()\n                if cp_model:\n                    models.append(cp_model)\n'
       '                models += [m for m in (cp.get("models") or []) if isinstance(m, str) and m.strip() and m not in models]\n')
-# ---- Keep trying: three rounds over the fallback chain instead of two (the owner asked that a
+# Keep trying: three rounds over the fallback chain instead of two (the owner asked that a
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
 
-# ---- Light only: the owner does not want dark mode (an earlier "dark" choice is ignored).
+# Light only: the owner does not want dark mode (an earlier "dark" choice is ignored).
 patch("static/js/core/theme.js",
       "let currentTheme = localStorage.getItem('cow_theme') || window.__COW_DEFAULT_THEME__ || 'light';\n",
       "let currentTheme = 'light';\n")
@@ -465,7 +460,7 @@ patch("static/js/core/theme.js",
       "    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';\n",
       "    currentTheme = 'light';\n")
 
-# ---- Delegation: a chat with no team set (Lorium's own chats, the WhatsApp sessions that
+# Delegation: a chat with no team set (Lorium's own chats, the WhatsApp sessions that
 # scheduled reports run in) works with all the owner's business agents; upstream refused
 # Lorium's requests to CFO, HRD and Operations there. Sora (personal) is never a member.
 patch("agent/tools/agent_delegate/agent_delegate.py",
@@ -481,7 +476,7 @@ patch("agent/tools/agent_delegate/agent_delegate.py",
       '                    members = []\n'
       '\n        policy = self._policy_safe()\n', root=app)
 
-# ---- Redeploys wait for running work (agent/lrm_busy.py counts every agent run), and a
+# Redeploys wait for running work (agent/lrm_busy.py counts every agent run), and a
 # scheduled report cut off by a restart is run again for up to 2 hours (upstream: 10 min,
 # then the day's report was skipped).
 _agent_py = app / "agent/protocol/agent.py"
@@ -504,7 +499,7 @@ Agent.run_stream = _lrm_counted_run_stream
 """, encoding="utf-8")
 patch("agent/tools/scheduler/scheduler_service.py", "                if time_diff <= 600:\n", "                if time_diff <= 7200:\n", root=app)
 
-# ---- Scheduler tool: in English (models picked it less from the Chinese text), "act, don't
+# Scheduler tool: in English (models picked it less from the Chinese text), "act, don't
 # promise", and from the console it can deliver to the owner's WhatsApp (the lrm-wa:<agent>
 # recipients of channel/lrm_whatsapp_relay.py, as on the Tasks page).
 _sched = "agent/tools/scheduler/scheduler_tool.py"
@@ -548,7 +543,7 @@ patch(_sched,
       "            recipients = self.recipient_store.list()\n"
       "        if not recipients:\n", root=app)
 
-# ---- Several recipients per scheduled task (channel/lrm_whatsapp_relay.py: clean_receivers,
+# Several recipients per scheduled task (channel/lrm_whatsapp_relay.py: clean_receivers,
 # fanout): the agent works once, the result goes to each receiver, each one's outcome is
 # noted in the run history ("Delivered: Reyner ✓, Hansel ✓").
 _integ = "agent/tools/scheduler/integration.py"
@@ -644,7 +639,7 @@ for _zh, _en in (
     _sched_text = _sched_text.replace(_zh, _en)
 (app / _sched).write_text(_sched_text, encoding="utf-8")
 
-# ---- Browser: logins survive the browser closing itself (agent/lrm_browser_keep.py).
+# Browser: logins survive the browser closing itself (agent/lrm_browser_keep.py).
 # Session cookies (no expiry) are lost when Chromium closes after its idle timeout, which
 # signed the owner out of their apps; they are saved on close and put back on launch.
 patch("agent/tools/browser/browser_service.py",
@@ -664,10 +659,8 @@ patch("agent/tools/browser/browser_service.py",
       '        except Exception as _e:\n'
       '            logger.debug(f"[Browser] cookies not saved: {_e}")\n', root=app)
 
-# ---- Tasks: LRMagent's WhatsApp numbers as delivery channels in the console's task form
-# (upstream lists only its own IM integrations, so the form had no channel at all).
-# channel/lrm_whatsapp_relay.py supplies the instances ("lrm-wa:<agent>") and recipients
-# (the owner and the designated contacts); delivery goes through the WhatsApp relay.
+# Tasks: LRMagent's WhatsApp numbers as delivery channels in the task form (upstream listed none);
+# channel/lrm_whatsapp_relay.py supplies them, and delivery goes through its relay.
 patch("agent/tools/scheduler/integration.py",
       "    instance_id = (instance_id or \"\").strip()\n    if not instance_id:\n        return \"\"\n    try:\n        from channel.channel_instances import get_instance\n",
       "    instance_id = (instance_id or \"\").strip()\n    if not instance_id:\n        return \"\"\n    if instance_id.startswith(\"lrm-wa:\"):\n        return instance_id[len(\"lrm-wa:\"):]\n    try:\n        from channel.channel_instances import get_instance\n", root=app)
@@ -695,10 +688,8 @@ patch("static/js/views/tasks-modal.js",
       "        return { value: key, label: name, hint: truncateRecipientId(r.receiver) };\n",
       "        return { value: key, label: name, hint: r.hint || truncateRecipientId(r.receiver) };\n")
 
-# OpenRouter reserves credit for the whole max_tokens of a request, and without one it
-# assumes the model's maximum output (hundreds of thousands of tokens), so a small
-# balance answers "402 requires more credits, or fewer max_tokens" although a normal
-# reply costs cents. Cap the output on OpenRouter (LRMAGENT_OPENROUTER_MAX_TOKENS).
+# OpenRouter reserves credit for a request's whole max_tokens (the model maximum when unset), so a
+# small balance got 402 for a reply costing cents: cap it (LRMAGENT_OPENROUTER_MAX_TOKENS).
 patch("models/openai_compatible_bot.py",
       '            # Add max_tokens if specified\n'
       '            if kwargs.get("max_tokens"):\n'
@@ -711,7 +702,7 @@ patch("models/openai_compatible_bot.py",
       '                _cap = int(_lrm_os.environ.get("LRMAGENT_OPENROUTER_MAX_TOKENS") or 8192)\n'
       '                request_params["max_tokens"] = min(int(request_params.get("max_tokens") or _cap), _cap)\n',
       root=app)
-# ---- AI plans (sign-ins for Codex, Claude Code, Gemini, ...) is a tab of Config, next to Models,
+# AI plans (sign-ins for Codex, Claude Code, Gemini, ...) is a tab of Config, next to Models,
 # instead of its own menu page.
 patch("templates/views/config.html",
       '                                    <button id="config-tab-integrations" onclick="switchConfigTab(\'integrations\')"',

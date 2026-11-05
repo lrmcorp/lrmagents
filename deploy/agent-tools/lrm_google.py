@@ -46,7 +46,7 @@ class GoogleError(RuntimeError):
     pass
 
 
-# ---- stored settings and tokens ------------------------------------------------------
+# Stored settings and tokens
 
 def _path():
     from config import get_data_root
@@ -93,7 +93,7 @@ def public_view():
     }
 
 
-# ---- OAuth ------------------------------------------------------------------------------
+# OAuth
 
 def redirect_uri(host_header=""):
     base = os.environ.get("WEB_PUBLIC_URL", "").strip().rstrip("/")
@@ -207,7 +207,7 @@ def _api(method, url, body=None, params=None):
         raise GoogleError(message or f"Google answered {e.code}")
 
 
-# ---- Gmail -----------------------------------------------------------------------------
+# Gmail
 
 def _headers(msg):
     return {h["name"].lower(): h["value"] for h in (msg.get("payload", {}).get("headers") or [])}
@@ -288,7 +288,7 @@ def gmail_send(to, subject, body, cc="", reply_to_id=""):
     return {"id": sent.get("id"), "note": "Sent."}
 
 
-# ---- Calendar ----------------------------------------------------------------------------
+# Calendar
 
 def _tz():
     try:
@@ -346,7 +346,7 @@ def calendar_create(title, start, end="", description="", location="", attendees
     return {"id": event.get("id"), "link": event.get("htmlLink"), "note": "Added to your Google Calendar."}
 
 
-# ---- the morning brief --------------------------------------------------------------------
+# The morning brief
 
 BRIEF_PROMPT = (
     "Prepare my morning brief for today, {date}. Use the google tool: today's calendar (calendar_list) and important unread "

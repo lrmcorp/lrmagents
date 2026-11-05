@@ -85,7 +85,7 @@
     const video = el.querySelector('video');
     const help = el.querySelector('.help');
 
-    // ---- data -------------------------------------------------------------------------
+    // Data
     const nodes = opts.nodes.map((n) => ({ ...n }));
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const links = opts.links.filter((l) => byId.has(l.source) && byId.has(l.target)).map((l) => ({ source: byId.get(l.source), target: byId.get(l.target) }));
@@ -96,7 +96,7 @@
     let mode = MODES[opts.mode] ? opts.mode : 'centralized';
     el.querySelector('.count').textContent = `${nodes.length} thoughts · ${links.length} links`;
 
-    // ---- view -------------------------------------------------------------------------
+    // View
     let W = 0; let H = 0; const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const view = { x: 0, y: 0, k: 1 };
     let userMoved = false; let fitTimer = 0;
@@ -112,7 +112,7 @@
     const toScreen = (n) => ({ x: W / 2 + view.x + n.x * view.k, y: H / 2 + view.y + n.y * view.k });
     const radius = (n) => 1.4 + Math.sqrt(n.deg) * 0.9;
 
-    // ---- layouts ----------------------------------------------------------------------
+    // Layouts
     const R = Math.max(120, Math.min(420, 22 * Math.sqrt(nodes.length)));
     const sim = d3.forceSimulation(nodes).alphaDecay(0.03).velocityDecay(0.35).stop();
     function depths() {
@@ -201,7 +201,7 @@
       if (mode === 'chain') { const pts = Array.from({ length: 9 }, (_, i) => [16 + i * 18, 88 + Math.sin(i * 0.9) * 26]); pts.slice(1).forEach((p, i) => line(pts[i], p)); pts.forEach((p) => dot(...p, 3.5)); }
     }
 
-    // ---- drawing ----------------------------------------------------------------------
+    // Drawing
     let hover = null; let cursor = null; let pinch = 0; let hold = 0; let raf = 0;
     function frame() {
       raf = requestAnimationFrame(frame);
@@ -282,7 +282,7 @@
     }
     function setFocus(n) { if (!n) return; focus = n; if (mode !== 'centralized') layout('centralized'); else layout(mode); }
 
-    // ---- mouse & touch ---------------------------------------------------------------
+    // Mouse & touch
     const pointers = new Map(); let dragFrom = null; let moved = false; let lastPinch = 0;
     canvas.addEventListener('pointerdown', (e) => {
       canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
@@ -328,7 +328,7 @@
     el.querySelector('[data-act="theme"]').onclick = () => { el.classList.toggle('dark'); drawGlyph(); };
     el.querySelector('[data-act="cam"]').onclick = () => (camOn ? stopCam() : startCam());
 
-    // ---- hand gestures ---------------------------------------------------------------
+    // Hand gestures
     // Index fingertip = pointer. Pinch (thumb + index) on a thought = make it the centre;
     // keep pinching for a second = open it. Pinch on empty space and move = pan.
     // Two hands pinching = zoom. Hold up 1-4 fingers = switch layout. Fist = fit to screen.
@@ -429,7 +429,7 @@
       }
     }
 
-    // ---- life -----------------------------------------------------------------------
+    // Life
     function destroy() {
       stopCam(); cancelAnimationFrame(raf); sim.stop(); clearTimeout(fitTimer);
       keyTarget.removeEventListener('keydown', onKey); ro.disconnect();

@@ -56,7 +56,7 @@ class VaultError(ValueError):
     pass
 
 
-# ---- locating files ---------------------------------------------------------
+# Locating files
 
 def _workspace(agent_id):
     from agent.registry import get_agent_registry
@@ -104,7 +104,7 @@ class Vault:
     def vpath(self, section, rel):
         return ROOT_FILE if section == "root" else f"{section}/{rel}".rstrip("/")
 
-    # ---- listing --------------------------------------------------------
+    # Listing
 
     def entries(self):
         out = []
@@ -154,7 +154,7 @@ class Vault:
             raise VaultError("note too large to open here")
         return full.read_text(encoding="utf-8", errors="replace"), full.stat().st_mtime
 
-    # ---- writing --------------------------------------------------------
+    # Writing
 
     def knowledge(self):
         from agent.knowledge.service import KnowledgeService
@@ -182,7 +182,7 @@ def _atomic_write(full, text):
     write_text_atomic(full, text)
 
 
-# ---- note metadata (links, tags, properties) for graph, backlinks and tags ------
+# Note metadata (links, tags, properties) for graph, backlinks and tags
 
 def _frontmatter(text):
     if not text.startswith("---"):
@@ -293,7 +293,7 @@ def _cached_meta(full, mtime, size):
     return meta
 
 
-# ---- renames: keep links pointing at the moved note -------------------------------
+# Renames: keep links pointing at the moved note
 
 def _stem(vpath):
     return os.path.splitext(vpath.rsplit("/", 1)[-1])[0]
@@ -339,7 +339,7 @@ def rewrite_links(text, note_vpath, old, new, bare_name_unique):
     return MDLINK.sub(md, WIKILINK.sub(wiki, text))
 
 
-# ---- the handler ------------------------------------------------------------------
+# The handler
 
 def _ok(**data):
     return json.dumps({"status": "success", **data}, ensure_ascii=False)
@@ -419,7 +419,7 @@ class LrmVaultHandler:
             logger.error(f"[Vault] write failed: {e}")
             return _fail(e)
 
-    # ---- reads ----------------------------------------------------------
+    # Reads
 
     @staticmethod
     def _agents():
@@ -531,7 +531,7 @@ class LrmVaultHandler:
                         return _ok(mentions=out)
         return _ok(mentions=out)
 
-    # ---- writes ---------------------------------------------------------
+    # Writes
 
     @staticmethod
     def _write(vault, body):
@@ -727,7 +727,7 @@ def _rebase_relative_links(text, old_vpath, new_vpath, moved):
     return MDLINK.sub(md, text)
 
 
-# ---- Git: the host's vault sync, through ~/vault-sync/control (deploy/vault-control.sh) ----
+# Git: the host's vault sync, through ~/vault-sync/control (deploy/vault-control.sh)
 
 GIT_CONTROL = os.environ.get("LRMAGENT_VAULT_CONTROL", "/home/agent/vault-control")
 _REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -800,7 +800,7 @@ def _write_board(vault, section, rel, full, vpath, content, expected):
     return _ok(path=vpath, mtime=full.stat().st_mtime)
 
 
-# ---- search syntax: words, "exact phrases", -exclude, path:, file:, tag: -----------------
+# Search syntax: words, "exact phrases", -exclude, path:, file:, tag:
 
 def parse_query(query):
     q = {"terms": [], "phrases": [], "exclude": [], "paths": [], "files": [], "tags": []}
@@ -824,7 +824,7 @@ def parse_query(query):
     return q
 
 
-# ---- per-agent Vault preferences (bookmarks), kept in the agent's workspace ---------------
+# Per-agent Vault preferences (bookmarks), kept in the agent's workspace
 
 def _prefs_path(vault):
     return vault.ws / ".lrm-vault.json"

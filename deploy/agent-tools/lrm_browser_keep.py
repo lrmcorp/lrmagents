@@ -43,7 +43,7 @@ def _sites_file():
     return _root() / "lrm_browser_keep.json"
 
 
-# ---- cookies ---------------------------------------------------------------------------
+# Cookies
 
 def save_cookies(context):
     """All cookies of the browser (session cookies too). Runs on the browser thread."""
@@ -81,7 +81,7 @@ def restore_cookies(context):
         logger.warning(f"[BrowserKeep] session cookies not restored: {e}")
 
 
-# ---- the list of apps --------------------------------------------------------------------
+# The list of apps
 
 def sites():
     try:

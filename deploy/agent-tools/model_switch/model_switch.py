@@ -42,7 +42,7 @@ class ModelSwitch(BaseTool):
         "required": ["action"],
     }
 
-    # ---- helpers -----------------------------------------------------------
+    # Helpers
 
     @staticmethod
     def _catalog():
@@ -86,7 +86,7 @@ class ModelSwitch(BaseTool):
         options = ", ".join(f"{m} ({pid})" for pid, m in found[:10])
         return None, f"'{wanted}' matches several models: {options}. Ask the user which one."
 
-    # ---- actions -----------------------------------------------------------
+    # Actions
 
     def execute(self, args: dict) -> ToolResult:
         action = (args.get("action") or "").strip()
