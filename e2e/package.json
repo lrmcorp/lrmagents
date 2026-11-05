@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "e2e": "^0.22.0",
+    "@e2e-dev/web": "^0.15.4"
+  },
+  "scripts": {
+    "test:e2e": "e2e run"
+  }
+}

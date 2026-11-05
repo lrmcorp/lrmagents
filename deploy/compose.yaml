@@ -95,6 +95,16 @@ services:
     volumes:
       - workspace:/home/agent/cow
       - whatsapp_media:/media/whatsapp:ro
+      # Commands from WhatsApp and API chats: Sora's private workspace is not there at all,
+      # and the knowledge vault is read-only (it changes only through approved vault updates).
+      - type: tmpfs
+        target: /home/agent/cow/agents/personal
+        tmpfs: { size: 1m }
+      - type: bind
+        source: /var/lib/docker/volumes/cowagent_workspace/_data/knowledge
+        target: /home/agent/cow/knowledge
+        read_only: true
+        bind: { create_host_path: false }
     mem_limit: 1g
     pids_limit: 256
     cap_drop: [ALL]

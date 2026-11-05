@@ -22,9 +22,25 @@ FILE_TOOLS = ("read", "ls", "search_files", "write", "edit", "send", "vision", "
 _SECRET_NAMES = re.compile(r"(^|/)(config\.json|\.env(\..*)?|lrm_google\.json|.*\.sqlite|id_[a-z0-9]+|.*\.pem|.*\.key)$", re.I)
 
 
+def origin_session(session):
+    """The chat a session acts for. A scheduled run ("scheduler_<receiver>_<task id>") acts for the
+    chat its task was set up in; an unknown task counts as an outside chat (sandboxed)."""
+    session = str(session or "")
+    if not session.startswith("scheduler_"):
+        return session
+    try:
+        from agent.tools.scheduler.integration import get_task_store
+        task = get_task_store().get_task(session.rsplit("_", 1)[-1])
+    except Exception:
+        task = None
+    if not task:
+        return "openai:unknown-scheduled-task"
+    return str((task.get("action") or {}).get("origin_session_id") or "")  # empty: made on the Tasks page
+
+
 def sandboxed(tool_or_executor):
     session = str(getattr(getattr(tool_or_executor, "model", None), "session_id", "") or "")
-    return session.startswith("openai:")
+    return origin_session(session).startswith("openai:")
 
 
 def run(tool, command, timeout, env, dotenv_vars):

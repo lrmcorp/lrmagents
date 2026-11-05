@@ -62,9 +62,14 @@ class LrmActivityHandler:
             if not code:
                 # A plain "yes"/"no": the newest request waiting for the owner, tool approval or vault update.
                 from agent import lrm_vault_flow as flow
-                waiting = [(r.get("ts") or 0, r["code"]) for r in act.pending()]
-                waiting += [(i.get("updated") or 0, i.get("code")) for i in flow._load() if i["status"] == "owner" and i.get("code")]
-                code = max(waiting)[1] if waiting else ""
+                waiting = [(r.get("ts") or 0, r["code"], r.get("summary") or r.get("tool_name") or "") for r in act.pending()]
+                waiting += [(i.get("updated") or 0, i.get("code"), "vault: " + i["path"].replace("knowledge/", "", 1))
+                            for i in flow._load() if i["status"] == "owner" and i.get("code")]
+                if len(waiting) > 1:
+                    # More than one request: a plain yes/no would be a guess about which one.
+                    lines = "\n".join(f"- *{c}*: {what[:80]}" for _, c, what in sorted(waiting, reverse=True)[:8])
+                    return json.dumps({"status": "choose", "message": f"Several requests are waiting. Reply *yes CODE* or *no CODE*:\n{lines}\n(or *yes all* / *no all* for the vault updates)"}, ensure_ascii=False)
+                code = waiting[0][1] if waiting else ""
                 body["code"] = code
             done = act.decide(body.get("code"), body.get("decision"), via) if code else None
             if not done:

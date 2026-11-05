@@ -34,8 +34,10 @@ class WhatsAppRelay:
                 why = json.loads(e.read() or b"{}").get("error") or ""
             except Exception:
                 why = ""
+            self.refused = e.code in (400, 403)  # not allowed: retrying can't help
             return False, (why or f"gateway answered {e.code}")[:160]
         except Exception as e:
+            self.refused = False
             return False, str(e)[:160]
 
     def send(self, reply, context=None):
@@ -197,6 +199,7 @@ class FanOut:
         if not text:
             return
         names = {r["receiver"]: r["name"] for r in task_recipients()}
+        transient = False
         for receiver in self.action.get("receivers") or []:
             relay = relay_for(receiver)
             if relay is None:
@@ -204,9 +207,12 @@ class FanOut:
                 continue
             ok, why = relay.post(text)
             self.results.append((names.get(receiver, receiver.rsplit(":", 1)[-1]), ok, why))
-        self.delivery_note = "\n\n— Delivered: " + ", ".join(f"{n} {'✓' if ok else '✗ (' + why + ')'}" for n, ok, why in self.results)
+            if not ok and not getattr(relay, "refused", False):
+                transient = True
+        self.delivery_note = "\n\nDelivered: " + ", ".join(f"{n} {'✓' if ok else '✗ (' + why + ')'}" for n, ok, why in self.results)
         logger.info(f"[WhatsAppRelay] fan-out {self.delivery_note.strip()}")
-        if self.results and not any(ok for _, ok, _ in self.results):
+        # Nobody got it: retry only when a failure may pass (offline), not when every one was refused.
+        if self.results and not any(ok for _, ok, _ in self.results) and transient:
             raise RuntimeError("no recipient got it: " + "; ".join(f"{n}: {why}" for n, _, why in self.results))
 
 

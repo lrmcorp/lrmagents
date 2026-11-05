@@ -44,7 +44,7 @@ class WhatsAppTool(BaseTool):
         "which one, the owner's numbers), 'send' (send a WhatsApp message now). For 'send', 'to' is 'me' for the owner "
         "(e.g. 'send me a WhatsApp', 'text me the summary'), the name of a WhatsApp group the owner opened to agents, or the "
         "number of a designated contact (see 'status' for both): agents may "
-        "contact anybody else first. A designated contact set to 'listen only' never gets an answer from you when they write "
+        "not contact anybody else first. A designated contact set to 'listen only' never gets an answer from you when they write "
         "back: Lorium tells the owner and you are told what they said, as information. Use this whenever the owner asks to send or receive "
         "something on WhatsApp; for a message at a later time use the scheduler instead. Write WhatsApp messages and reports as "
         "a short bold title (*Title*) and bullet points with the facts: no greeting, no filler, no closing line."
@@ -115,7 +115,9 @@ class WhatsAppTool(BaseTool):
             group = next((g for g in groups if wanted and (g.get("jid") == to.strip() or str(g.get("name", "")).lower() == wanted)), None) \
                 or next((g for g in groups if wanted and len(wanted) >= 3 and wanted in str(g.get("name", "")).lower()), None)
             if group:
-                via = next((a for a in accounts if a.get("agent") == group.get("agent") and a.get("status") == "connected"), account)
+                via = next((a for a in accounts if a.get("agent") == group.get("agent") and a.get("status") == "connected"), None)
+                if via is None:
+                    return ToolResult.fail(f"The number that posts in '{group.get('name')}' is not connected right now; nothing was posted.")
                 _call("/whatsapp/internal/send", {"agentId": via["agent"], "chat": group["jid"], "text": text})
                 return ToolResult.success(f"Posted in the WhatsApp group '{group.get('name')}'.")
             if not re.search(r"\d{6,}", to):

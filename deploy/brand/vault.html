@@ -349,6 +349,10 @@
     .backlinks-foot { padding: 0 16px 40px; }
     .topbar .title span, .hide-sm { display: none; }
     .graph-ctrl { width: 180px; }
+    /* More tools than a phone is wide: the toolbar scrolls, the page does not. */
+    .topbar { overflow-x: auto; scrollbar-width: none; }
+    .topbar::-webkit-scrollbar { display: none; }
+    .topbar > * { flex: none; }
   }
 </style>
 </head>

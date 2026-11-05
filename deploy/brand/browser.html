@@ -36,7 +36,8 @@
   .empty h2 { color: var(--text); font-size: 18px; margin: 12px 0 6px; }
   .hint { font-size: 12px; color: var(--text-3); padding: 0 14px 12px; text-align: center; }
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--canvas); padding: 8px 14px; border-radius: 10px; font-size: 13px; }
-  .toast.err { background: var(--bad); color: #fff; }
+  .toast.err { background: #b42530; color: #fff; }
+  @media (max-width: 640px) { .keep .row { flex-wrap: wrap; } .keep .row b { flex: 1 0 100%; } }
   .keep { position: fixed; inset: 0; background: rgb(0 0 0 / .3); display: flex; align-items: flex-start; justify-content: center; padding: 6vh 14px; z-index: 5; }
   .keep .box { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; width: min(620px, 100%); max-height: 86vh; overflow: auto; }
   .keep h3 { margin: 0 0 4px; font-size: 16px; }
@@ -45,14 +46,20 @@
   .keep form { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; } .keep form input { flex: 1 1 160px; }
   .st { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
   .st.signed_in { background: var(--ok-bg); color: var(--ok); } .st.signed_out, .st.error { background: var(--warn-bg); color: var(--warn); } .st.unchecked { background: var(--muted-bg); color: var(--text-3); }
+
+  /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
+  @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; } }
+  @media (pointer: coarse) { button, select, summary, .btn { min-height: 44px; } }
+  :focus-visible { outline: 2px solid var(--ring, #7480f1); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
   <div class="bar">
-    <button class="icon" data-k="back" title="Back"><i class="fas fa-arrow-left"></i></button>
-    <button class="icon" data-k="forward" title="Forward"><i class="fas fa-arrow-right"></i></button>
-    <button class="icon" data-k="reload" title="Reload"><i class="fas fa-rotate-right"></i></button>
-    <form id="go"><input id="url" placeholder="Open a site, e.g. tokopedia.com or mail.google.com" spellcheck="false" autocomplete="off"><button class="primary" type="submit">Go</button></form>
+    <button class="icon" data-k="back" title="Back" aria-label="Back"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
+    <button class="icon" data-k="forward" title="Forward" aria-label="Forward"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
+    <button class="icon" data-k="reload" title="Reload" aria-label="Reload"><i class="fas fa-rotate-right" aria-hidden="true"></i></button>
+    <form id="go"><input id="url" aria-label="Site address" placeholder="Open a site, e.g. tokopedia.com or mail.google.com" spellcheck="false" autocomplete="off"><button class="primary" type="submit">Go</button></form>
     <button id="keep-open" title="Apps the agents stay signed in to"><i class="fas fa-key"></i> Keep signed in</button>
     <span id="who"></span>
     <button id="control"></button>
@@ -70,12 +77,12 @@ const $ = (s) => document.querySelector(s);
 try { if (window.parent !== window && window.parent.document.documentElement.classList.contains('dark')) document.documentElement.classList.add('dark'); } catch {}
 let state = { open: false, control: { who: 'agent' } };
 let busy = false;
-function toast(m, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
+function toast(m, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.setAttribute('role', err ? 'alert' : 'status'); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
 async function post(body) {
   const r = await fetch('/api/lrm/browser', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
   const d = await r.json();
-  if (d.status !== 'success') throw new Error(d.message || 'Failed');
+  if (d.status !== 'success') throw new Error(d.message || 'That did not work. Try again in a moment.');
   return d;
 }
 function renderState() {
@@ -149,20 +156,24 @@ async function keepPanel() {
   const hostOf = (u) => { try { return new URL(/^https?:/.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, ''); } catch { return ''; } };
   const loginFor = (u) => { const h = hostOf(u); return logins.filter((l) => h === l.host || h.endsWith(`.${l.host}`)).sort((a, b) => b.host.length - a.host.length)[0]; };
   const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const box = document.createElement('div'); box.className = 'keep';
+  const box = document.createElement('div'); box.className = 'keep'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-modal', 'true'); box.setAttribute('aria-label', 'Keep signed in');
+  const opener = document.activeElement;
+  const closeBox = () => { box.remove(); removeEventListener('keydown', onKey); opener?.focus?.(); };
+  const onKey = (e) => { if (e.key === 'Escape') closeBox(); };
+  addEventListener('keydown', onKey);
   const draw = () => {
     box.innerHTML = `<div class="box"><h3>Keep signed in</h3>
       <p style="color:var(--text-3);margin:0 0 10px;font-size:13px">Apps the agents read data from. Every ${d.every_minutes || 20} minutes each one is opened in the background, which keeps the session active, and checked. With a saved login, an app that signed you out is signed in again on its own; Lorium tells you on WhatsApp only when that fails (a one-time code, a captcha).</p>
       ${list.map((x, i) => { const l = loginFor(x.url); return `<div class="row"><b title="${esc(x.url)}">${esc(x.name)}</b><span class="st ${x.status}" title="${esc(x.why || x.detail || '')}">${ST[x.status] || x.status}</span>
         <button data-login="${i}" title="${l ? `Saved login: ${esc(l.username)}` : 'Save a username and password'}"><i class="fas fa-key"></i>${l ? ' Login saved' : ' Login'}</button>
-        <button data-sign="${i}">Sign in</button><button data-del="${i}" title="Remove"><i class="fas fa-xmark"></i></button></div>
+        <button data-sign="${i}">Sign in</button><button data-del="${i}" title="Remove" aria-label="Remove ${esc(x.name)}"><i class="fas fa-xmark" aria-hidden="true"></i></button></div>
         ${editing === i ? `<form class="login-form" data-i="${i}" autocomplete="off" style="display:grid;gap:6px;padding:4px 0 10px">
-          <input name="username" placeholder="Username or email" value="${esc(l?.username || '')}" autocomplete="off">
-          <input name="password" type="password" placeholder="${l ? 'Password (leave empty to keep the saved one)' : 'Password'}" autocomplete="new-password">
-          <input name="login_url" placeholder="Login page address (optional, if it differs)">
+          <input name="username" aria-label="Username or email" placeholder="Username or email" value="${esc(l?.username || '')}" autocomplete="off">
+          <input name="password" type="password" aria-label="Password" placeholder="${l ? 'Password (leave empty to keep the saved one)' : 'Password'}" autocomplete="new-password">
+          <input name="login_url" aria-label="Login page address" placeholder="Login page address (optional, if it differs)">
           <div style="display:flex;gap:6px"><button class="primary" type="submit">Save login</button>${l ? '<button type="button" data-unlogin="' + i + '">Delete login</button>' : ''}<button type="button" data-cancel="1">Cancel</button></div>
           <small style="color:var(--text-3)">Stored encrypted; never shown again. Agents sign in with it but never see the password. Keep banking in your Private vault.</small></form>` : ''}`; }).join('') || '<p style="color:var(--text-3)">No apps yet.</p>'}
-      <form id="keep-add"><input name="name" placeholder="Name, e.g. Shopee Seller"><input name="url" placeholder="Address, e.g. seller.shopee.co.id" value="${state.open && state.url ? state.url.replace(/"/g, '&quot;') : ''}"><button class="primary">Add</button></form>
+      <form id="keep-add"><input name="name" aria-label="App name" placeholder="Name, e.g. Shopee Seller"><input name="url" aria-label="App address" placeholder="Address, e.g. seller.shopee.co.id" value="${state.open && state.url ? state.url.replace(/"/g, '&quot;') : ''}"><button class="primary">Add</button></form>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end"><button id="keep-check">Check now</button><button id="keep-close">Close</button></div></div>`;
   };
   const save = async () => { const r = await post({ op: 'keep', sites: list }); list = r.sites; draw(); };
@@ -177,7 +188,7 @@ async function keepPanel() {
   box.addEventListener('submit', async (e) => { if (e.target.classList.contains('login-form')) return; e.preventDefault(); const f = new FormData(e.target); if (!String(f.get('url')).trim()) return; list.push({ name: f.get('name'), url: f.get('url') }); try { await save(); } catch (err) { toast(err.message, true); } });
   box.addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) { if (e.target === box) box.remove(); return; }
-    if (b.id === 'keep-close') return box.remove();
+    if (b.id === 'keep-close') return closeBox();
     if (b.id === 'keep-check') { await post({ op: 'keep-check' }); toast('Checking in the background; this takes a minute.'); setTimeout(async () => { d = await get(); list = d.sites; draw(); }, 45000); return; }
     if (b.dataset.login) { editing = editing === Number(b.dataset.login) ? -1 : Number(b.dataset.login); draw(); return; }
     if (b.dataset.cancel) { editing = -1; draw(); return; }

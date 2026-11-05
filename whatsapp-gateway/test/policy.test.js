@@ -181,3 +181,9 @@ test('approvalReply: "yes all" / "no all" decide everything waiting', () => {
   assert.deepEqual(approvalReply('ya semua'), { decision: 'approve', code: '', all: true });
   assert.equal(approvalReply('all good'), null);
 });
+
+test('approvalReply: "ok" or "lanjut" in a conversation is not an approval', () => {
+  assert.equal(approvalReply('ok'), null);
+  assert.equal(approvalReply('lanjut'), null);
+  assert.equal(approvalReply('ya').decision, 'approve');
+});

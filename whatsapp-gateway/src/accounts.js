@@ -345,6 +345,7 @@ class Account {
       // ("no clue") goes to the agent as a normal message.
       decideApproval(reply.code, reply.decision, reply.all)
         .then((r) => {
+          if (r?.status === 'choose') { this.seen.add(msg.key.id); return this.send(sock, chat, r.message); }
           if (r?.status !== 'success') return this.enqueue(sock, Object.assign(msg, { approvalChecked: true }));
           this.seen.add(msg.key.id);
           return this.send(sock, chat, r.message || (reply.decision === 'approve' ? `✅ Approved ${reply.code}. It will go ahead now.` : `🚫 Refused ${reply.code}. It will not do that.`));
@@ -369,7 +370,7 @@ class Account {
     const chat = msg.key.remoteJid;
     // A designated contact writing back: the agent stays silent and Lorium hears it.
     const fromPhone = chat.endsWith('@g.us') ? '' : (senderPhone(msg.key) || this.lidPhone.get(chat) || '');
-    if (!selfChat && fromPhone && directory?.listenOnly(fromPhone) && !this.isOwner(chat, sock)) {
+    if (!msg.key.fromMe && !selfChat && fromPhone && directory?.listenOnly(fromPhone) && !this.isOwner(chat, sock)) {
       if (this.limiter.check(chat) !== 'ok') return;
       await relayHook?.(this, sock, msg, fromPhone);
       return;
@@ -501,6 +502,8 @@ class Account {
     try {
       const real = await fs.realpath(file.path);
       if (!FILE_ROOTS.some((root) => real.startsWith(root))) throw new Error('outside the workspace');
+      // Sora's workspace is the owner's private space: never sent to a WhatsApp chat.
+      if (/\/agents\/personal(\/|$)/.test(real)) throw new Error("the owner's private space");
       const stat = await fs.stat(real);
       if (!stat.isFile() || stat.size > FILE_MAX_BYTES) throw new Error('missing or larger than 16 MB');
       const data = await fs.readFile(real);
@@ -583,7 +586,7 @@ export class Accounts {
     this.deliveries = new Map(); // idempotency key -> time, so a retried reminder is not sent twice
   }
 
-  // Whether `chat` is the linked number's own chat ("Message yourself"), i.e. its owner.
+  // Each linked number for the agents' whatsapp tool: status, owner numbers, mode.
   internalStatus() {
     return [...this.byAgent.values()].map((a) => ({
       agent: a.agentId, status: a.status, phone: a.sock?.user ? phoneOf(`${bareJid(a.sock.user.id)}@s.whatsapp.net`) : '',
@@ -591,6 +594,7 @@ export class Accounts {
     }));
   }
 
+  // Whether `chat` is the owner's: the linked number's own chat ("Message yourself") or an owner number.
   isOwnerChat(agentId, chat) {
     const account = this.byAgent.get(agentId);
     return Boolean(account?.sock?.user) && account.isOwner(chat, account.sock);
@@ -663,12 +667,8 @@ export class Accounts {
     return phone;
   }
 
-  // A message the agent sends on its own (a scheduled reminder), not a reply.
-  // Only to chats that wrote to this agent, approved numbers, or the owner's own
-  // chat, so a misled agent can't use the number to message strangers. The
-  // scheduler retries on errors; the key makes sure a retry never sends twice.
   // A message to the owner (their own "Message yourself" chat), from this agent's
-  // number or, when that one is not linked, from any linked number.
+  // number or, when that one is not linked, from any linked number that is not monitor-only.
   async notifyOwner(agentId, text) {
     const accounts = [this.get(agentId), ...this.byAgent.values()].filter((a) => a && a.status === 'connected' && a.sock?.user && !a.monitoring);
     const account = accounts[0];
@@ -678,6 +678,10 @@ export class Accounts {
     await this.deliver(account.agentId, mine ? `${mine}@s.whatsapp.net` : `${bareJid(account.sock.user.id)}@s.whatsapp.net`, text);
   }
 
+  // A message the agent sends on its own (a scheduled report, a reminder), not a reply. Only
+  // to the owner, designated contacts, ticked groups, and approved people who talk with this
+  // agent, so a misled agent can't use the number to message strangers. The scheduler
+  // retries on errors; the key makes sure a retry never sends twice.
   async deliver(agentId, chat, text) {
     const account = this.get(agentId);
     if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });

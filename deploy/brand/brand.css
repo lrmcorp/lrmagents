@@ -262,7 +262,8 @@ div:has(> #cfg-password-save),
 
 /* Tasks form: "Also send to" (several WhatsApp recipients) */
 #lrm-receivers { margin-top: 10px; display: grid; gap: 4px; }
-#lrm-receivers .lrm-recv-title { font-size: 12px; font-weight: 600; color: var(--text-3, #64646c); }
-#lrm-receivers .lrm-recv { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; cursor: pointer; }
+#lrm-receivers .lrm-recv-title { font-size: 12px; font-weight: 600; color: var(--lrm-muted); }
+#lrm-receivers .lrm-recv { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; min-height: 36px; cursor: pointer; }
+@media (pointer: coarse) { #lrm-receivers .lrm-recv { min-height: 44px; } }
 #lrm-receivers .lrm-recv input { width: auto; margin: 0; }
-#lrm-receivers .lrm-recv small, #lrm-receivers .lrm-recv-none { color: var(--text-3, #64646c); font-size: 12px; }
+#lrm-receivers .lrm-recv small, #lrm-receivers .lrm-recv-none { color: var(--lrm-muted); font-size: 12px; }

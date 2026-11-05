@@ -10,8 +10,14 @@
   :root {
     --brand: #18181b; --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8;
     --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c; --line: #dbdbe5;
-    --ok: #047857; --ok-bg: #ecfdf5; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2;
+    --ok: #047857; --ok-bg: #ecfdf5; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2; --on-brand: #fff; --ring: #7480f1;
   }
+  :root.dark { --brand: #f0f0f4; --on-brand: #13101b; --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a;
+    --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6; --line: #3a3348;
+    --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10; --bad: #f2a1a1; --bad-bg: #3a1418; }
+  @media (prefers-color-scheme: dark) { :root:not(.light) { --brand: #f0f0f4; --on-brand: #13101b; --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a;
+    --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6; --line: #3a3348;
+    --ok: #5ed3a6; --ok-bg: #12302a; --warn: #f5c76b; --warn-bg: #3a2a10; --bad: #f2a1a1; --bad-bg: #3a1418; } }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -27,7 +33,7 @@
   input:focus, textarea:focus { border-color: #7480f1; box-shadow: 0 0 0 3px rgb(116 128 241 / .15); }
   textarea { min-height: 70px; resize: vertical; }
   button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 10px; padding: 9px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); white-space: nowrap; }
-  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
   button.danger { color: var(--bad); border-color: #fecdd3; }
   button:disabled { opacity: .5; cursor: default; }
   .flex0 { flex: 0 0 auto !important; }
@@ -50,14 +56,24 @@
   .meter { height: 4px; border-radius: 4px; background: var(--muted-bg); overflow: hidden; margin-top: 6px; } .meter i { display: block; height: 100%; width: 0; background: var(--bad); transition: width .2s; }
   .steps { margin: 0; padding-left: 18px; color: var(--text-2); } .steps li { margin: 3px 0; }
   .empty { color: var(--text-3); text-align: center; padding: 12px; }
+
+  /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
+  @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; } }
+  @media (pointer: coarse) { button, select, summary, .btn { min-height: 44px; } }
+  :focus-visible { outline: 2px solid var(--ring, #7480f1); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
+<script>
+// Inside the console follow its theme; on its own follow the device (see the CSS).
+try { if (window.parent !== window) document.documentElement.classList.add(window.parent.document.documentElement.classList.contains('dark') ? 'dark' : 'light'); } catch { /* another origin */ }
+</script>
 </head>
 <body>
 <main>
-  <h1>🔒 Private vault</h1>
+  <h1>Private vault</h1>
   <p class="lede">Passwords and other sensitive notes, locked with a passphrase only you know. No agent can see or change it: it is locked in this browser before it is stored, and it is kept apart from the agents. If you stop talking to Lorium for 7 days, Lorium sends it on WhatsApp to the person you choose.</p>
 
-  <div id="banner"></div>
+  <div id="banner" role="status"></div>
 
   <section class="card" id="state-card" hidden>
     <h2>Status</h2>
@@ -106,14 +122,14 @@
     <section class="card">
       <h2>Who receives it</h2>
       <div class="row">
-        <label>Your name (shown to them)<input id="owner-name" placeholder="e.g. Ryan"></label>
-        <label>Their name<input id="r-name" placeholder="e.g. Sarah"></label>
+        <label>Your name (shown to them)<input id="owner-name" placeholder="Your name"></label>
+        <label>Their name<input id="r-name" placeholder="Their name"></label>
         <label>Their WhatsApp number<input id="r-phone" inputmode="tel" placeholder="62812…"></label>
         <button class="flex0" id="check">Check number</button>
       </div>
-      <p class="note" id="check-out"></p>
+      <p class="note" id="check-out" role="status"></p>
       <div class="row" style="margin-top:10px">
-        <label>Backup person (optional): name<input id="b-name" placeholder="e.g. Tom"></label>
+        <label>Backup person's name (optional)<input id="b-name" placeholder="Backup person's name"></label>
         <label>Backup person's WhatsApp number<input id="b-phone" inputmode="tel" placeholder="62813…"></label>
       </div>
       <p class="note">The backup person gets it at the same time, in case the first can't be reached. Give them the passphrase too.</p>
@@ -153,12 +169,12 @@
   let data = null; // { items, notes } while unlocked
   let idle = null;
 
-  function toast(msg, err) { document.querySelectorAll('.toast').forEach((x) => x.remove()); const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 6000 : 2600); }
+  function toast(msg, err) { document.querySelectorAll('.toast').forEach((x) => x.remove()); const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.setAttribute('role', err ? 'alert' : 'status'); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), err ? 6000 : 2600); }
   async function api(op, body) {
     const r = await fetch(`/whatsapp/safe/api/${op}`, body ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin' });
     if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(d.error || `Error ${r.status}`);
+    if (!r.ok) throw new Error(d.error || 'Could not reach LRMagent. Check your connection and try again.');
     return d;
   }
 
@@ -200,8 +216,8 @@
       ['Automatic sending', sending],
       ['Goes to', st.recipient?.name ? `${esc(st.recipient.name)}<br><span class="note">+${esc(st.recipient.phone)}${st.backup ? ` · backup ${esc(st.backup.name)}` : ''}</span>` : '<span class="pill warn">Not chosen</span>'],
       ...(st.pausedUntil ? [['Paused until', `${fmt(st.pausedUntil)}`]] : []),
-      ['Last seen you', `${fmt(st.lastSeen)}<br><span class="note">${esc(st.lastSeenVia || '')}</span>`],
-      st.released ? ['Sent on', fmt(st.released.at)] : ['Would be sent', st.armed && st.deadline ? `${fmt(st.deadline)}<br><span class="note">${until(st.deadline)}${warned ? ` · ${warned} warning${warned > 1 ? 's' : ''} sent` : ''}</span>` : '—'],
+      ['Last active', `${fmt(st.lastSeen)}<br><span class="note">${esc(st.lastSeenVia || '')}</span>`],
+      st.released ? ['Sent on', fmt(st.released.at)] : ['Sends on', st.armed && st.deadline ? `${fmt(st.deadline)}<br><span class="note">${until(st.deadline)}${warned ? ` · ${warned} warning${warned > 1 ? 's' : ''} sent` : ''}</span>` : '—'],
       ['Saved', `${fmt(st.updatedAt)}<br><span class="note">${st.entries} login${st.entries === 1 ? '' : 's'}${st.testedAt ? ` · tested ${fmt(st.testedAt).slice(0, 10)}` : ' · never tested'}</span>`],
     ].map(([k, v]) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('');
     if (st.released) b.innerHTML += '<div class="banner bad">The vault was sent. To take it back, unlock it and press Save: its link stops working and the 7 days start again.</div>';
@@ -220,9 +236,9 @@
     if (!data.items.length) { box.innerHTML = '<div class="empty">No logins yet. Add one, or write everything in the notes below.</div>'; return; }
     box.innerHTML = data.items.map((e, i) => `<div class="entry" data-i="${i}">
       <div class="row">
-        <label>What<input data-f="title" value="${esc(e.title)}" placeholder="e.g. BCA internet banking"></label>
+        <label>Account<input data-f="title" value="${esc(e.title)}" placeholder="e.g. BCA internet banking"></label>
         <label>Username / email<input data-f="user" value="${esc(e.user)}" autocomplete="off"></label>
-        <label>Password<div class="secret"><input data-f="secret" type="password" value="${esc(e.secret)}" autocomplete="off"><button type="button" data-show="${i}">Show</button></div></label>
+        <label>Password<div class="secret"><input data-f="secret" type="password" value="${esc(e.secret)}" autocomplete="off"><button type="button" data-show="${i}" aria-label="Show password">Show</button></div></label>
       </div>
       <div class="row">
         <label>Website<input data-f="url" value="${esc(e.url)}" placeholder="https://"></label>

@@ -82,7 +82,7 @@ _RISKY_WEB = re.compile(r"(?i)\b(buy|purchase|pay|payment|checkout|place order|o
                         r"unsubscribe|submit|publish|post|confirm|sign(?![ -]?(in|on)\b)|subscribe)\b")
 # Signing in is how agents reach the owner's data: never a step to approve (it held every
 # login, and with nobody watching a scheduled report, the run until the request expired).
-_SIGN_IN = re.compile(r"(?i)\b(sign[ -]?in|log[ -]?in|login|masuk|next|continue|lanjut|berikutnya|remember me|keep me signed in)\b")
+_SIGN_IN = re.compile(r"(?i)\b(sign[ -]?in|log[ -]?in|login|masuk|remember me|keep me signed in)\b")
 _MONEY_OR_LOSS = re.compile(r"(?i)\b(buy|purchase|pay|payment|checkout|order|transfer|send money|delete|remove|unsubscribe|publish|post)\b")
 
 
@@ -218,19 +218,8 @@ def _wait_for_browser(executor, tool_call_id):
         if not told and time.time() - started > 60:
             # Nobody may be watching this run (a scheduled report): tell the owner why it waits.
             told = True
-            try:
-                import json as _json
-                import os as _os
-                import urllib.request as _ur
-                from config import conf as _conf
-                who = _where(executor)[0]
-                req = _ur.Request(_os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/") + "/whatsapp/internal/notify-owner",
-                                  method="POST", data=_json.dumps({"agentId": "default", "text":
-                                      f"⏸ *Browser in use*\n- An agent ({who}) is waiting for the browser.\n- You still have it on the Browser page: press *Hand back* or leave the page."}).encode(),
-                                  headers={"Authorization": f"Bearer {_conf().get('external_api_token') or ''}", "Content-Type": "application/json"})
-                _ur.urlopen(req, timeout=15).read()
-            except Exception:
-                pass
+            _notify_owner(_where(executor)[0], f"⏸ *Browser in use*\n- An agent ({_where(executor)[0]}) is waiting for the browser.\n"
+                                               "- You still have it on the Browser page: press *Hand back* or leave the page.")
         if cancel is not None and getattr(cancel, "is_set", lambda: False)():
             return "The conversation was stopped while the owner was using the browser."
         time.sleep(1)
@@ -248,8 +237,15 @@ def _where(executor):
 def _new_code(conn):
     for _ in range(20):
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(4))
-        if not conn.execute("SELECT 1 FROM approvals WHERE code=? AND status='pending'", (code,)).fetchone():
-            return code
+        if conn.execute("SELECT 1 FROM approvals WHERE code=? AND status='pending'", (code,)).fetchone():
+            continue
+        try:  # vault updates waiting for the owner answer to the same YES/NO CODE replies
+            from agent import lrm_vault_flow as flow
+            if any(i.get("code") == code for i in flow._load() if i.get("status") == "owner"):
+                continue
+        except Exception:
+            pass
+        return code
     return "".join(secrets.choice(CODE_ALPHABET) for _ in range(6))
 
 
@@ -373,8 +369,9 @@ def gate(executor, tool_name, arguments, tool_call_id):
         return (f"Nobody approved this action within {minutes} minutes (approval {code}), so it did not run. "
                 "Tell the owner what you wanted to do and ask them to approve it next time.")
     except Exception as e:
-        logger.warning(f"[Approvals] check skipped for {tool_name}: {e}")
-        return None
+        # Fail closed: a check that breaks must not wave a call through.
+        logger.warning(f"[Approvals] check failed for {tool_name}: {e}")
+        return "LRMagent's safety check could not run for this action, so it did not run. Try again in a moment."
 
 
 # ---- the log ---------------------------------------------------------------------------

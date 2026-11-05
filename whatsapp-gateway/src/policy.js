@@ -355,7 +355,8 @@ export function extractLocalFiles(text, roots) {
 // "YES K7QP" / "no k7qp": the owner answering an approval request.
 // "yes" / "no" (English or Indonesian) answers the newest request waiting for the owner;
 // "YES CODE" still picks a specific one. Anything longer is a normal message.
-const YES = /^(yes|y|ok|okay|approve|allow|ya|iya|yap|yup|boleh|setuju|lanjut)$/i;
+// Only clear answers: "ok" or "lanjut" in a normal conversation must not approve anything.
+const YES = /^(yes|y|approve|allow|ya|iya|setuju)$/i;
 const NO = /^(no|n|nope|deny|refuse|reject|tidak|nggak|gak|enggak|jangan|tolak)$/i;
 export function approvalReply(text) {
   const t = String(text ?? '').trim().replace(/[.!👍✅❌]+$/u, '').trim();

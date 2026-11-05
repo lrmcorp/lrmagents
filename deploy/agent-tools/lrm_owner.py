@@ -16,7 +16,7 @@ GATEWAY_URL = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:80
 WHATSAPP_PREFIX = "openai:conversation:whatsapp:"
 BRIEF_PREFIX = "openai:conversation:lrm-brief:"
 # The console's voice page (signed-in owner only) and reports one agent asks of another for the owner.
-OWNER_PREFIXES = (BRIEF_PREFIX, "openai:conversation:lrm-voice:", "openai:conversation:lrm-report:", "openai:conversation:lrm-review:")
+OWNER_PREFIXES = (BRIEF_PREFIX, "openai:conversation:lrm-voice:", "openai:conversation:lrm-report:")
 REFUSAL = ("This uses the owner's personal accounts, so only the owner can use it: from the LRMagent console or the "
            "WhatsApp number's own chat (Message yourself).")
 

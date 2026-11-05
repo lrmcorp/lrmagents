@@ -181,12 +181,20 @@ def sign_in(page, url=None):
         if user.count() == 0:
             # the text field right before the password field
             user = page.locator("input:not([type=hidden]):not([type=password]):not([type=checkbox]):not([type=submit]):visible")
+        def still_on_site():
+            # A redirect or a sign-in step may move to another domain: never type there.
+            h = host_of(page.url)
+            return h == host or h.endswith("." + host)
+        if not still_on_site():
+            return False, f"The sign-in page moved to {host_of(page.url)}, not {host}: the saved login was not used."
         if user.count():
             user.first.fill(entry["username"], timeout=8000)
         if page.locator(_PASS_SEL).count() == 0:  # two steps: the username, then the password
             if not _click_text(page, _SIGNIN_TEXT):
                 page.keyboard.press("Enter")
             page.wait_for_selector(_PASS_SEL, timeout=15000)
+        if not still_on_site():
+            return False, f"The sign-in page moved to {host_of(page.url)}, not {host}: the password was not typed."
         page.locator(_PASS_SEL).first.fill(password, timeout=8000)
         try:  # "remember me" when the site offers it
             page.get_by_label(re.compile(r"(remember|keep me|ingat)", re.I)).first.check(timeout=1500)

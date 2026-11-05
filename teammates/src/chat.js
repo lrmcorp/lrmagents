@@ -47,7 +47,7 @@ function textOf(content) {
 
 export async function allowedSession(session) {
   if (!session) return { ok: false, why: 'This chat did not identify itself, so your plan was not used.' };
-  const OWNER = ['openai:conversation:lrm-brief:', 'openai:conversation:lrm-voice:', 'openai:conversation:lrm-report:', 'openai:conversation:lrm-review:'];
+  const OWNER = ['openai:conversation:lrm-brief:', 'openai:conversation:lrm-voice:', 'openai:conversation:lrm-report:'];
   if (!session.startsWith('openai:') || OWNER.some((p) => session.startsWith(p))) return { ok: true };
   if (!session.startsWith(WHATSAPP)) return { ok: false, why: 'Your plans can only be used from the LRMagent console or your own WhatsApp chat.' };
   const [agent, ...rest] = session.slice(WHATSAPP.length).split(':');

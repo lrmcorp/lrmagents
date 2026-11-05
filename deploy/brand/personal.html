@@ -27,8 +27,8 @@
   .bar button { border: 0; background: transparent; border-radius: 12px; padding: 10px 12px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; font-size: 13px; }
   .bar button:hover { background: rgba(255,255,255,.08); }
   .bar button[aria-pressed="true"] { background: rgba(255,45,85,.18); color: #ffd0da; }
-  .bar .talk { background: var(--accent); color: #fff; font-weight: 600; padding: 10px 18px; }
-  .bar .talk:hover { background: #ff4669; }
+  .bar .talk { background: #d10f3d; color: #fff; font-weight: 600; padding: 10px 18px; }
+  .bar .talk:hover { background: #e11d48; }
   .bar .talk.on { background: #fff; color: #111; }
   .bar select { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; font: inherit; font-size: 12.5px; }
   .bar select option { color: #111; }
@@ -58,27 +58,34 @@
   .top { position: fixed; top: 16px; left: 16px; display: flex; gap: 8px; align-items: center; font: 12px var(--mono); color: var(--muted); }
   .top a { color: var(--muted); text-decoration: none; border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; }
   .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #2a0d14; border: 1px solid #6b1f30; color: #ffd0da; padding: 9px 14px; border-radius: 10px; font-size: 13px; display: none; max-width: min(560px, calc(100% - 32px)); max-height: 60vh; overflow: auto; white-space: pre-line; cursor: pointer; z-index: 30; }
+  @media (max-width: 760px) { .toast { top: 56px; } }
   @media (max-width: 760px) {
     .card { width: calc(50% - 22px); padding: 9px 10px; } .card .val { font-size: 22px; }
     .subs { bottom: 150px; } .cam { width: 42vw; }
     .typed { bottom: 140px; } body.typing .subs { bottom: 200px; }
   }
+
+  /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
+  @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; } }
+  @media (pointer: coarse) { button, select, summary, .btn { min-height: 44px; } }
+  :focus-visible { outline: 2px solid var(--ring, #7480f1); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
 </head>
 <body>
-<div class="stage"><canvas id="orb" aria-label="Tap to talk"></canvas><div class="name" id="name">LRM</div><div class="state" id="state">starting</div></div>
+<div class="stage"><canvas id="orb" role="button" tabindex="0" aria-label="Talk to Sora"></canvas><div class="name" id="name">LRM</div><div class="state" id="state">starting</div></div>
 <div class="hud" id="hud"></div>
-<div class="top"><span id="who">Personal</span><a href="/assets/brand/personal.html" target="_blank" rel="noopener" title="Open on its own (phone: add to home screen)"><i class="fa-solid fa-up-right-from-square"></i></a></div>
+<div class="top"><span id="who">Personal</span><a href="/assets/brand/personal.html" target="_blank" rel="noopener" title="Open on its own (phone: add to home screen)" aria-label="Open on its own"><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i></a></div>
 <div class="cam" id="cam"><video id="video" playsinline muted></video><canvas id="boxes"></canvas>
   <button class="look" id="look"><i class="fa-solid fa-eye"></i> What do you see?</button><div class="seen" id="seen"></div></div>
-<div class="subs"><div class="you" id="you"></div><div class="it" id="it"></div></div>
-<form class="typed" id="typed"><input id="typed-in" placeholder="Type instead…" autocomplete="off"><button class="bar-btn" style="border:0;background:var(--accent);color:#fff;border-radius:12px;padding:0 14px;cursor:pointer">Send</button></form>
+<div class="subs"><div class="you" id="you"></div><div class="it" id="it" aria-live="polite"></div></div>
+<form class="typed" id="typed"><input id="typed-in" aria-label="Type a message" placeholder="Type instead…" autocomplete="off"><button class="bar-btn" style="border:0;background:var(--accent);color:#fff;border-radius:12px;padding:0 14px;cursor:pointer">Send</button></form>
 <div class="bar">
-  <button class="talk" id="talk" title="Hold to talk, or tap to start and stop (Space)"><i class="fa-solid fa-microphone"></i><span id="talk-l">Talk</span></button>
+  <button class="talk" id="talk" title="Hold to talk, or tap to start and stop (Space)"><i class="fa-solid fa-microphone" aria-hidden="true"></i><span id="talk-l">Talk</span></button>
   <button id="handsfree" title="Hands-free: it listens and answers when you stop talking" aria-pressed="false"><i class="fa-solid fa-wave-square"></i><span class="l">Hands-free</span></button>
   <button id="camera" title="Camera: let it see" aria-pressed="false"><i class="fa-solid fa-camera"></i><span class="l">Camera</span></button>
-  <button id="keyboard" title="Type a message" aria-pressed="false"><i class="fa-regular fa-keyboard"></i></button>
-  <button id="mute" title="Spoken answers on/off" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
+  <button id="keyboard" title="Type a message" aria-label="Type a message" aria-pressed="false"><i class="fa-regular fa-keyboard" aria-hidden="true"></i></button>
+  <button id="mute" title="Spoken answers on/off" aria-label="Spoken answers" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
   <select id="voice" title="Sora's voice"><option value="device">Fast voice</option><option value="server">Sora voice (slower)</option></select>
   <select id="lang" title="Language you speak"><option value="">Auto</option><option value="en">English</option><option value="id">Bahasa Indonesia</option><option value="zh">中文</option></select>
 </div>
@@ -105,9 +112,11 @@
   const cv = $('#orb'); const g = cv.getContext('2d'); let t0 = performance.now();
   function size() { const d = Math.min(devicePixelRatio || 1, 2); const r = cv.getBoundingClientRect(); cv.width = r.width * d; cv.height = r.height * d; g.setTransform(d, 0, 0, d, 0, 0); }
   addEventListener('resize', () => { size(); if (S.panels) showHud(S.panels); }); size();
+  const STILL = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function draw(now) {
     requestAnimationFrame(draw);
-    const w = cv.clientWidth; const h = cv.clientHeight; const cx = w / 2; const cy = h / 2; const t = (now - t0) / 1000;
+    // With reduced motion on, the orb holds still (it still shows the voice level).
+    const w = cv.clientWidth; const h = cv.clientHeight; const cx = w / 2; const cy = h / 2; const t = STILL ? 0 : (now - t0) / 1000;
     const live = S.state === 'listening' ? S.level : S.state === 'speaking' ? S.out : 0;
     const breathe = S.state === 'idle' ? 0.02 * Math.sin(t * 1.6) : 0;
     const R = w * 0.27 * (1 + breathe + live * 0.22);
@@ -498,6 +507,7 @@
   talk.addEventListener('pointerup', release);
   talk.addEventListener('pointercancel', release);
   // The orb: while Sora speaks, a tap interrupts her and listens at once; otherwise it talks / sends.
+  cv.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cv.click(); } });
   cv.addEventListener('click', () => { unlock(); if (S.state === 'speaking') { stopSpeaking(); S.conversation = true; setState('idle'); startRec(); } else if (S.rec) stopRec(); else { S.conversation = true; S.turns = 0; startRec(); } });
   addEventListener('keydown', (e) => {
     if (e.target.closest('input, select, textarea')) return;

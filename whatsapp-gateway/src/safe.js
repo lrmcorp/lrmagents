@@ -225,7 +225,7 @@ export class Safe {
       '',
       'It contains their private vault, locked with a passphrase they gave you in advance.',
       link ? `Open it here: ${link}` : 'Open the attached file in a web browser.',
-      'Or open the attached file. Then type the passphrase.',
+      link ? 'Or open the attached file. Then type the passphrase.' : 'Then type the passphrase.',
     ].join('\n');
     return { text, document: Buffer.from(openerPage(data)) };
   }
@@ -242,7 +242,16 @@ export class Safe {
       const when = new Date(s.updatedAt).toLocaleDateString('en-GB').replace(/\//g, '-');
       await this.notifyOwner(`🔒 *Private vault: time for a check*\n- Last saved ${when}.\n- Are the passwords and notes still right? Knowledge → Private vault.`).catch(() => {});
     }
-    if (!s.armed || s.released) return;
+    if (!s.armed) return;
+    if (s.released) {
+      // Sent, but the backup person (or the first) did not get it: keep trying, a few times.
+      const missing = [s.recipient, s.backup].filter((p) => p?.phone && !(s.sentTo || []).includes(p.phone));
+      if (!missing.length || (s.retries || 0) >= 12) return;
+      s.retries = (s.retries || 0) + 1;
+      this.busy = true;
+      try { await this.release(openerPage); } catch (e) { this.log.error?.({ err: e.message }, 'private vault retry failed'); } finally { this.busy = false; }
+      return;
+    }
     this.busy = true;
     try {
       const p = plan(s, now);
@@ -267,6 +276,7 @@ export class Safe {
     const token = s.token || crypto.randomBytes(24).toString('base64url');
     s.token = token;
     s.sentTo = s.sentTo || [];
+    const before = s.sentTo.length;
     await this.persist();
     // The person, and the backup person; each only once, and one failing does not stop the other.
     const people = [s.recipient, s.backup].filter((p) => p?.phone && !s.sentTo.includes(p.phone));
@@ -282,6 +292,11 @@ export class Safe {
       }
     }
     if (!s.sentTo.length) throw new Error(errors.join('; ') || 'not sent');
+    if (s.released && s.sentTo.length === before) {  // a retry that reached nobody new: no new notice
+      s.error = errors.join('; ').slice(0, 200);
+      await this.persist();
+      return;
+    }
     s.released = { at: this.now(), to: s.sentTo.join(', ') };
     s.error = errors.join('; ').slice(0, 200);
     await this.persist();

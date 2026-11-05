@@ -11,8 +11,14 @@
     --brand: #18181b; --brand-strong: #000000; --brand-soft: #ebebf9;
     --canvas: #f9f9fb; --surface: #fff; --muted-bg: #f3f3f8;
     --text: #0a0a0f; --text-2: #3f3f46; --text-3: #64646c;
-    --line: #dbdbe5; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2;
+    --line: #dbdbe5; --warn: #92400e; --warn-bg: #fffbeb; --bad: #be123c; --bad-bg: #fff1f2; --on-brand: #fff; --ring: #7480f1;
   }
+  :root.dark { --brand: #f0f0f4; --brand-strong: #ffffff; --brand-soft: #2a2440; --on-brand: #13101b;
+    --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a; --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6;
+    --line: #2b2538; --warn: #f5c76b; --warn-bg: #3a2a10; --bad: #f2a1a1; --bad-bg: #3a1418; }
+  @media (prefers-color-scheme: dark) { :root:not(.light) { --brand: #f0f0f4; --brand-strong: #ffffff; --brand-soft: #2a2440; --on-brand: #13101b;
+    --canvas: #13101b; --surface: #1a1624; --muted-bg: #1f1a2a; --text: #f0f0f4; --text-2: #c9c9d2; --text-3: #9a9aa6;
+    --line: #2b2538; --warn: #f5c76b; --warn-bg: #3a2a10; --bad: #f2a1a1; --bad-bg: #3a1418; } }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
   body { margin: 0; background: var(--canvas); color: var(--text); font: 400 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -32,12 +38,12 @@
   .id { color: var(--text-3); font-size: 12px; font-family: ui-monospace, monospace; }
   .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--muted-bg); color: var(--text-2); border: 1px solid var(--line); }
   .badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-  .badge.connected { background: var(--brand-soft); color: var(--brand); border-color: #b7dccb; }
+  .badge.connected { background: var(--brand-soft); color: var(--brand); border-color: #c9c9ef; }
   .badge.qr, .badge.starting, .badge.reconnecting { background: var(--warn-bg); color: var(--warn); border-color: #fde68a; }
   .badge.logged_out, .badge.error { background: var(--bad-bg); color: var(--bad); border-color: #fecdd3; }
   .actions { margin-left: auto; display: flex; gap: 8px; }
-  button { font: 700 13px Inter, system-ui, sans-serif; border-radius: 10px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
-  button.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
+  button { font: 600 13px Inter, system-ui, sans-serif; border-radius: 10px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--text); }
+  button.primary { background: var(--brand); border-color: var(--brand); color: var(--on-brand); }
   button.primary:hover { background: var(--brand-strong); }
   button.danger { color: var(--bad); }
   button:disabled { opacity: .5; cursor: default; }
@@ -61,7 +67,17 @@
   .pending-row code { font-weight: 700; letter-spacing: .08em; }
   .empty { color: var(--text-2); }
   @media (max-width: 640px) { .form { grid-template-columns: 1fr; } .actions { margin-left: 0; width: 100%; } .qr img { width: 200px; height: 200px; } }
+
+  /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
+  @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; } }
+  @media (pointer: coarse) { button, select, summary, .btn { min-height: 44px; } }
+  :focus-visible { outline: 2px solid var(--ring, #7480f1); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
+<script>
+// Inside the console follow its theme; on its own follow the device (see the CSS).
+try { if (window.parent !== window) document.documentElement.classList.add(window.parent.document.documentElement.classList.contains('dark') ? 'dark' : 'light'); } catch { /* another origin */ }
+</script>
 </head>
 <body>
 <header>
@@ -78,23 +94,23 @@
     <p class="lede" style="margin:6px 0 12px;font-size:13px">Besides you, these are the only people agents may contact first on WhatsApp (people you approved can still get the reminders they ask an agent for). <b>Listen only</b>: when they write back the agent does not answer; Lorium tells you, and the agent learns the answer. <b>Agent may reply</b>: the agent talks with them directly.</p>
     <div id="d-list"></div>
     <form id="d-add" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <input name="name" placeholder="Name" style="flex:1 1 160px">
-      <input name="phone" placeholder="Number with country code, e.g. 62812…" inputmode="tel" style="flex:2 1 220px">
-      <select name="mode" style="flex:1 1 200px;width:auto"><option value="listen">Listen only (Lorium tells me)</option><option value="reply">Agent may reply</option></select>
+      <input name="name" placeholder="Name" aria-label="Contact name" style="flex:1 1 160px">
+      <input name="phone" placeholder="Number with country code, e.g. 62812…" aria-label="WhatsApp number with country code" inputmode="tel" style="flex:2 1 220px">
+      <select name="mode" aria-label="When they write back" style="flex:1 1 200px;width:auto"><option value="listen">Listen only (Lorium tells me)</option><option value="reply">Agent may reply</option></select>
       <button class="primary">Add</button>
     </form>
-    <p class="hint" id="d-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
+    <p class="hint" role="status" id="d-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
   </section>
   <section class="card" id="groups" style="margin-bottom:16px">
     <div class="card-head"><h2>Groups</h2><div class="actions"><button id="g-load">Show my groups</button></div></div>
     <p class="lede" style="margin:6px 0 12px;font-size:13px">Groups your linked numbers are in. Tick the ones agents may post to (reports, reminders, messages you ask for); every other group stays closed. In a group, agents answer only when someone @mentions them or replies to them.</p>
     <div id="g-list"><p style="color:var(--text-3);margin:0" id="g-none">Loading…</p></div>
     <form id="g-add" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-      <input name="name" placeholder="Group name" style="flex:1 1 160px">
-      <input name="jid" placeholder="Or add by group id, e.g. 120363…@g.us" style="flex:2 1 240px" spellcheck="false">
+      <input name="name" placeholder="Group name" aria-label="Group name" style="flex:1 1 160px">
+      <input name="jid" placeholder="Or add by group id, e.g. 120363…@g.us" aria-label="Group id" style="flex:2 1 240px" spellcheck="false">
       <button>Add group</button>
     </form>
-    <p class="hint" id="g-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
+    <p class="hint" role="status" id="g-msg" style="margin:6px 0 0;font-size:12px;color:var(--text-3)"></p>
   </section>
   <div id="agents" class="grid"><p class="empty">Loading agents…</p></div>
 </main>
@@ -103,7 +119,7 @@
 if (window.self !== window.top) document.querySelector('header').hidden = true;
 const $ = (sel, root = document) => root.querySelector(sel);
 const STATUS = { unlinked: 'Not linked', starting: 'Starting…', qr: 'Waiting for scan', connected: 'Connected', reconnecting: 'Reconnecting…', logged_out: 'Logged out on phone', error: 'Connection failed' };
-const DM = { pairing: 'Pairing — strangers get a code you approve here', allowlist: 'Allowlist only', open: 'Anyone (not recommended)', disabled: 'Nobody' };
+const DM = { pairing: 'Pairing: strangers get a code you approve here', allowlist: 'Allowlist only', open: 'Anyone (not recommended)', disabled: 'Nobody' };
 const GROUP = { off: 'Ignore groups', mention: 'Answer when @mentioned or replied to' };
 const polls = {};
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -148,17 +164,17 @@ function card(agent) {
     <details>
       <summary>Who can talk to this agent, and how it answers</summary>
       <form class="form" data-settings>
-        <div class="full"><label>Mode</label><select name="mode">${options({ reply: 'Answer chats (agent replies)', monitor: 'Monitor only: read and report, never send anything' }, wa.settings.mode || 'reply')}</select>
+        <div class="full"><label>Mode</label><select name="mode" aria-label="Mode">${options({ reply: 'Answer chats (agent replies)', monitor: 'Monitor only: read and report, never send anything' }, wa.settings.mode || 'reply')}</select>
           <div class="hint">Monitor only is for a branch's own WhatsApp: staff keep using the phone; the agent sees customers' messages and staff replies, sends nothing (no replies, read ticks or typing), and reports to you (new numbers, complaints, reply times, chat quality).</div></div>
-        <div><label>Direct messages</label><select name="dmPolicy">${options(DM, wa.settings.dmPolicy)}</select></div>
-        <div><label>Groups</label><select name="groupPolicy">${options(GROUP, wa.settings.groupPolicy)}</select></div>
-        <div><label>Quick messages in a row</label><select name="batchMs">${options({ 0: 'Answer each one', 2500: 'Wait 2 seconds, answer together', 5000: 'Wait 5 seconds, answer together' }, String(wa.settings.batchMs ?? 2500))}</select></div>
-        <div><label>Voice notes</label><select name="voiceReplies">${options({ false: 'Reply in text', true: 'Reply in text and voice' }, String(Boolean(wa.settings.voiceReplies)))}</select></div>
+        <div><label>Direct messages</label><select name="dmPolicy" aria-label="Direct messages">${options(DM, wa.settings.dmPolicy)}</select></div>
+        <div><label>Groups</label><select name="groupPolicy" aria-label="Groups">${options(GROUP, wa.settings.groupPolicy)}</select></div>
+        <div><label>Quick messages in a row</label><select name="batchMs" aria-label="Quick messages in a row">${options({ 0: 'Answer each one', 2500: 'Wait 2 seconds, answer together', 5000: 'Wait 5 seconds, answer together' }, String(wa.settings.batchMs ?? 2500))}</select></div>
+        <div><label>Voice notes</label><select name="voiceReplies" aria-label="Voice notes">${options({ false: 'Reply in text', true: 'Reply in text and voice' }, String(Boolean(wa.settings.voiceReplies)))}</select></div>
         <div class="full"><label>Your own numbers</label>
-          <textarea name="ownerNumbers" placeholder="6281234567890">${esc((wa.settings.ownerNumbers || []).join(', '))}</textarea>
+          <textarea name="ownerNumbers" aria-label="Your own numbers" placeholder="6281234567890">${esc((wa.settings.ownerNumbers || []).join(', '))}</textarea>
           <div class="hint">Phones you write to the agent from. They count as you: your plans (Codex, Claude…), approvals, error details and owner messages go there.</div></div>
         <div class="full"><label>Approved numbers</label>
-          <textarea name="allowFrom" placeholder="6281234567890, 6289876543210">${esc(wa.settings.allowFrom.join(', '))}</textarea>
+          <textarea name="allowFrom" aria-label="Approved numbers" placeholder="6281234567890, 6289876543210">${esc(wa.settings.allowFrom.join(', '))}</textarea>
           <div class="hint">With country code, separated by commas. The linked phone itself can always use “Message yourself”.</div></div>
         <div class="full"><button class="primary" type="submit">Save</button> <span data-saved class="hint"></span></div>
       </form>
@@ -288,7 +304,8 @@ loadGroups();
 api('designated').then((d) => { contacts = d.contacts; drawContacts(); }).catch(() => {});
 
 load();
-setInterval(() => { if (!document.querySelector('.qr:not([hidden])')) load(); }, 30000);
+// The refresh skips while the owner is editing, so an open settings form is never reset.
+setInterval(() => { if (!document.querySelector('.qr:not([hidden])') && !document.querySelector('#agents details[open]') && !document.activeElement?.closest('#agents, #designated, #groups')) load(); }, 30000);
 </script>
 </body>
 </html>

@@ -226,6 +226,8 @@ def decide_by_code(code, decision):
 def review(item_id, by_agent, decision, content=None, note=""):
     if by_agent != reviewer_id():
         raise PermissionError(f"Only {agent_name(reviewer_id())} reviews vault updates.")
+    if decision not in ("approve", "reject"):
+        raise ValueError("decision must be 'approve' or 'reject'")
     with _lock:
         items = _load()
         item = next((i for i in items if i["id"] == item_id), None)

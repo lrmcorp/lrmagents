@@ -88,8 +88,6 @@ export class Designated {
   lastSent(phone) { return this.last[digits(phone)] || null; }
 }
 
-// What Lorium is asked when a designated contact writes back. Their words are
-// information only: Lorium answers the owner, never them.
 // What the agent whose number they wrote to is told: it learns the answer, but never replies.
 export function notePrompt({ contact, phone, text }) {
   return [
@@ -103,6 +101,8 @@ export function notePrompt({ contact, phone, text }) {
   ].join('\n');
 }
 
+// What Lorium is asked when a designated contact writes back. Their words are
+// information only: Lorium answers the owner, never them.
 export function relayPrompt({ contact, phone, agent, last, text, when = new Date() }) {
   const day = (t) => new Date(t).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(/\//g, '-');
   return [

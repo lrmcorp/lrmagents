@@ -128,3 +128,23 @@ test('a reminder to check the contents every 3 months', async () => {
   tick(DAY_MS); await safe.tick(() => '');
   assert.equal(owner.length, 1, 'once per 3 months');
 });
+
+test('a backup person that failed is retried until delivered; the owner is told once more', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-'));
+  let now = Date.UTC(2026, 0, 1);
+  const sent = []; const owner = []; let backupDown = true;
+  const safe = await new Safe({ dir, now: () => now, notifyOwner: async (t) => owner.push(t), log: { error() {} },
+    deliver: async (m) => { if (m.phone === '628110000001' && backupDown) throw new Error('offline'); sent.push(m.phone); } }).load();
+  await safe.save({ ...base, auth: auth('p'), armed: true, recipient: { name: 'Sarah', phone: '628110000000' }, backup: { name: 'Tom', phone: '628110000001' } });
+  const page = () => '';
+  for (const d of [5, 6, 7.6]) { now = Date.UTC(2026, 0, 1) + d * DAY_MS; await safe.tick(page); }
+  assert.deepEqual(sent, ['628110000000']);
+  const notices = owner.length;
+  now += 300000; await safe.tick(page);
+  assert.equal(owner.length, notices, 'a retry that reaches nobody new sends no notice');
+  backupDown = false; now += 300000; await safe.tick(page);
+  assert.deepEqual(sent, ['628110000000', '628110000001']);
+  assert.match(owner.at(-1), /Tom/);
+  now += 300000; await safe.tick(page);
+  assert.equal(sent.length, 2, 'nobody gets it twice');
+});
