@@ -182,7 +182,10 @@ def decode(data):
 def transcribe(data, lang=None):
     audio = decode(data)
     with _stt_lock:
-        segments, info = whisper().transcribe(audio, language=lang or None, vad_filter=True, beam_size=1,
+        # Fast settings for short spoken requests: one beam, no timestamps, no carrying text
+        # between segments, silence skipped.
+        segments, info = whisper().transcribe(audio, language=lang or None, vad_filter=True, beam_size=1, best_of=1,
+                                              without_timestamps=True, condition_on_previous_text=False,
                                               initial_prompt="LRMagent, Lorium, Reyner, Liando Reyfort Management.")
         text = " ".join(s.text.strip() for s in segments).strip()
     language = {"ms": "id", "jw": "id"}.get(info.language, info.language)

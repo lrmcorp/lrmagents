@@ -161,7 +161,8 @@
     const src = S.ctx.createMediaStreamSource(S.stream);
     S.analyser = S.ctx.createAnalyser(); S.analyser.fftSize = 1024; src.connect(S.analyser);
     const buf = new Uint8Array(S.analyser.fftSize);
-    let loud = 0; let quiet = 0; const mine = S.analyser;
+    const mine = S.analyser;
+    let noise = 0.012; let loudSince = 0;
     (function meter() {
       if (S.analyser !== mine) return;
       requestAnimationFrame(meter);
@@ -169,13 +170,74 @@
       let sum = 0; for (const v of buf) sum += ((v - 128) / 128) ** 2;
       const rms = Math.sqrt(sum / buf.length);
       S.level = S.level * 0.7 + Math.min(1, rms * 6) * 0.3;
-      // hands-free: start on speech, stop after a short silence
-      if (!S.handsFree || S.busy || S.state === 'speaking') { loud = 0; quiet = 0; return; }
-      if (rms > 0.045) { loud++; quiet = 0; } else { quiet++; loud = Math.max(0, loud - 1); }
-      if (!S.rec && loud > 6) startRec();
-      if (S.rec && quiet > 55) stopRec();
+      const now = performance.now();
+      // The room's background level: follows quiet moments quickly, loud ones slowly,
+      // so a fan or traffic is not taken for speech.
+      noise = rms < noise ? noise * 0.9 + rms * 0.1 : noise * 0.998 + rms * 0.002;
+      const voiced = rms > Math.max(0.022, noise * 2.8);
+      if (S.busy || S.state === 'speaking') { loudSince = 0; return; }
+      if (!S.rec) {
+        // hands-free: start when the owner starts talking
+        if (S.handsFree && voiced) { loudSince = loudSince || now; if (now - loudSince > 150) startRec(); } else loudSince = 0;
+        return;
+      }
+      // Recording (Talk or hands-free): stop by itself once the owner has finished.
+      if (voiced) {
+        S.lastVoice = now;
+        S.voiceRun = S.voiceRun || now;
+        if (now - S.voiceRun > 250) S.spoke = true; // real speech, not a click
+      } else if (now - (S.lastVoice || 0) > 250) S.voiceRun = 0;
+      if (S.held) return; // push-to-talk: the release ends it
+      if (S.spoke && now - S.lastVoice > SILENCE_MS) stopRec();
+      else if (!S.spoke && now - S.recAt > 8000) { S.discard = true; stopRec(); }
+      else if (now - S.recAt > 120000) stopRec();
     })();
     return S.stream;
+  }
+  const SILENCE_MS = 1300; // this long a pause after speaking ends the recording
+
+  // ---- live transcription in the browser (Chrome, Edge, Safari) -------------------------
+  // It writes down what the owner says while they speak, so the words are ready the moment
+  // they stop; the server (Whisper) is only the fallback, as it needs several seconds.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const BCP = { en: 'en-US', id: 'id-ID', zh: 'zh-CN' };
+  function liveLang() {
+    const chosen = $('#lang').value;
+    if (chosen) return chosen;
+    return store.get('lrm_p_heard', '') || ({ id: 'id', zh: 'zh' }[String(navigator.language).slice(0, 2)] || 'en');
+  }
+  function liveStart() {
+    S.live = null;
+    if (!SR) return;
+    try {
+      const r = new SR();
+      const lang = liveLang();
+      r.lang = BCP[lang] || 'en-US'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+      const live = { rec: r, lang, final: '', interim: '', ok: true, ended: false, done: null };
+      r.onresult = (e) => {
+        let fin = ''; let mid = '';
+        for (const res of e.results) { if (res.isFinal) fin += res[0].transcript + ' '; else mid += res[0].transcript; }
+        live.final = fin; live.interim = mid;
+        const said = (fin + mid).trim(); if (said) $('#you').textContent = `“${said}”`;
+      };
+      r.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') live.ok = false; };
+      r.onend = () => { live.ended = true; if (live.done) live.done(); };
+      r.start();
+      S.live = live;
+    } catch { S.live = null; }
+  }
+  // What the browser heard, or null (none, or it failed: then the server transcribes).
+  function liveStop() {
+    const live = S.live; S.live = null;
+    if (!live) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      let doneOnce = false;
+      const finish = () => { if (doneOnce) return; doneOnce = true; const t = (live.final + ' ' + live.interim).replace(/\s+/g, ' ').trim(); resolve(live.ok && t ? { text: t, lang: live.lang } : null); };
+      if (live.ended) return finish();
+      live.done = finish;
+      try { live.rec.stop(); } catch { finish(); }
+      setTimeout(finish, 1200); // the last words arrive within a moment of stopping
+    });
   }
   function pickType() { for (const t of ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm']) if (window.MediaRecorder?.isTypeSupported?.(t)) return t; return ''; }
   async function startRec() {
@@ -186,8 +248,14 @@
     S.rec = new MediaRecorder(S.stream, type ? { mimeType: type } : undefined);
     S.rec.ondataavailable = (e) => { if (e.data.size) S.chunks.push(e.data); };
     session('play-and-record');
-    S.rec.onstop = () => { releaseMic(); const blob = new Blob(S.chunks, { type: S.rec?.mimeType || type || 'audio/webm' }); S.rec = null; $('#talk').classList.remove('on'); $('#talk-l').textContent = 'Talk'; if (blob.size > 2500) heard(blob); else setState('idle'); };
-    S.rec.start(); S.recAt = Date.now();
+    S.rec.onstop = () => {
+      releaseMic(); const blob = new Blob(S.chunks, { type: S.rec?.mimeType || type || 'audio/webm' }); S.rec = null;
+      $('#talk').classList.remove('on'); $('#talk-l').textContent = 'Talk';
+      if (S.discard) { S.discard = false; liveStop(); setState('idle', "didn't hear anything"); return; }
+      if (blob.size > 2500) heard(blob); else setState('idle');
+    };
+    S.rec.start(); S.recAt = performance.now(); S.lastVoice = 0; S.voiceRun = 0; S.spoke = false; S.discard = false;
+    $('#you').textContent = ''; liveStart();
     $('#talk').classList.add('on'); $('#talk-l').textContent = 'Stop'; setState('listening');
   }
   function stopRec() { if (S.rec && S.rec.state !== 'inactive') S.rec.stop(); }
@@ -210,11 +278,14 @@
   async function heard(blob) {
     S.busy = true; setState('thinking', 'understanding');
     try {
+      const live = await liveStop();
+      if (live) { await ask(live.text, { lang: live.lang }); return; }
       const lang = $('#lang').value;
       const r = await fetch('/api/lrm/voice?op=stt', { method: 'POST', body: blob, headers: lang ? { 'X-Lang': lang } : {}, credentials: 'same-origin' });
       const data = await readJson(r);
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       if (!data.text) { S.busy = false; setState('idle', "didn't catch that"); return; }
+      if (['en', 'id', 'zh'].includes(data.language)) store.set('lrm_p_heard', data.language); // live transcription follows it
       await ask(data.text, { lang: data.language });
     } catch (e) { S.busy = false; setState('idle'); toast(`Couldn't understand the audio: ${e.message}`); }
   }
@@ -357,8 +428,11 @@
 
   // ---- controls ----------------------------------------------------------------------
   const talk = $('#talk'); let pressAt = 0;
-  talk.addEventListener('pointerdown', (e) => { e.preventDefault(); unlock(); pressAt = Date.now(); if (S.rec) stopRec(); else startRec(); });
-  talk.addEventListener('pointerup', () => { if (S.rec && Date.now() - pressAt > 450) stopRec(); }); // held = push-to-talk
+  talk.addEventListener('pointerdown', (e) => { e.preventDefault(); unlock(); pressAt = Date.now(); if (S.rec) { S.held = false; stopRec(); } else { S.held = true; startRec(); } });
+  // Held = push-to-talk (ends on release); a tap = talk, and it ends by itself when you stop.
+  const release = () => { const held = S.held; S.held = false; if (S.rec && held && Date.now() - pressAt > 450) stopRec(); };
+  talk.addEventListener('pointerup', release);
+  talk.addEventListener('pointercancel', release);
   cv.addEventListener('click', () => { unlock(); if (S.state === 'speaking') { stopSpeaking(); setState('idle'); } else if (S.rec) stopRec(); else startRec(); });
   addEventListener('keydown', (e) => {
     if (e.target.closest('input, select, textarea')) return;

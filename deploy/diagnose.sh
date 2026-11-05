@@ -79,3 +79,23 @@ except Exception as e:
     print("failed:", e)
 PY' </dev/null
 echo "== fallback during the test"; dc logs --no-color --since 15m cowagent 2>&1 | grep -iE 'fallback|LLM API error|failed across|402|usage limit|lrmplans' | cut -c1-380 | tail -25
+echo "== voice timing (text-to-speech, then speech-to-text of it)"
+dc exec -T cowagent python - <<'PY' 2>&1 | tail -8
+import json, time, urllib.request
+from config import load_config, conf
+load_config()
+tok = str(conf().get("external_api_token") or "")
+def call(path, data, ctype):
+    t = time.time()
+    req = urllib.request.Request("http://voice:8095" + path, data=data, method="POST", headers={"Authorization": "Bearer " + tok, "Content-Type": ctype})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        return r.read(), r.headers.get("Content-Type"), time.time() - t
+for lang, text in (("en", "Yes, I can hear you loud and clear. What can I do for you?"), ("id", "Ya, saya bisa mendengar Anda dengan jelas.")):
+    try:
+        wav, ctype, secs = call("/tts", json.dumps({"text": text, "lang": lang, "format": "wav"}).encode(), "application/json")
+        print(f"tts {lang}: {len(wav)} bytes {ctype} in {secs:.1f}s")
+        out, _, secs = call("/stt", wav, "application/octet-stream")
+        print(f"stt {lang}: {json.loads(out).get('text')!r} in {secs:.1f}s")
+    except Exception as e:
+        print(f"{lang} failed: {e} {getattr(e, 'read', lambda: b'')()[:200]!r}")
+PY
