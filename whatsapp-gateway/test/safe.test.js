@@ -81,3 +81,50 @@ test('switched off: nothing is sent', async () => {
   tick(30 * DAY_MS); await safe.tick(() => '');
   assert.equal(sent.length + owner.length, 0);
 });
+
+test('backup person: both get it; a pause holds everything until it ends', async () => {
+  const { safe, sent, owner, tick, at } = await make();
+  const page = () => '<html></html>';
+  await assert.rejects(safe.save({ ...base, auth: auth('p'), armed: true, recipient: { name: 'Sarah', phone: '628110000000' }, backup: { name: 'Tom', phone: '628110000000' } }), /different number/);
+  await safe.save({ ...base, auth: auth('p'), armed: true, recipient: { name: 'Sarah', phone: '628110000000' }, backup: { name: 'Tom', phone: '628110000001' },
+    pausedUntil: new Date(at() + 20 * DAY_MS).toISOString() });
+  await assert.rejects(safe.save({ ...base, auth: auth('p'), armed: true, recipient: { name: 'S', phone: '628110000000' }, pausedUntil: new Date(at() + 90 * DAY_MS).toISOString() }), /up to 60 days/);
+  await safe.save({ ...base, auth: auth('p'), armed: true, recipient: { name: 'Sarah', phone: '628110000000' }, backup: { name: 'Tom', phone: '628110000001' },
+    pausedUntil: new Date(at() + 20 * DAY_MS).toISOString() });
+  tick(19 * DAY_MS); await safe.tick(page);
+  assert.equal(owner.length + sent.length, 0, 'paused: no warnings, nothing sent');
+  tick(6 * DAY_MS); await safe.tick(page); // 5 days after the pause ended
+  assert.equal(owner.length, 1);
+  tick(1 * DAY_MS); await safe.tick(page);
+  tick(1.1 * DAY_MS); await safe.tick(page);
+  assert.deepEqual(sent.map((m) => m.phone), ['628110000000', '628110000001']);
+  assert.match(sent[1].text, /Hello Tom/);
+});
+
+test('send a test to me: to the owner only, with a 24-hour link; needs the passphrase', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'safe-'));
+  let now = Date.UTC(2026, 0, 1);
+  const sent = [];
+  const safe = await new Safe({ dir, now: () => now, notifyOwner: async () => {}, deliver: async (m) => sent.push(m), ownerPhone: () => '6281200000000', log: { error() {} } }).load();
+  await safe.save({ ...base, auth: auth('p'), armed: true, recipient: { name: 'Sarah', phone: '628110000000' }, ownerName: 'Ryan' }, 'https://agent.example');
+  await assert.rejects(safe.test(auth('x'), () => ''), /Wrong passphrase/);
+  await safe.test(auth('p'), (d) => JSON.stringify(d));
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].phone, '6281200000000');
+  assert.match(sent[0].text, /TEST/);
+  const token = sent[0].text.match(/open\/([A-Za-z0-9_-]+)/)[1];
+  assert.equal(safe.released(token).test, true);
+  now += 25 * 3_600_000;
+  assert.equal(safe.released(token), null, 'test link expires');
+});
+
+test('a reminder to check the contents every 3 months', async () => {
+  const { safe, owner, tick } = await make();
+  await safe.save({ ...base, auth: auth('p'), armed: false });
+  tick(89 * DAY_MS); await safe.tick(() => '');
+  assert.equal(owner.length, 0);
+  tick(2 * DAY_MS); await safe.tick(() => '');
+  assert.equal(owner.length, 1); assert.match(owner[0], /time for a check/);
+  tick(DAY_MS); await safe.tick(() => '');
+  assert.equal(owner.length, 1, 'once per 3 months');
+});

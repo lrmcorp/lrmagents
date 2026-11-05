@@ -2585,16 +2585,36 @@ async function updatesPanel() {
       <pre>${u.exists && u.diff ? diffHtml(u.diff) : esc(u.content)}</pre>
       <div class="row"><button class="btn primary" data-a="approve">Approve and save</button><button class="btn" data-a="edit">Edit first</button><button class="btn danger" data-a="reject">Reject</button></div>
     </div>`;
-  const reviewing = (d.reviewing || []).map((u) => `<li>${esc(u.title)} <small class="muted">from ${esc(u.agent_name)}</small></li>`).join('');
+  const reviewing = (d.reviewing || []).map((u) => `<li>${esc(u.title)} <small class="muted">from ${esc(u.agent_name)}${u.others?.length ? ' · merging several versions' : ''}</small></li>`).join('');
+  const day = (t) => new Date(t * 1000).toLocaleDateString('en-GB').replace(/\//g, '-');
+  const auto = (d.recent || []).filter((u) => u.auto && u.status === 'applied').map((u) => `<li data-id="${esc(u.id)}">${esc(u.title)} <small class="muted">${esc(u.summary || 'corrected')} · ${esc(u.agent_name)} · ${day(u.updated)}</small> <button class="btn" data-a="undo" style="padding:2px 8px">Undo</button></li>`).join('');
+  const many = (d.pending || []).length > 1;
   const { overlay, close } = modal(`<div class="msg"><h3>Vault updates</h3>
-      <div class="muted" style="margin-bottom:12px">Agents propose, ${esc(d.reviewer)} checks, you approve. Nothing reaches the vault before that.</div>
+      <div class="muted" style="margin-bottom:12px">Agents propose, ${esc(d.reviewer)} checks, you approve new notes and big changes. Small corrections ${esc(d.reviewer)} checked are saved on their own and listed below (and in an evening WhatsApp digest). Waiting updates expire after 14 days.</div>
+      ${many ? '<div class="row" style="margin-bottom:10px"><button class="btn primary" data-a="approve-all">Approve all</button><button class="btn danger" data-a="reject-all">Reject all</button></div>' : ''}
       ${(d.pending || []).map(card).join('') || '<div class="muted" style="margin:10px 0 16px">Nothing is waiting for you.</div>'}
-      ${reviewing ? `<div class="side-head" style="margin-top:8px">With ${esc(d.reviewer)} for checking</div><ul>${reviewing}</ul>` : ''}</div>
+      ${reviewing ? `<div class="side-head" style="margin-top:8px">With ${esc(d.reviewer)} for checking</div><ul>${reviewing}</ul>` : ''}
+      ${auto ? `<div class="side-head" style="margin-top:8px">Small corrections saved on their own</div><ul class="auto-list">${auto}</ul>` : ''}</div>
       <div class="btns"><button class="btn" data-a="close">Close</button></div>`);
   overlay.querySelector('.modal').classList.add('wide');
   overlay.addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-a]'); if (!b) return;
     if (b.dataset.a === 'close') return close();
+    const post = async (body) => {
+      const r = await fetch('/api/lrm/vault-updates', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const res = await r.json(); if (!r.ok) throw new Error(res.error || r.status); return res;
+    };
+    if (b.dataset.a === 'approve-all' || b.dataset.a === 'reject-all') {
+      const yes = b.dataset.a === 'approve-all';
+      if (!confirm(yes ? `Save all ${d.pending.length} updates to the vault?` : `Reject all ${d.pending.length} updates?`)) return;
+      try { const res = await post({ all: true, decision: yes ? 'approve' : 'reject' }); toast(`${yes ? 'Saved' : 'Rejected'} ${res.items.length}`); if (yes) await loadIndex({ quiet: true }); updatesDot(); close(); } catch (err) { toast(err.message); }
+      return;
+    }
+    if (b.dataset.a === 'undo') {
+      const li = b.closest('li');
+      try { await post({ id: li.dataset.id, decision: 'undo' }); li.remove(); toast('Undone: the note is back to how it was.'); await loadIndex({ quiet: true }); } catch (err) { toast(err.message); }
+      return;
+    }
     const box = b.closest('.upd'); const id = box?.dataset.id; if (!id) return;
     const u = d.pending.find((x) => x.id === id);
     if (b.dataset.a === 'edit') {

@@ -62,6 +62,9 @@ services:
         format: raw
     environment:
       COWAGENT_URL: http://cowagent:9899
+      # Console visits from this server itself never count as the owner being around
+      # (private vault): src/server.js fromOwnersBrowser.
+      SERVER_PUBLIC_IP: ${LRMAGENT_SERVER_IP:-43.152.240.47}
     volumes:
       - whatsapp:/data
       - whatsapp_media:/media/whatsapp

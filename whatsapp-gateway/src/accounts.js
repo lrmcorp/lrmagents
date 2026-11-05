@@ -302,7 +302,7 @@ class Account {
     if (reply && !this.seen.has(msg.key.id) && !msg.approvalChecked) {
       // Only a code that is actually waiting is taken as an answer; anything else
       // ("no clue") goes to the agent as a normal message.
-      decideApproval(reply.code, reply.decision)
+      decideApproval(reply.code, reply.decision, reply.all)
         .then((r) => {
           if (r?.status !== 'success') return this.enqueue(sock, Object.assign(msg, { approvalChecked: true }));
           this.seen.add(msg.key.id);

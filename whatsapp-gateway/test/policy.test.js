@@ -174,3 +174,10 @@ test('owner numbers are normalised and allowed to talk', () => {
   const key = { remoteJid: '6281233334444@s.whatsapp.net', fromMe: false, id: 'o1' };
   assert.equal(decide({ key, message: { conversation: 'hi' }, settings: s, myJids: ['6280000000000@s.whatsapp.net'] }).action, 'answer');
 });
+
+test('approvalReply: "yes all" / "no all" decide everything waiting', () => {
+  assert.deepEqual(approvalReply('yes all'), { decision: 'approve', code: '', all: true });
+  assert.deepEqual(approvalReply('No all'), { decision: 'deny', code: '', all: true });
+  assert.deepEqual(approvalReply('ya semua'), { decision: 'approve', code: '', all: true });
+  assert.equal(approvalReply('all good'), null);
+});

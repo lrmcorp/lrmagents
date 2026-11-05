@@ -9,7 +9,9 @@ class VaultUpdate(BaseTool):
         "directly: when work is finished (a report, research result, decision, contact, process, plan), 'propose' "
         "the note with its full Markdown content. Lorium (the lead agent) checks every proposal, and the owner "
         "approves it before it is saved. To update an existing note, read it first and propose the complete new "
-        "version with the latest information (old facts corrected or removed), using the same path. Actions: "
+        "version with the latest information (old facts corrected or removed), using the same path. Never put "
+        "passwords, PINs, keys, card or ID numbers in a note: every agent can read the vault, so such proposals are "
+        "refused; the owner keeps secrets in their Private vault, which no agent can open. Actions: "
         "'propose' (title or path, content, summary, optional folder and sources), 'list' (what is waiting), "
         "'status' (id), and for Lorium only: 'review' (id, decision approve/reject, optional corrected content, note)."
     )

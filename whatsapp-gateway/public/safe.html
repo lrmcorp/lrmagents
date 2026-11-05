@@ -71,8 +71,9 @@
     <ol class="steps">
       <li>Choose a passphrase: a few unrelated words is easy to remember and hard to guess (at least 12 characters).</li>
       <li>Give the passphrase to the person who should receive the vault, in person or on paper. Not on WhatsApp.</li>
-      <li>If you forget it, nobody can open the vault, not even LRMagent.</li>
+      <li>Write it down and keep it somewhere safe. If you forget it, nobody can open the vault, not even LRMagent.</li>
     </ol>
+    <p class="note">This passes on access, not your wishes: it does not replace a will or other legal documents.</p>
     <div class="row" style="margin-top:12px">
       <label>Passphrase<input id="c-pass" type="password" autocomplete="new-password"><div class="meter"><i id="c-meter"></i></div></label>
       <label>Type it again<input id="c-pass2" type="password" autocomplete="new-password"></label>
@@ -111,7 +112,18 @@
         <button class="flex0" id="check">Check number</button>
       </div>
       <p class="note" id="check-out"></p>
+      <div class="row" style="margin-top:10px">
+        <label>Backup person (optional): name<input id="b-name" placeholder="e.g. Tom"></label>
+        <label>Backup person's WhatsApp number<input id="b-phone" inputmode="tel" placeholder="62813…"></label>
+      </div>
+      <p class="note">The backup person gets it at the same time, in case the first can't be reached. Give them the passphrase too.</p>
       <label class="toggle" style="margin-top:10px"><input type="checkbox" id="armed"> Send it to them after 7 days without a message from me</label>
+      <div class="row" style="margin-top:12px">
+        <label>Away on purpose? Pause until (up to 60 days)<input id="pause" type="date"></label>
+        <button class="flex0" id="pause-clear" type="button">No pause</button>
+        <button class="flex0" id="test" type="button">Send a test to me</button>
+      </div>
+      <p class="note">A pause counts as you being around until that day; the 7 days start after it. The test sends you exactly what your person would get, with a link that works for 24 hours.</p>
     </section>
 
     <div class="row" style="margin-bottom:16px">
@@ -186,10 +198,11 @@
     const warned = Object.keys(st.warned || {}).length;
     $('#status').innerHTML = [
       ['Automatic sending', sending],
-      ['Goes to', st.recipient?.name ? `${esc(st.recipient.name)}<br><span class="note">+${esc(st.recipient.phone)}</span>` : '<span class="pill warn">Not chosen</span>'],
+      ['Goes to', st.recipient?.name ? `${esc(st.recipient.name)}<br><span class="note">+${esc(st.recipient.phone)}${st.backup ? ` · backup ${esc(st.backup.name)}` : ''}</span>` : '<span class="pill warn">Not chosen</span>'],
+      ...(st.pausedUntil ? [['Paused until', `${fmt(st.pausedUntil)}`]] : []),
       ['Last seen you', `${fmt(st.lastSeen)}<br><span class="note">${esc(st.lastSeenVia || '')}</span>`],
       st.released ? ['Sent on', fmt(st.released.at)] : ['Would be sent', st.armed && st.deadline ? `${fmt(st.deadline)}<br><span class="note">${until(st.deadline)}${warned ? ` · ${warned} warning${warned > 1 ? 's' : ''} sent` : ''}</span>` : '—'],
-      ['Saved', `${fmt(st.updatedAt)}<br><span class="note">${st.entries} login${st.entries === 1 ? '' : 's'}</span>`],
+      ['Saved', `${fmt(st.updatedAt)}<br><span class="note">${st.entries} login${st.entries === 1 ? '' : 's'}${st.testedAt ? ` · tested ${fmt(st.testedAt).slice(0, 10)}` : ' · never tested'}</span>`],
     ].map(([k, v]) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('');
     if (st.released) b.innerHTML += '<div class="banner bad">The vault was sent. To take it back, unlock it and press Save: its link stops working and the 7 days start again.</div>';
   }
@@ -229,6 +242,10 @@
     $('#r-name').value = st.recipient?.name || '';
     $('#r-phone').value = st.recipient?.phone || '';
     $('#armed').checked = st.exists ? Boolean(st.armed) : true;
+    $('#b-name').value = st.backup?.name || '';
+    $('#b-phone').value = st.backup?.phone || '';
+    $('#pause').value = st.pausedUntil ? new Date(st.pausedUntil).toISOString().slice(0, 10) : '';
+    const max = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10); $('#pause').max = max; $('#pause').min = new Date().toISOString().slice(0, 10);
     renderEntries(); touch(); refresh();
   }
   function lock() { key = null; data = null; $('#entries').innerHTML = ''; $('#notes').value = ''; clearTimeout(idle); refresh(); }
@@ -239,7 +256,9 @@
     const content = collect();
     const k = extra.newKey || key;
     const locked = await lockData(k, content);
-    const body = { ...locked, entries: content.items.length, ownerName: $('#owner-name').value, recipient: { name: $('#r-name').value, phone: $('#r-phone').value }, armed: $('#armed').checked };
+    const pause = $('#pause').value ? new Date(`${$('#pause').value}T23:59:00`).toISOString() : null;
+    const body = { ...locked, entries: content.items.length, ownerName: $('#owner-name').value, recipient: { name: $('#r-name').value, phone: $('#r-phone').value },
+      backup: { name: $('#b-name').value, phone: $('#b-phone').value }, pausedUntil: pause, armed: $('#armed').checked };
     if (st.exists) body.auth = key.auth;
     if (extra.newKey) { body.salt = extra.salt; body.iter = ITER; if (st.exists) body.newAuth = extra.newKey.auth; else body.auth = extra.newKey.auth; }
     st = { ...st, ...(await api('save', body)) };
@@ -299,6 +318,16 @@
       $('#n-pass').value = ''; $('#n-pass2').value = '';
       toast('Passphrase changed. Give the new one to the person too.');
     } catch (e) { toast(e.message, true); }
+  };
+  $('#pause-clear').onclick = () => { $('#pause').value = ''; toast('Pause removed. Press Save.'); };
+  $('#test').onclick = async () => {
+    const btn = $('#test');
+    try {
+      btn.disabled = true; btn.textContent = 'Sending…';
+      await save(); // what is sent is what is saved
+      st = { ...st, ...(await api('test', { auth: key.auth })) }; renderStatus();
+      toast('Sent to your own WhatsApp. Open it there to see what your person would get.');
+    } catch (e) { toast(e.message, true); } finally { btn.disabled = false; btn.textContent = 'Send a test to me'; }
   };
   $('#del').onclick = async () => {
     if (!confirm('Delete the private vault for good? This cannot be undone.')) return;

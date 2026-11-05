@@ -46,6 +46,7 @@
   const $ = (s) => document.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  if (D.test) { const b = document.createElement('p'); b.style.cssText = 'background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:8px 12px;border-radius:10px'; b.textContent = 'TEST: this is what your person would receive. Only you got this one.'; document.querySelector('main').prepend(b); }
   if (D.ownerName) { $('#title').textContent = `Private vault from ${D.ownerName}`; document.title = $('#title').textContent; }
   if (D.recipient) $('#lede').textContent = `Hello ${D.recipient}. ${D.ownerName || 'Its owner'} asked for this to be sent to you if they did not respond for 7 days. It is locked: type the passphrase they gave you.`;
 

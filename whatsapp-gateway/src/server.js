@@ -9,6 +9,8 @@ import { Accounts, LORIUM, onOwnerMessage, useDesignated } from './accounts.js';
 import { Designated } from './designated.js';
 import { Safe, normalizePhone } from './safe.js';
 import crypto from 'node:crypto';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { consoleUser, listAgents } from './cowagent.js';
 
 const PORT = Number(process.env.PORT || 8080);
@@ -26,10 +28,72 @@ const safe = await new Safe({
   dir: path.join(process.env.DATA_DIR || '/data', '.private-vault'),
   notifyOwner: (text) => accounts.notifyOwner(SAFE_AGENT, text),
   deliver: (msg) => accounts.safeDeliver(SAFE_AGENT, msg),
+  ownerPhone: () => {
+    const row = accounts.internalStatus().find((a) => a.agent === SAFE_AGENT);
+    return row?.ownerNumbers?.[0] || row?.phone || '';
+  },
   log: { error: (o, m) => console.error(m, o) },
 }).load();
 onOwnerMessage((agentId) => (agentId === SAFE_AGENT ? safe.seen('WhatsApp') : null));
 setInterval(() => safe.tick(openerPage), Number(process.env.SAFE_TICK_MS || 5 * 60 * 1000)).unref();
+
+// Console use counts for the private vault only when it truly comes from the owner's
+// browser: through Caddy (checked by its address on the shared network, which nothing
+// can fake) from a public address that is not this server. An agent can call the
+// gateway, or even the public site from this server, but neither passes.
+const SERVER_IPS = new Set(String(process.env.SERVER_PUBLIC_IP || '').split(',').map((x) => x.trim()).filter(Boolean));
+let caddyIps = { at: 0, ips: null };
+async function caddyAddresses() {
+  if (Date.now() - caddyIps.at < 600_000) return caddyIps.ips;
+  try {
+    caddyIps = { at: Date.now(), ips: new Set((await dns.lookup(process.env.CADDY_HOST || 'caddy', { all: true })).map((a) => a.address)) };
+  } catch {
+    caddyIps = { at: Date.now(), ips: null }; // unknown: see below
+  }
+  return caddyIps.ips;
+}
+const bare = (ip) => String(ip || '').replace(/^::ffff:/, '');
+function privateIp(ip) {
+  if (!net.isIP(ip)) return true;
+  return /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip)
+    || ip === '::1' || /^f[cd]/i.test(ip) || /^fe80/i.test(ip);
+}
+async function fromOwnersBrowser(req) {
+  const ips = await caddyAddresses();
+  const peer = bare(req.socket.remoteAddress);
+  const client = bare(String(req.headers['x-forwarded-for'] || '').split(',')[0].trim());
+  if (ips === null) {
+    // Caddy can't be looked up: rather count the visit than risk sending the vault by mistake.
+    console.warn('private vault: could not look up Caddy; console visit counted');
+    return Boolean(client);
+  }
+  const ok = ips.has(peer) && Boolean(client) && !privateIp(client) && !SERVER_IPS.has(client);
+  if (!ok) console.warn(`private vault: console visit not counted (via ${ips.has(peer) ? 'Caddy' : 'not Caddy'}, client ${client ? (privateIp(client) || SERVER_IPS.has(client) ? 'this server or private' : 'public') : 'none'})`);
+  return ok;
+}
+
+// Lorium's WhatsApp down for a day: tell the owner on any other linked number (the private
+// vault and its warnings can't go out until it is relinked).
+// Kept on disk: redeploys restart the gateway often and must not restart the 24 hours.
+const DOWN_FILE = path.join(process.env.DATA_DIR || '/data', '.lorium-down.json');
+let loriumDown = { since: 0, told: false };
+try { loriumDown = JSON.parse(await fs.readFile(DOWN_FILE, 'utf8')); } catch { /* none */ }
+const saveDown = () => fs.writeFile(DOWN_FILE, JSON.stringify(loriumDown)).catch(() => {});
+setInterval(async () => {
+  const status = (await accounts.view(SAFE_AGENT).catch(() => ({}))).status;
+  if (status === 'connected' || status === 'unlinked') {
+    if (loriumDown.since) { loriumDown = { since: 0, told: false }; saveDown(); }
+    return;
+  }
+  if (!loriumDown.since) { loriumDown.since = Date.now(); saveDown(); }
+  if (!loriumDown.told && Date.now() - loriumDown.since >= Number(process.env.LORIUM_DOWN_ALERT_MS || 86_400_000)) {
+    loriumDown.told = true;
+    saveDown();
+    await accounts.notifyOwner(SAFE_AGENT, "⚠️ *Lorium's WhatsApp is disconnected*\n- For more than 24 hours.\n- Your private vault and its warnings can't be sent until it is linked again.\n- Relink it on the console's WhatsApp page.")
+      .catch(() => console.warn("Lorium is disconnected and no other number could tell the owner"));
+  }
+}, 15 * 60 * 1000).unref();
+
 const siteOf = (req) => `${String(req.headers['x-forwarded-proto'] || 'https').split(',')[0]}://${req.headers['x-forwarded-host'] || req.headers.host}`;
 const INTERNAL_TOKEN = process.env.COWAGENT_API_TOKEN || '';
 
@@ -169,7 +233,12 @@ async function route(req, res) {
     if (!sameSite(req)) return send(res, 403, { error: 'cross-site request refused' });
     const body = await readJson(req, 3 * 1024 * 1024);
     try {
-      if (op === 'seen') { await safe.seen('console'); return send(res, 200, { ok: true }); }
+      if (op === 'seen') {
+        const counted = await fromOwnersBrowser(req);
+        if (counted) await safe.seen('console');
+        return send(res, 200, { ok: true, counted });
+      }
+      if (op === 'test') return send(res, 200, await safe.test(body.auth, openerPage));
       if (op === 'open') return send(res, 200, safe.open(body.auth));
       if (op === 'check-number') {
         const phone = normalizePhone(body.phone);

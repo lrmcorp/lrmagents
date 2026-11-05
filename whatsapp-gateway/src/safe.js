@@ -20,6 +20,9 @@ export const WARN_DAYS = [5, 6];
 export const RELEASE_DAYS = 7;
 const MAX_FAILURES = 10; // wrong passphrases per hour before it locks for the hour
 const MAX_LOCKED_BYTES = 2 * 1024 * 1024;
+export const MAX_PAUSE_DAYS = 60;
+export const REVIEW_EVERY_DAYS = 90;
+const TEST_LINK_MS = 24 * 3_600_000;
 
 const b64 = /^[A-Za-z0-9+/=]+$/;
 const hex64 = /^[0-9a-f]{64}$/;
@@ -32,21 +35,25 @@ export function normalizePhone(value) {
 
 // When the vault goes out, given when the owner was last around and the warnings sent.
 export function plan(state, now) {
-  const since = now - state.lastSeen;
+  // A pause counts as being around until it ends.
+  const seen = Math.max(state.lastSeen, state.pausedUntil || 0);
+  if (now < seen) return { warn: [], release: false, deadline: seen + RELEASE_DAYS * DAY_MS };
+  const since = now - seen;
   const due = [];
   for (const d of WARN_DAYS) if (since >= d * DAY_MS && !state.warned[d]) due.push(d);
   const lastWarn = state.warned[WARN_DAYS[WARN_DAYS.length - 1]];
   const release = since >= RELEASE_DAYS * DAY_MS && Boolean(lastWarn) && now - lastWarn >= DAY_MS / 2;
-  const deadline = Math.max(state.lastSeen + RELEASE_DAYS * DAY_MS, lastWarn ? lastWarn + DAY_MS / 2 : 0);
+  const deadline = Math.max(seen + RELEASE_DAYS * DAY_MS, lastWarn ? lastWarn + DAY_MS / 2 : 0);
   return { warn: due, release, deadline };
 }
 
 export class Safe {
-  constructor({ dir, notifyOwner, deliver, log = console, now = () => Date.now() }) {
+  constructor({ dir, notifyOwner, deliver, ownerPhone = () => '', log = console, now = () => Date.now() }) {
     this.file = path.join(dir, 'vault.json');
     this.dir = dir;
     this.notifyOwner = notifyOwner; // (text) => Promise
     this.deliver = deliver; // ({ phone, text, document, fileName }) => Promise
+    this.ownerPhone = ownerPhone; // () => the owner's own number, for "send a test to me"
     this.log = log;
     this.now = now;
     this.state = null;
@@ -81,10 +88,11 @@ export class Safe {
     const p = plan(s, this.now());
     return {
       exists: true, salt: s.salt, iter: s.iter, updatedAt: s.updatedAt, entries: s.entries || 0,
-      recipient: s.recipient, ownerName: s.ownerName, armed: s.armed,
+      recipient: s.recipient, backup: s.backup || null, ownerName: s.ownerName, armed: s.armed,
+      pausedUntil: s.pausedUntil && s.pausedUntil > this.now() ? s.pausedUntil : null, testedAt: s.testedAt || null,
       lastSeen: s.lastSeen, lastSeenVia: s.lastSeenVia, warned: s.warned, deadline: s.armed && !s.released ? p.deadline : null,
       released: s.released ? { at: s.released.at, to: s.released.to } : null, error: s.error || '',
-      days: { warn: WARN_DAYS, release: RELEASE_DAYS },
+      days: { warn: WARN_DAYS, release: RELEASE_DAYS, maxPause: MAX_PAUSE_DAYS },
     };
   }
 
@@ -132,14 +140,25 @@ export class Safe {
     const phone = normalizePhone(body.recipient?.phone);
     const name = String(body.recipient?.name || '').trim().slice(0, 80);
     if (body.armed && (!phone || !name)) throw Object.assign(new Error('Add the name and WhatsApp number (with country code) of the person to send it to.'), { status: 400 });
+    const bPhone = normalizePhone(body.backup?.phone);
+    const bName = String(body.backup?.name || '').trim().slice(0, 80);
+    if ((bPhone || String(body.backup?.phone || '').trim()) && (!bPhone || !bName)) throw Object.assign(new Error('Give the backup person a name and a full number with country code, or leave both empty.'), { status: 400 });
+    if (bPhone && bPhone === phone) throw Object.assign(new Error('The backup person must have a different number.'), { status: 400 });
     const now = this.now();
+    let pausedUntil = null;
+    if (body.pausedUntil) {
+      pausedUntil = Number(new Date(body.pausedUntil));
+      if (!Number.isFinite(pausedUntil) || pausedUntil <= now) pausedUntil = null;
+      else if (pausedUntil > now + MAX_PAUSE_DAYS * DAY_MS) throw Object.assign(new Error(`A pause can last up to ${MAX_PAUSE_DAYS} days.`), { status: 400 });
+    }
     Object.assign(next, {
       v: 1, iv: body.iv, ct: body.ct, entries: Math.max(0, Math.min(10_000, Number(body.entries) || 0)),
-      recipient: { name, phone }, ownerName: String(body.ownerName || '').trim().slice(0, 80),
+      recipient: { name, phone }, backup: bPhone ? { name: bName, phone: bPhone } : null, pausedUntil,
+      ownerName: String(body.ownerName || '').trim().slice(0, 80),
       armed: Boolean(body.armed), site: site || next.site || '', updatedAt: now,
       // Saving it means the owner is here: the clock restarts, and a vault that was
       // already sent is taken back (its link stops working).
-      lastSeen: now, lastSeenVia: 'private vault', warned: {}, released: null, token: null, error: '',
+      lastSeen: now, lastSeenVia: 'private vault', warned: {}, released: null, token: null, sentTo: [], error: '',
     });
     this.state = next;
     await this.persist();
@@ -169,18 +188,63 @@ export class Safe {
   // the person) and as a single file.
   released(token) {
     const s = this.state;
-    if (!s?.released || !s.token || typeof token !== 'string' || token.length !== s.token.length) return null;
-    if (!crypto.timingSafeEqual(Buffer.from(token), Buffer.from(s.token))) return null;
-    return { salt: s.salt, iter: s.iter, iv: s.iv, ct: s.ct, ownerName: s.ownerName, recipient: s.recipient.name, at: s.released.at };
+    if (!s || typeof token !== 'string') return null;
+    const same = (t) => typeof t === 'string' && t.length === token.length && crypto.timingSafeEqual(Buffer.from(token), Buffer.from(t));
+    const data = { salt: s.salt, iter: s.iter, iv: s.iv, ct: s.ct, ownerName: s.ownerName, recipient: s.recipient.name };
+    if (s.released && same(s.token)) return { ...data, at: s.released.at };
+    if (s.test && s.test.until > this.now() && same(s.test.token)) return { ...data, at: s.test.at, test: true };
+    return null;
+  }
+
+  // What the person would receive, sent to the owner's own number (the link works for 24 hours).
+  async test(auth, openerPage) {
+    this.verify(auth);
+    const s = this.state;
+    const phone = normalizePhone(this.ownerPhone());
+    if (!phone) throw Object.assign(new Error('Set "Your own numbers" on Lorium\'s card on the WhatsApp page first: the test goes there.'), { status: 400 });
+    const token = crypto.randomBytes(24).toString('base64url');
+    s.test = { token, at: this.now(), until: this.now() + TEST_LINK_MS };
+    await this.persist();
+    const { text, document } = this.message(token, s.recipient?.name || 'them', openerPage, true);
+    await this.deliver({ phone, text, document, fileName: 'Private vault (test).html' });
+    s.testedAt = this.now();
+    await this.persist();
+    return this.view();
+  }
+
+  message(token, toName, openerPage, test = false) {
+    const s = this.state;
+    const link = s.site ? `${s.site.replace(/\/$/, '')}/whatsapp/safe/open/${token}` : '';
+    const who = s.ownerName || 'The owner of this number';
+    const data = { salt: s.salt, iter: s.iter, iv: s.iv, ct: s.ct, ownerName: s.ownerName, recipient: toName, at: this.now(), test };
+    const text = [
+      ...(test ? ['🧪 *TEST of your private vault*: this is exactly what your person would receive. The link works for 24 hours.', ''] : []),
+      `Hello ${toName},`,
+      '',
+      `${who} asked LRMagent to send you this message if they did not respond for ${RELEASE_DAYS} days.`,
+      '',
+      'It contains their private vault, locked with a passphrase they gave you in advance.',
+      link ? `Open it here: ${link}` : 'Open the attached file in a web browser.',
+      'Or open the attached file. Then type the passphrase.',
+    ].join('\n');
+    return { text, document: Buffer.from(openerPage(data)) };
   }
 
   // Runs every few minutes.
   async tick(openerPage) {
     const s = this.state;
-    if (!s || !s.armed || s.released || this.busy) return;
+    if (!s || this.busy) return;
+    const now = this.now();
+    // Every few months: is what is in it still right?
+    if (now - (s.updatedAt || now) >= REVIEW_EVERY_DAYS * DAY_MS && now - (s.reviewNudgeAt || 0) >= REVIEW_EVERY_DAYS * DAY_MS) {
+      s.reviewNudgeAt = now;
+      await this.persist().catch(() => {});
+      const when = new Date(s.updatedAt).toLocaleDateString('en-GB').replace(/\//g, '-');
+      await this.notifyOwner(`🔒 *Private vault: time for a check*\n- Last saved ${when}.\n- Are the passwords and notes still right? Knowledge → Private vault.`).catch(() => {});
+    }
+    if (!s.armed || s.released) return;
     this.busy = true;
     try {
-      const now = this.now();
       const p = plan(s, now);
       for (const d of p.warn) {
         const left = Math.max(1, Math.round((plan({ ...s, warned: { ...s.warned, [d]: now } }, now).deadline - now) / 3_600_000));
@@ -202,24 +266,26 @@ export class Safe {
     const s = this.state;
     const token = s.token || crypto.randomBytes(24).toString('base64url');
     s.token = token;
+    s.sentTo = s.sentTo || [];
     await this.persist();
-    const link = s.site ? `${s.site.replace(/\/$/, '')}/whatsapp/safe/open/${token}` : '';
-    const who = s.ownerName || 'The owner of this number';
-    const data = { salt: s.salt, iter: s.iter, iv: s.iv, ct: s.ct, ownerName: s.ownerName, recipient: s.recipient.name, at: this.now() };
-    const document = Buffer.from(openerPage(data));
-    const text = [
-      `Hello ${s.recipient.name},`,
-      '',
-      `${who} asked LRMagent to send you this message if they did not respond for ${RELEASE_DAYS} days.`,
-      '',
-      'It contains their private vault, locked with a passphrase they gave you in advance.',
-      link ? `Open it here: ${link}` : 'Open the attached file in a web browser.',
-      'Or open the attached file. Then type the passphrase.',
-    ].join('\n');
-    await this.deliver({ phone: s.recipient.phone, text, document, fileName: 'Private vault.html' });
-    s.released = { at: this.now(), to: s.recipient.phone };
-    s.error = '';
+    // The person, and the backup person; each only once, and one failing does not stop the other.
+    const people = [s.recipient, s.backup].filter((p) => p?.phone && !s.sentTo.includes(p.phone));
+    const errors = [];
+    for (const person of people) {
+      try {
+        const { text, document } = this.message(token, person.name, openerPage);
+        await this.deliver({ phone: person.phone, text, document, fileName: 'Private vault.html' });
+        s.sentTo.push(person.phone);
+        await this.persist();
+      } catch (e) {
+        errors.push(`${person.name}: ${e.message || e}`);
+      }
+    }
+    if (!s.sentTo.length) throw new Error(errors.join('; ') || 'not sent');
+    s.released = { at: this.now(), to: s.sentTo.join(', ') };
+    s.error = errors.join('; ').slice(0, 200);
     await this.persist();
-    await this.notifyOwner(`🔓 *Private vault*\n- Sent to ${s.recipient.name} (+${s.recipient.phone}) after ${RELEASE_DAYS} days without a message from you.\n- To take it back, open Private vault in the console and save it again: the link stops working.`).catch(() => {});
+    const names = [s.recipient, s.backup].filter((p) => p && s.sentTo.includes(p.phone)).map((p) => `${p.name} (+${p.phone})`).join(' and ');
+    await this.notifyOwner(`🔓 *Private vault*\n- Sent to ${names} after ${RELEASE_DAYS} days without a message from you.${errors.length ? `\n- Not delivered: ${errors.join('; ')}` : ''}\n- To take it back, open Private vault in the console and save it again: the link stops working.`).catch(() => {});
   }
 }

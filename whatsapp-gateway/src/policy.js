@@ -357,6 +357,8 @@ const YES = /^(yes|y|ok|okay|approve|allow|ya|iya|yap|yup|boleh|setuju|lanjut)$/
 const NO = /^(no|n|nope|deny|refuse|reject|tidak|nggak|gak|enggak|jangan|tolak)$/i;
 export function approvalReply(text) {
   const t = String(text ?? '').trim().replace(/[.!👍✅❌]+$/u, '').trim();
+  const every = /^(\S+)\s+(all|semua)$/i.exec(t);
+  if (every && (YES.test(every[1]) || NO.test(every[1]))) return { decision: YES.test(every[1]) ? 'approve' : 'deny', code: '', all: true };
   const m = /^(\S+)(?:\s+([A-Za-z0-9]{4,6}))?$/.exec(t);
   if (!m || !(YES.test(m[1]) || NO.test(m[1]))) return null;
   return { decision: YES.test(m[1]) ? 'approve' : 'deny', code: m[2] ? m[2].toUpperCase() : '' };

@@ -1,7 +1,8 @@
 """/api/lrm/vault-updates: the owner's side of vault updates (Vault page → Updates).
 
 GET  -> {pending: [...waiting for the owner], reviewing: [...with Lorium], recent: [...]}
-POST {id, decision: approve|reject, content?} -> {item}
+POST {id, decision: approve|reject|undo, content?} -> {item}
+POST {all: true, decision: approve|reject}        -> {items}
 Signed-in console only. Installed as channel/web/api/lrm_vault_updates.py.
 """
 import json
@@ -29,7 +30,20 @@ class LrmVaultUpdatesHandler:
         from agent import lrm_vault_flow as flow
         try:
             body = json.loads(web.data() or b"{}")
+            if body.get("all"):
+                return _out("200 OK", {"items": flow.decide_all(body.get("decision") or "")})
+            if body.get("decision") == "undo":
+                return _out("200 OK", {"item": flow.revert(str(body.get("id") or ""))})
             item = flow.owner_decide(str(body.get("id") or ""), body.get("decision") or "", body.get("content"))
             return _out("200 OK", {"item": item})
         except ValueError as e:
             return _out("400 Bad Request", {"error": str(e)})
+
+
+# Reminders, expiry and the daily digest run in the console process.
+try:
+    from agent import lrm_vault_flow as _flow
+    _flow.start_background()
+except Exception as _e:  # never stop the console from starting
+    from common.log import logger as _log
+    _log.warning(f"[VaultFlow] background not started: {_e}")

@@ -46,6 +46,16 @@ class LrmActivityHandler:
             body = json.loads(web.data() or b"{}")
         except ValueError:
             return json.dumps({"status": "error", "message": "invalid JSON"})
+        if body.get("op") == "decide" and body.get("all"):
+            # "yes all" / "no all": every vault update waiting for the owner.
+            from agent import lrm_vault_flow as flow
+            items = flow.decide_all(body.get("decision"))
+            if not items:
+                return json.dumps({"status": "error", "message": "No vault updates are waiting."})
+            saved = [i for i in items if i["status"] == "applied"]
+            names = ", ".join(i["path"].replace("knowledge/", "", 1) for i in items[:6]) + (" …" if len(items) > 6 else "")
+            return json.dumps({"status": "success", "message": (f"✅ Saved {len(saved)} to the vault: {names}" if saved
+                                                                 else f"🚫 Rejected {len(items)}: {names}")}, ensure_ascii=False)
         if body.get("op") == "decide":
             via = "whatsapp" if _internal_caller() else "console"
             code = str(body.get("code") or "").strip().upper()

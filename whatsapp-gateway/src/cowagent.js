@@ -64,11 +64,11 @@ export async function listAgents(cookieHeader) {
 }
 
 // The owner's answer to an approval request ("YES CODE" in their own chat).
-export async function decideApproval(code, decision) {
+export async function decideApproval(code, decision, all = false) {
   const response = await fetch(`${BASE}/api/lrm/activity`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op: 'decide', code, decision }),
+    body: JSON.stringify({ op: 'decide', code, decision, ...(all ? { all: true } : {}) }),
     signal: AbortSignal.timeout(15_000),
   });
   return json(response);
