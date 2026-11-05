@@ -51,7 +51,9 @@ class LrmBrowserHandler:
         if op == "keep":
             from agent import lrm_browser_keep as keep
             web.header("Content-Type", "application/json; charset=utf-8")
-            return json.dumps({"status": "success", "sites": keep.sites(), "every_minutes": keep.CHECK_EVERY // 60}, ensure_ascii=False)
+            from agent import lrm_logins
+            return json.dumps({"status": "success", "sites": keep.sites(), "every_minutes": keep.CHECK_EVERY // 60,
+                               "logins": lrm_logins.public()}, ensure_ascii=False)
         service = _service()
         if op == "shot":
             data = None
@@ -90,6 +92,13 @@ class LrmBrowserHandler:
             if op == "keep":
                 from agent import lrm_browser_keep as keep
                 return json.dumps({"status": "success", "sites": keep.set_sites(body.get("sites") or [])}, ensure_ascii=False)
+            if op in ("login-save", "login-delete"):
+                # Saved logins (agent/lrm_logins.py): passwords go in, never come back out.
+                from agent import lrm_logins
+                if op == "login-delete":
+                    return json.dumps({"status": "success", "logins": lrm_logins.delete(body.get("url"))}, ensure_ascii=False)
+                logins = lrm_logins.save(body.get("url"), body.get("username"), body.get("password"), body.get("login_url") or "")
+                return json.dumps({"status": "success", "logins": logins}, ensure_ascii=False)
             if op == "keep-check":
                 import threading
                 from agent import lrm_browser_keep as keep

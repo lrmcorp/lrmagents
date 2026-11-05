@@ -161,6 +161,8 @@ PREFS = PREFS_MARK + """
 - A report that needs another team's data: ask that team's agent (CFO, HRD, Operations, ...) with ask_agent,
   all at once with parallel calls, instead of fetching their data yourself. Put their answers together and
   say plainly which part is missing and why.
+- A site asks you to sign in (or shows its login page): use site_login (action 'sign_in' with the address); the
+  browser types the owner's saved login. Never ask for passwords in chat.
 """ + PREFS_MARK + "\n"
 
 

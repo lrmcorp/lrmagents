@@ -145,23 +145,43 @@ $('#control').addEventListener('click', async () => {
 const ST = { signed_in: 'Signed in', signed_out: 'Signed out', error: 'Could not check', unchecked: 'Not checked yet' };
 async function keepPanel() {
   const get = async () => (await (await fetch('/api/lrm/browser?op=keep', { credentials: 'same-origin' })).json());
-  let d = await get(); let list = d.sites || [];
+  let d = await get(); let list = d.sites || []; let logins = d.logins || []; let editing = -1;
+  const hostOf = (u) => { try { return new URL(/^https?:/.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, ''); } catch { return ''; } };
+  const loginFor = (u) => { const h = hostOf(u); return logins.filter((l) => h === l.host || h.endsWith(`.${l.host}`)).sort((a, b) => b.host.length - a.host.length)[0]; };
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const box = document.createElement('div'); box.className = 'keep';
   const draw = () => {
     box.innerHTML = `<div class="box"><h3>Keep signed in</h3>
-      <p style="color:var(--text-3);margin:0 0 10px;font-size:13px">Apps the agents read data from. Every ${d.every_minutes || 20} minutes each one is opened in the background, which keeps the session active, and checked. If one signs you out, Lorium tells you on WhatsApp; sign in again here (tick “remember me” when the site offers it).</p>
-      ${list.map((x, i) => `<div class="row"><b title="${x.url.replace(/"/g, '&quot;')}">${x.name.replace(/</g, '&lt;')}</b><span class="st ${x.status}">${ST[x.status] || x.status}</span>
-        <button data-sign="${i}">Sign in</button><button data-del="${i}" title="Remove"><i class="fas fa-xmark"></i></button></div>`).join('') || '<p style="color:var(--text-3)">No apps yet.</p>'}
+      <p style="color:var(--text-3);margin:0 0 10px;font-size:13px">Apps the agents read data from. Every ${d.every_minutes || 20} minutes each one is opened in the background, which keeps the session active, and checked. With a saved login, an app that signed you out is signed in again on its own; Lorium tells you on WhatsApp only when that fails (a one-time code, a captcha).</p>
+      ${list.map((x, i) => { const l = loginFor(x.url); return `<div class="row"><b title="${esc(x.url)}">${esc(x.name)}</b><span class="st ${x.status}" title="${esc(x.why || x.detail || '')}">${ST[x.status] || x.status}</span>
+        <button data-login="${i}" title="${l ? `Saved login: ${esc(l.username)}` : 'Save a username and password'}"><i class="fas fa-key"></i>${l ? ' Login saved' : ' Login'}</button>
+        <button data-sign="${i}">Sign in</button><button data-del="${i}" title="Remove"><i class="fas fa-xmark"></i></button></div>
+        ${editing === i ? `<form class="login-form" data-i="${i}" autocomplete="off" style="display:grid;gap:6px;padding:4px 0 10px">
+          <input name="username" placeholder="Username or email" value="${esc(l?.username || '')}" autocomplete="off">
+          <input name="password" type="password" placeholder="${l ? 'Password (leave empty to keep the saved one)' : 'Password'}" autocomplete="new-password">
+          <input name="login_url" placeholder="Login page address (optional, if it differs)">
+          <div style="display:flex;gap:6px"><button class="primary" type="submit">Save login</button>${l ? '<button type="button" data-unlogin="' + i + '">Delete login</button>' : ''}<button type="button" data-cancel="1">Cancel</button></div>
+          <small style="color:var(--text-3)">Stored encrypted; never shown again. Agents sign in with it but never see the password. Keep banking in your Private vault.</small></form>` : ''}`; }).join('') || '<p style="color:var(--text-3)">No apps yet.</p>'}
       <form id="keep-add"><input name="name" placeholder="Name, e.g. Shopee Seller"><input name="url" placeholder="Address, e.g. seller.shopee.co.id" value="${state.open && state.url ? state.url.replace(/"/g, '&quot;') : ''}"><button class="primary">Add</button></form>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end"><button id="keep-check">Check now</button><button id="keep-close">Close</button></div></div>`;
   };
   const save = async () => { const r = await post({ op: 'keep', sites: list }); list = r.sites; draw(); };
   draw(); document.body.appendChild(box);
-  box.addEventListener('submit', async (e) => { e.preventDefault(); const f = new FormData(e.target); if (!String(f.get('url')).trim()) return; list.push({ name: f.get('name'), url: f.get('url') }); try { await save(); } catch (err) { toast(err.message, true); } });
+  box.addEventListener('submit', async (e) => {
+    if (e.target.classList.contains('login-form')) {
+      e.preventDefault(); const f = new FormData(e.target); const x = list[Number(e.target.dataset.i)];
+      try { const r = await post({ op: 'login-save', url: x.url, username: f.get('username'), password: f.get('password'), login_url: f.get('login_url') }); logins = r.logins; editing = -1; draw(); toast('Login saved'); } catch (err) { toast(err.message, true); }
+      return;
+    }
+  });
+  box.addEventListener('submit', async (e) => { if (e.target.classList.contains('login-form')) return; e.preventDefault(); const f = new FormData(e.target); if (!String(f.get('url')).trim()) return; list.push({ name: f.get('name'), url: f.get('url') }); try { await save(); } catch (err) { toast(err.message, true); } });
   box.addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) { if (e.target === box) box.remove(); return; }
     if (b.id === 'keep-close') return box.remove();
     if (b.id === 'keep-check') { await post({ op: 'keep-check' }); toast('Checking in the background; this takes a minute.'); setTimeout(async () => { d = await get(); list = d.sites; draw(); }, 45000); return; }
+    if (b.dataset.login) { editing = editing === Number(b.dataset.login) ? -1 : Number(b.dataset.login); draw(); return; }
+    if (b.dataset.cancel) { editing = -1; draw(); return; }
+    if (b.dataset.unlogin) { if (!confirm('Delete the saved login for this app?')) return; try { const r = await post({ op: 'login-delete', url: list[Number(b.dataset.unlogin)].url }); logins = r.logins; editing = -1; draw(); toast('Login deleted'); } catch (err) { toast(err.message, true); } return; }
     if (b.dataset.del) { list.splice(Number(b.dataset.del), 1); try { await save(); } catch (err) { toast(err.message, true); } return; }
     if (b.dataset.sign) { const x = list[Number(b.dataset.sign)]; box.remove(); $('#url').value = x.url; $('#go').requestSubmit(); }
   });

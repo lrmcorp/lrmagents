@@ -144,7 +144,17 @@ def _check_one(service, site):
             except Exception:
                 pass
             out = _signed_out(page)
-            return {"signed_out": out, "url": page.url, "title": (page.title() or "")[:80]}
+            why = ""
+            if out:
+                # A saved login (agent/lrm_logins.py): sign in again without the owner.
+                try:
+                    from agent import lrm_logins
+                    if lrm_logins.find(site["url"]):
+                        ok, why = lrm_logins.sign_in(page, site["url"])
+                        out = not ok
+                except Exception as e:
+                    why = f"saved login failed: {type(e).__name__}"
+            return {"signed_out": out, "url": page.url, "title": (page.title() or "")[:80], "why": why, "auto": bool(why) and not out}
         finally:
             try:
                 page.close()
@@ -188,7 +198,8 @@ def check_all(notify=_notify):
             r = _check_one(service, site)
             was = site.get("status")
             site["status"] = "signed_out" if r["signed_out"] else "signed_in"
-            site["detail"] = r["title"]
+            site["why"] = (r.get("why") or "")[:200] if r["signed_out"] else ""
+            site["detail"] = (("signed in again with the saved login · " if r.get("auto") else "") + r["title"])[:160]
             if r["signed_out"] and (not site.get("alerted") or now - site["alerted"] > ALERT_EVERY):
                 site["alerted"] = now
                 lost.append(site)
@@ -204,11 +215,11 @@ def check_all(notify=_notify):
         current = {s["url"]: s for s in sites()}
         for s in items:
             if s["url"] in current:
-                current[s["url"]].update({k: s.get(k) for k in ("status", "checked", "alerted", "detail")})
+                current[s["url"]].update({k: s.get(k) for k in ("status", "checked", "alerted", "detail", "why")})
         _write(list(current.values()))
     try:
         if lost:
-            notify("\n".join(["*Signed out of your apps*"] + [f"- {s['name']}" for s in lost]
+            notify("\n".join(["*Signed out of your apps*"] + [f"- {s['name']}" + (f": {s['why']}" if s.get("why") else "") for s in lost]
                              + ["", "The agents can't read their data until you sign in again: console → Browser → open the app and sign in "
                                 "(tick 'remember me' / 'keep me signed in' if it offers it)."]))
         if back:

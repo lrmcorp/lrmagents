@@ -161,6 +161,8 @@ jobs:
           $SSH "$VPS" 'umask 077 && cd ~/cowagent && { test -s .env.api-token || openssl rand -hex 32 > .env.api-token; } \
             && token="$(cat .env.api-token)" \
             && printf "EXTERNAL_API_ENABLED=True\nEXTERNAL_API_TOKEN=%s\n" "$token" >> .env.cowagent \
+            && { test -s .env.logins-key || openssl rand -hex 32 > .env.logins-key; } \
+            && printf "LRMAGENT_LOGINS_KEY=%s\n" "$(cat .env.logins-key)" >> .env.cowagent \
             && printf "COWAGENT_API_TOKEN=%s\n" "$token" > .env.whatsapp \
             && cp .env.whatsapp .env.teammates \
             && { test -s .env.sandbox || printf "SANDBOX_TOKEN=%s\n" "$(openssl rand -hex 32)" > .env.sandbox; }'
