@@ -63,7 +63,7 @@
       <p>When an agent browses the web, you can watch it here live and take over at any moment. You can also open a site yourself, for example to sign in once, and agents can then use that login.</p></div>
     <div class="screen" id="screen" hidden><img id="img" alt="The agents' browser" tabindex="0"></div>
   </div>
-  <p class="hint">Click, type and scroll on the picture to use the page. While you drive, agents wait; press <b>Hand back</b> when done (after 10 idle minutes it goes back by itself). Logins you make here are kept for the agents.</p>
+  <p class="hint">Click, type and scroll on the picture to use the page. While you drive, agents wait; press <b>Hand back</b> when done (leaving this page, or 3 idle minutes, hands it back by itself). Logins you make here are kept for the agents.</p>
 <script>
 'use strict';
 const $ = (s) => document.querySelector(s);
@@ -187,6 +187,15 @@ async function keepPanel() {
   });
 }
 $('#keep-open').addEventListener('click', () => keepPanel().catch((e) => toast(e.message, true)));
+
+// Leaving the page (another menu, closing the tab) hands the browser back to the agents.
+function handBack() {
+  if (state.control?.who !== 'owner') return;
+  try { navigator.sendBeacon('/api/lrm/browser', new Blob([JSON.stringify({ op: 'control', take: false })], { type: 'application/json' })); } catch { /* ignore */ }
+  state.control = { who: 'agent' };
+}
+addEventListener('pagehide', handBack);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') handBack(); });
 
 refreshState(); frame();
 setInterval(() => { if (document.visibilityState === 'visible') refreshState(); }, 2000);

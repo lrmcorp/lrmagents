@@ -176,7 +176,7 @@ def set_mode(mode):
 
 # ---- the owner driving the browser ---------------------------------------------------------
 
-BROWSER_IDLE_RELEASE = 600
+BROWSER_IDLE_RELEASE = 180  # the owner's browser turn ends after 3 idle minutes (or when they leave the page)
 _browser = {"who": "agent", "since": 0.0, "last": 0.0}
 
 
@@ -205,9 +205,26 @@ def _wait_for_browser(executor, tool_call_id):
     })
     deadline = time.time() + TIMEOUT
     cancel = getattr(executor, "cancel_event", None)
+    started, told = time.time(), False
     while time.time() < deadline:
         if browser_control()["who"] != "owner":
             return None
+        if not told and time.time() - started > 60:
+            # Nobody may be watching this run (a scheduled report): tell the owner why it waits.
+            told = True
+            try:
+                import json as _json
+                import os as _os
+                import urllib.request as _ur
+                from config import conf as _conf
+                who = _where(executor)[0]
+                req = _ur.Request(_os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/") + "/whatsapp/internal/notify-owner",
+                                  method="POST", data=_json.dumps({"agentId": "default", "text":
+                                      f"⏸ *Browser in use*\n- An agent ({who}) is waiting for the browser.\n- You still have it on the Browser page: press *Hand back* or leave the page."}).encode(),
+                                  headers={"Authorization": f"Bearer {_conf().get('external_api_token') or ''}", "Content-Type": "application/json"})
+                _ur.urlopen(req, timeout=15).read()
+            except Exception:
+                pass
         if cancel is not None and getattr(cancel, "is_set", lambda: False)():
             return "The conversation was stopped while the owner was using the browser."
         time.sleep(1)

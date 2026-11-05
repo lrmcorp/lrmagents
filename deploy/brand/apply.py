@@ -456,6 +456,22 @@ patch("api/sessions.py",
 # turn goes on to other models until one answers).
 patch("bridge/agent_bridge.py", "    _FALLBACK_MAX_PASSES = 2\n", "    _FALLBACK_MAX_PASSES = 3\n", root=app)
 
+# ---- Delegation: a chat with no team set (Lorium's own chats, the WhatsApp sessions that
+# scheduled reports run in) works with all the owner's business agents; upstream refused
+# Lorium's requests to CFO, HRD and Operations there. Sora (personal) is never a member.
+patch("agent/tools/agent_delegate/agent_delegate.py",
+      '                logger.warning(f"[AgentDelegate] Could not read team members: {exc}")\n'
+      '                return []\n\n        policy = self._policy_safe()\n',
+      '                logger.warning(f"[AgentDelegate] Could not read team members: {exc}")\n'
+      '                return []\n'
+      '            if not members:\n'
+      '                try:\n'
+      '                    members = [p.id for p in self.agent_bridge.agent_registry.list(include_disabled=False) if p.id != "personal"]\n'
+      '                except Exception as exc:\n'
+      '                    logger.warning(f"[AgentDelegate] Could not list the agents: {exc}")\n'
+      '                    members = []\n'
+      '\n        policy = self._policy_safe()\n', root=app)
+
 # ---- Redeploys wait for running work (agent/lrm_busy.py counts every agent run), and a
 # scheduled report cut off by a restart is run again for up to 2 hours (upstream: 10 min,
 # then the day's report was skipped).
