@@ -663,6 +663,18 @@ patch("agent/tools/browser/browser_service.py",
       '        except Exception as _e:\n'
       '            logger.debug(f"[Browser] cookies not saved: {_e}")\n', root=app)
 
+# An agent that lands on a sign-in page: signed in again with a saved login, or the app is put
+# on Keep signed in and the owner told once (agent/lrm_browser_keep.py after_navigate).
+patch("agent/tools/browser/browser_service.py",
+      "        try:\n            current_url = page.url\n        except Exception:\n            current_url = url\n\n        return {\"url\": current_url, \"title\": title, \"status\": status}\n",
+      "        try:\n            current_url = page.url\n        except Exception:\n            current_url = url\n\n"
+      "        try:\n"
+      "            from agent.lrm_browser_keep import after_navigate as _lrm_after\n"
+      "            current_url, title = _lrm_after(page, url, current_url, title)\n"
+      "        except Exception as _e:\n"
+      "            logger.debug(f\"[Browser] sign-in check skipped: {_e}\")\n"
+      "        return {\"url\": current_url, \"title\": title, \"status\": status}\n", root=app)
+
 # Tasks: LRMagent's WhatsApp numbers as delivery channels in the task form (upstream listed none);
 # channel/lrm_whatsapp_relay.py supplies them, and delivery goes through its relay.
 patch("agent/tools/scheduler/integration.py",

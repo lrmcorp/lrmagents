@@ -14,6 +14,10 @@ also end a session after a while without activity.
    shows a sign-in page, the owner is told on WhatsApp once (sign in again on the Browser
    page; the check then sees it and says it is back).
 
+3. When an agent opens a page and lands on a sign-in page, the saved login signs it in
+   again and the page it asked for is opened; without one, the app is added to the list
+   and the owner is told once (after_navigate, called by browser_service's navigate).
+
 Installed as agent/lrm_browser_keep.py; /api/lrm/browser serves the list.
 """
 import json
@@ -324,3 +328,56 @@ def start_background():
                 logger.warning(f"[BrowserKeep] check failed: {e}")
             time.sleep(CHECK_EVERY)
     threading.Thread(target=loop, name="lrm-browser-keep", daemon=True).start()
+
+
+# Sign-in pages met while an agent works
+
+_told = {}  # host -> when the owner was last told
+
+
+def _add_site(url, title):
+    host = urlparse(url).hostname or ""
+    with _lock:
+        items = sites()
+        if any((urlparse(x["url"]).hostname or "") == host for x in items) or len(items) >= 30:
+            return False
+        items.append({"url": f"{urlparse(url).scheme}://{host}/", "name": host, "status": "signed_out", "checked": time.time(),
+                      "alerted": time.time(), "detail": (title or "")[:160], "why": "added when an agent found it signed out"})
+        _write(items)
+    return True
+
+
+def after_navigate(page, url, current_url, title):
+    """Runs on the browser thread after each navigate. Returns (url, title) for the agent."""
+    if not url.startswith(("http://", "https://")) or not _signed_out(page):
+        return current_url, title
+    host = urlparse(url).hostname or ""
+    from agent import lrm_logins
+    if lrm_logins.find(url):
+        ok, why = lrm_logins.sign_in(page, url)
+        if ok:
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=30000)
+                page.wait_for_timeout(800)
+            except Exception:
+                pass
+            save_cookies(page.context)
+            logger.info(f"[BrowserKeep] {host}: signed in again with the saved login")
+            return page.url, page.title()
+        logger.warning(f"[BrowserKeep] {host}: saved login failed: {why}")
+    added = _add_site(url, title)
+    now = time.time()
+    if now - _told.get(host, 0) > ALERT_EVERY:
+        _told[host] = now
+        text = (f"*Sign-in needed: {host}*\n- An agent tried to open it and got the sign-in page.\n"
+                f"- Sign in once on console → Browser{' (it is now on Keep signed in, so it stays signed in)' if added else ''}.\n"
+                "- Press *Login* next to it (Browser → Keep signed in) to save the login: the agents then sign in by themselves.")
+        threading.Thread(target=lambda: _safe_notify(text), daemon=True).start()
+    return current_url, f"{title} [sign-in page: {host} is signed out; the owner has been asked to sign in]"
+
+
+def _safe_notify(text):
+    try:
+        _notify(text)
+    except Exception as e:
+        logger.info(f"[BrowserKeep] owner not told: {e}")
