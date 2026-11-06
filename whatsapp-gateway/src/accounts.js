@@ -758,6 +758,7 @@ export class Accounts {
         const groups = await account.sock.groupFetchAllParticipating();
         for (const g of Object.values(groups || {})) {
           const row = out.get(g.id) || { jid: g.id, name: g.subject || g.id, members: (g.participants || []).length, agents: [] };
+          if (row.name === g.id && g.subject) row.name = g.subject; // another number may see its name
           row.agents.push(account.agentId);
           out.set(g.id, row);
         }

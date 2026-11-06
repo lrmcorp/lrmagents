@@ -501,13 +501,15 @@ function drawGroups() {
   for (const g of groupPicked) if (!known.has(g.jid)) known.set(g.jid, { jid: g.jid, name: g.name, agents: [g.agent], members: 0, gone: true });
   const on = (jid) => groupPicked.some((p) => p.jid === jid && forAgent(p, current));
   const q = $('#g-q').value.trim().toLowerCase();
-  // This agent's own groups: its number is in them, or it may already post there.
-  const own = [...known.values()].filter((g) => (g.agents || []).includes(current) || on(g.jid));
+  // This agent's own groups: the ones its number is in. Groups it may post to through
+  // another number show only with the groups of other numbers.
+  const own = [...known.values()].filter((g) => (g.agents || []).includes(current));
   const others = known.size - own.length;
+  const tickedElsewhere = [...known.values()].filter((g) => !(g.agents || []).includes(current) && on(g.jid)).length;
   const pool = showOthers ? [...known.values()] : own;
   $('#g-q').hidden = pool.length < 6 && !q;
   $('#g-others').hidden = !others;
-  $('#g-others').textContent = showOthers ? 'Show only this agent\'s groups' : `Show groups from other numbers (${others})`;
+  $('#g-others').textContent = showOthers ? 'Show only this agent\'s groups' : `Show groups from other numbers (${others}${tickedElsewhere ? `, ${tickedElsewhere} ticked` : ''})`;
   const rows = pool.filter((g) => matches(q, g.name, g.jid)).sort((a, b) => (on(b.jid) - on(a.jid)) || ((b.agents || []).includes(current) - (a.agents || []).includes(current)) || a.name.localeCompare(b.name));
   $('#g-list').innerHTML = rows.length ? rows.map((g) => {
     const p = groupPicked.find((x) => x.jid === g.jid);
@@ -516,7 +518,7 @@ function drawGroups() {
     const id = `g-${g.jid.replace(/\W/g, '')}`;
     return `<div class="row group">
       <input type="checkbox" id="${id}" data-gjid="${esc(g.jid)}" ${on(g.jid) ? 'checked' : ''}>
-      <label class="who" for="${id}"><b>${esc(g.name)}</b><small>${esc(bits)}</small></label>
+      <label class="who" for="${id}"><b>${g.name === g.jid ? '<i>Group without a name</i>' : esc(g.name)}</b><small>${esc(g.name === g.jid ? `${bits} · ${g.jid}` : bits)}</small></label>
       <span class="sub">${p ? `<button type="button" class="scope" data-scope="group" data-key="${esc(g.jid)}">${esc(shared(p, current))}</button>` : ''}</span></div>`;
   }).join('') : !pool.length ? `<p class="empty">${esc(nameOf(current))}'s number is in no group yet. Add it to a WhatsApp group and press Refresh list${others ? ', or post from another number with Show groups from other numbers' : ''}.</p>` : q ? `<p class="empty">No group matches “${esc($('#g-q').value.trim())}”.</p>` : '<p class="empty">No groups found. Add an agent\'s number to a WhatsApp group, then press Refresh list.</p>';
 }
@@ -539,7 +541,9 @@ $('#g-list').addEventListener('change', (e) => {
     next = p ? groupPicked.map((x) => (x === p ? { ...x, agents: x.agents?.length ? [...new Set([...x.agents, current])] : [] } : x))
       : [...groupPicked, { jid, name, agent: sender, agents: [current] }];
   } else {
-    const rest = (p.agents?.length ? p.agents : allIds()).filter((id) => id !== current);
+    // "Every agent" becomes the other agents whose numbers are in the group, not every agent.
+    const members = row?.agents?.length ? row.agents : [p.agent].filter(Boolean);
+    const rest = (p.agents?.length ? p.agents : members).filter((id) => id !== current);
     next = rest.length ? groupPicked.map((x) => (x === p ? { ...x, agents: rest } : x)) : groupPicked.filter((x) => x !== p);
   }
   saveGroups(next, box.checked ? `${nameOf(current)} may now post in ${name}.` : `${nameOf(current)} no longer posts in ${name}.`, box);
