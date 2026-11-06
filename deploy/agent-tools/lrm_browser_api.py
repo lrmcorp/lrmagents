@@ -91,18 +91,26 @@ class LrmBrowserHandler:
         try:
             if op == "keep":
                 from agent import lrm_browser_keep as keep
-                return json.dumps({"status": "success", "sites": keep.set_sites(body.get("sites") or [])}, ensure_ascii=False)
+                before = {x["url"] for x in keep.sites()}
+                saved = keep.set_sites(body.get("sites") or [])
+                new = [x["url"] for x in saved if x["url"] not in before]
+                if new:
+                    keep.check_soon(new)  # a new app is checked now, not in up to 20 minutes
+                return json.dumps({"status": "success", "sites": saved}, ensure_ascii=False)
             if op in ("login-save", "login-delete"):
                 # Saved logins (agent/lrm_logins.py): passwords go in, never come back out.
                 from agent import lrm_logins
                 if op == "login-delete":
                     return json.dumps({"status": "success", "logins": lrm_logins.delete(body.get("url"))}, ensure_ascii=False)
                 logins = lrm_logins.save(body.get("url"), body.get("username"), body.get("password"), body.get("login_url") or "")
+                from agent import lrm_browser_keep as keep
+                keep.check_soon([body.get("url")])  # try the saved login right away
                 return json.dumps({"status": "success", "logins": logins}, ensure_ascii=False)
             if op == "keep-check":
                 import threading
                 from agent import lrm_browser_keep as keep
-                threading.Thread(target=keep.check_all, daemon=True).start()
+                keep.mark_checking([x["url"] for x in keep.sites()])
+                keep.check_soon()
                 return json.dumps({"status": "success"})
             if op == "control":
                 act.set_browser_control(bool(body.get("take")))

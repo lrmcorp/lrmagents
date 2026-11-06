@@ -45,7 +45,7 @@
   .keep .row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .keep form { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; } .keep form input { flex: 1 1 160px; }
   .st { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
-  .st.signed_in { background: var(--ok-bg); color: var(--ok); } .st.signed_out, .st.error { background: var(--warn-bg); color: var(--warn); } .st.unchecked { background: var(--muted-bg); color: var(--text-3); }
+  .st.signed_in { background: var(--ok-bg); color: var(--ok); } .st.signed_out, .st.error { background: var(--warn-bg); color: var(--warn); } .st.unchecked, .st.checking { background: var(--muted-bg); color: var(--text-3); }
 
   /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
   @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; } }
@@ -149,7 +149,7 @@ $('#control').addEventListener('click', async () => {
   try { const d = await post({ op: 'control', take: state.control?.who !== 'owner' }); state.control = d.control; renderState(); toast(state.control.who === 'owner' ? 'You are driving; agents wait' : 'Handed back to the agents'); } catch (e) { toast(e.message, true); }
 });
 // Keep signed in
-const ST = { signed_in: 'Signed in', signed_out: 'Signed out', error: 'Could not check', unchecked: 'Not checked yet' };
+const ST = { signed_in: 'Signed in', signed_out: 'Signed out', error: 'Could not check', unchecked: 'Not checked yet', checking: 'Checking…' };
 async function keepPanel() {
   const get = async () => (await (await fetch('/api/lrm/browser?op=keep', { credentials: 'same-origin' })).json());
   let d = await get(); let list = d.sites || []; let logins = d.logins || []; let editing = -1;
@@ -176,12 +176,15 @@ async function keepPanel() {
       <form id="keep-add"><input name="name" aria-label="App name" placeholder="Name, e.g. Shopee Seller"><input name="url" aria-label="App address" placeholder="Address, e.g. seller.shopee.co.id" value="${state.open && state.url ? state.url.replace(/"/g, '&quot;') : ''}"><button class="primary">Add</button></form>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end"><button id="keep-check">Check now</button><button id="keep-close">Close</button></div></div>`;
   };
-  const save = async () => { const r = await post({ op: 'keep', sites: list }); list = r.sites; draw(); };
+  const save = async () => { const r = await post({ op: 'keep', sites: list }); list = r.sites; draw(); refreshSoon(); };
+  // Re-read the list while any app is being checked (every 5 s, up to 2 minutes).
+  let polls = 0;
+  const refreshSoon = () => { polls = 0; const tick = async () => { try { d = await get(); list = d.sites || []; logins = d.logins || logins; if (editing === -1) draw(); } catch {} if (list.some((x) => x.status === 'checking') && ++polls < 24 && box.isConnected) setTimeout(tick, 5000); }; setTimeout(tick, 1500); };
   draw(); document.body.appendChild(box);
   box.addEventListener('submit', async (e) => {
     if (e.target.classList.contains('login-form')) {
       e.preventDefault(); const f = new FormData(e.target); const x = list[Number(e.target.dataset.i)];
-      try { const r = await post({ op: 'login-save', url: x.url, username: f.get('username'), password: f.get('password'), login_url: f.get('login_url') }); logins = r.logins; editing = -1; draw(); toast('Login saved'); } catch (err) { toast(err.message, true); }
+      try { const r = await post({ op: 'login-save', url: x.url, username: f.get('username'), password: f.get('password'), login_url: f.get('login_url') }); logins = r.logins; editing = -1; draw(); toast('Login saved. Signing in with it now…'); refreshSoon(); } catch (err) { toast(err.message, true); }
       return;
     }
   });
@@ -189,7 +192,7 @@ async function keepPanel() {
   box.addEventListener('click', async (e) => {
     const b = e.target.closest('button'); if (!b) { if (e.target === box) box.remove(); return; }
     if (b.id === 'keep-close') return closeBox();
-    if (b.id === 'keep-check') { await post({ op: 'keep-check' }); toast('Checking in the background; this takes a minute.'); setTimeout(async () => { d = await get(); list = d.sites; draw(); }, 45000); return; }
+    if (b.id === 'keep-check') { await post({ op: 'keep-check' }); toast('Checking in the background; this takes a minute.'); refreshSoon(); return; }
     if (b.dataset.login) { editing = editing === Number(b.dataset.login) ? -1 : Number(b.dataset.login); draw(); return; }
     if (b.dataset.cancel) { editing = -1; draw(); return; }
     if (b.dataset.unlogin) { if (!confirm('Delete the saved login for this app?')) return; try { const r = await post({ op: 'login-delete', url: list[Number(b.dataset.unlogin)].url }); logins = r.logins; editing = -1; draw(); toast('Login deleted'); } catch (err) { toast(err.message, true); } return; }

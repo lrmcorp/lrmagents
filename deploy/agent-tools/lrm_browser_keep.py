@@ -259,10 +259,16 @@ def _notify(text):
     urllib.request.urlopen(req, timeout=30).read()
 
 
-def check_all(notify=_notify):
+def check_all(notify=_notify, only=None, force=False):
+    """Check the kept apps (only: these addresses). The 20-minute round waits while the owner
+    has the browser; a check the owner starts (force) runs anyway, in background tabs."""
     items = sites()
-    if not items or _browser_busy_with_owner():
+    if not items or (_browser_busy_with_owner() and not force):
         return items
+    if only:
+        wanted = {urlparse(u).hostname for u in only}
+        items = [x for x in items if urlparse(x["url"]).hostname in wanted]
+        mark_checking([x["url"] for x in items])
     from agent.tools.browser.browser_tool import BrowserTool
     service = BrowserTool._shared_service
     if service is None:
@@ -328,6 +334,32 @@ def start_background():
                 logger.warning(f"[BrowserKeep] check failed: {e}")
             time.sleep(CHECK_EVERY)
     threading.Thread(target=loop, name="lrm-browser-keep", daemon=True).start()
+
+
+def mark_checking(urls):
+    with _lock:
+        items = sites()
+        for x in items:
+            if x["url"] in urls:
+                x["status"] = "checking"
+        _write(items)
+
+
+def check_soon(urls=None):
+    """Check these apps (default: all) now, in the background: a check the owner started."""
+    def run():
+        try:
+            check_all(only=urls, force=True)
+        except Exception as e:
+            logger.warning(f"[BrowserKeep] check failed: {e}")
+        finally:  # never leave an app on "Checking…"
+            with _lock:
+                items = sites()
+                for x in items:
+                    if x.get("status") == "checking":
+                        x["status"], x["detail"] = "error", "the check could not run; try Check now again"
+                _write(items)
+    threading.Thread(target=run, name="lrm-keep-check", daemon=True).start()
 
 
 # Sign-in pages met while an agent works
