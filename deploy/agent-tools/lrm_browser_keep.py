@@ -6,7 +6,9 @@ also end a session after a while without activity.
 
 1. Every cookie, session cookies included, is saved when the browser closes and when a
    check runs, and put back when it starts again (browser_service is patched to call
-   save_cookies / restore_cookies).
+   save_cookies / restore_cookies). Apps on the list that keep the sign-in in the page's
+   own storage (localStorage / sessionStorage, which a new tab or a restart loses) get
+   that saved too, only while they show signed in, and put back into every new tab.
 2. "Keep signed in" (Browser page): a list of the owner's apps. Every 20 minutes each one
    is opened in a background tab, which keeps its session active, and checked: if it
    shows a sign-in page, the owner is told on WhatsApp once (sign in again on the Browser
@@ -39,6 +41,19 @@ def _cookie_file():
     return _root() / "lrm_browser_cookies.json"
 
 
+def _storage_file():
+    return _root() / "lrm_browser_storage.json"
+
+
+def _kept_hosts():
+    return {urlparse(s["url"]).hostname for s in sites() if urlparse(s["url"]).hostname}
+
+
+def _is_kept(origin, hosts):
+    host = urlparse(origin).hostname or ""
+    return any(host == h or host.endswith("." + h) or h.endswith("." + host) for h in hosts)
+
+
 def _sites_file():
     return _root() / "lrm_browser_keep.json"
 
@@ -59,6 +74,61 @@ def save_cookies(context):
     tmp.write_text(json.dumps({"saved": time.time(), "cookies": cookies}), encoding="utf-8")
     os.chmod(tmp, 0o600)
     os.replace(tmp, path)
+    _save_storage(context)
+
+
+_READ_STORAGE = """() => ({ origin: location.origin,
+  local: Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)])),
+  session: Object.fromEntries(Object.keys(sessionStorage).map((k) => [k, sessionStorage.getItem(k)])) })"""
+
+
+def _save_storage(context):
+    """Page storage of the kept apps' open tabs, from tabs that show signed in."""
+    hosts = _kept_hosts()
+    if not hosts:
+        return
+    try:
+        saved = json.loads(_storage_file().read_text(encoding="utf-8"))
+    except Exception:
+        saved = {}
+    changed = False
+    for page in list(context.pages):
+        try:
+            if not page.url.startswith(("http://", "https://")) or not _is_kept(page.url, hosts) or _signed_out(page):
+                continue
+            data = page.evaluate(_READ_STORAGE)
+        except Exception as e:
+            logger.debug(f"[BrowserKeep] page storage not read: {e}")
+            continue
+        if not (data.get("local") or data.get("session")) or len(json.dumps(data)) > 500_000:
+            continue
+        saved[data["origin"]] = {"local": data.get("local") or {}, "session": data.get("session") or {}, "saved": time.time()}
+        changed = True
+    if changed:
+        path = _storage_file()
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(saved), encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+
+
+_FILL_STORAGE = """(() => { const all = %s; const d = all[location.origin]; if (!d) return;
+  for (const [store, items] of [[window.sessionStorage, d.session], [window.localStorage, d.local]])
+    for (const [k, v] of Object.entries(items || {})) { try { if (store.getItem(k) === null) store.setItem(k, v); } catch (e) {} } })();"""
+
+
+def _restore_storage(context):
+    """Every new tab of a kept app starts with its saved page storage (missing keys only)."""
+    try:
+        saved = json.loads(_storage_file().read_text(encoding="utf-8"))
+    except Exception:
+        return
+    hosts = _kept_hosts()
+    saved = {o: v for o, v in saved.items() if _is_kept(o, hosts)}
+    if not saved:
+        return
+    context.add_init_script(script=_FILL_STORAGE % json.dumps(saved))
+    logger.info(f"[BrowserKeep] page storage restored for {len(saved)} app(s)")
 
 
 def restore_cookies(context):
@@ -68,17 +138,20 @@ def restore_cookies(context):
     try:
         saved = json.loads(_cookie_file().read_text(encoding="utf-8")).get("cookies") or []
     except Exception:
-        return
+        saved = []
     now = time.time()
     keep = [c for c in saved if c.get("expires", -1) in (-1, None) or c.get("expires", 0) > now]
     session = [c for c in keep if c.get("expires", -1) in (-1, None)]
-    if not session:
-        return
+    if session:
+        try:
+            context.add_cookies(session)
+            logger.info(f"[BrowserKeep] restored {len(session)} session cookie(s)")
+        except Exception as e:
+            logger.warning(f"[BrowserKeep] session cookies not restored: {e}")
     try:
-        context.add_cookies(session)
-        logger.info(f"[BrowserKeep] restored {len(session)} session cookie(s)")
+        _restore_storage(context)
     except Exception as e:
-        logger.warning(f"[BrowserKeep] session cookies not restored: {e}")
+        logger.warning(f"[BrowserKeep] page storage not restored: {e}")
 
 
 # The list of apps
@@ -156,11 +229,11 @@ def _check_one(service, site):
                     why = f"saved login failed: {type(e).__name__}"
             return {"signed_out": out, "url": page.url, "title": (page.title() or "")[:80], "why": why, "auto": bool(why) and not out}
         finally:
+            save_cookies(ctx)  # before closing, so a signed-in check tab is saved too
             try:
                 page.close()
             except Exception:
                 pass
-            save_cookies(ctx)
     return service._submit(run)
 
 
@@ -219,9 +292,13 @@ def check_all(notify=_notify):
         _write(list(current.values()))
     try:
         if lost:
-            notify("\n".join(["*Signed out of your apps*"] + [f"- {s['name']}" + (f": {s['why']}" if s.get("why") else "") for s in lost]
+            from agent import lrm_logins
+            no_login = [x for x in lost if not lrm_logins.find(x["url"])]
+            notify("\n".join(["*Signed out of your apps*"] + [f"- {x['name']}" + (f": {x['why']}" if x.get("why") else "") for x in lost]
                              + ["", "The agents can't read their data until you sign in again: console → Browser → open the app and sign in "
-                                "(tick 'remember me' / 'keep me signed in' if it offers it)."]))
+                                "(tick 'remember me' / 'keep me signed in' if it offers it)."]
+                             + ([f"To stop this for good, save the login of {', '.join(x['name'] for x in no_login)} (console → Browser → "
+                                 "Keep signed in → Login next to it): the agents then sign in again by themselves."] if no_login else [])))
         if back:
             notify("\n".join(["✅ *Signed in again*"] + [f"- {s['name']}" for s in back]))
     except Exception as e:

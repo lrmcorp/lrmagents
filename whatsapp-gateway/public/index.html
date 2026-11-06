@@ -87,6 +87,7 @@
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 
   .add { display: grid; grid-template-columns: 1fr 1.3fr 160px auto; gap: 8px; margin-bottom: 8px; }
+  .search { margin: 0 0 10px; }
   .add-opts { display: flex; gap: 8px; align-items: center; color: var(--text-2); font-size: 13px; margin: 0 0 12px; }
   .add-opts input { width: 18px; height: 18px; min-height: 0; accent-color: var(--primary); }
   .toolbar { display: flex; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; }
@@ -183,6 +184,7 @@
           <button class="primary">Add</button>
         </form>
         <label class="add-opts"><input type="checkbox" name="every" form="d-add" checked><span>Every agent may message them. <span class="hint">Untick to keep them to <span id="c-only">this agent</span>.</span></span></label>
+        <input type="search" class="search" id="c-q" placeholder="Search contacts by name or number" aria-label="Search contacts" autocomplete="off">
         <div class="list" id="d-list"></div>
         <p class="msg" role="status" id="d-msg"></p>
         <p class="foot"><b>Listen only:</b> the agent does not answer; Lorium tells you what they said. <b>Agent may reply:</b> the agent talks with them directly.</p>
@@ -193,6 +195,7 @@
           <p class="intro" id="g-intro"></p>
           <button id="g-load">Refresh list</button>
         </div>
+        <input type="search" class="search" id="g-q" placeholder="Search groups" aria-label="Search groups" autocomplete="off">
         <div class="list" id="g-list"><p class="empty">Loading…</p></div>
         <p class="msg" role="status" id="g-msg"></p>
         <details class="more">
@@ -301,6 +304,7 @@ async function api(path, body) {
 }
 const numbers = (text) => String(text || '').split(/[,;\n]+/).map((n) => n.trim()).filter(Boolean);
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const matches = (q, ...fields) => !q || fields.some((f) => String(f || '').toLowerCase().includes(q));
 const agentOf = (id) => agents.find((a) => a.id === id);
 const nameOf = (id) => agentOf(id)?.name || id;
 const allIds = () => agents.map((a) => a.id);
@@ -450,8 +454,11 @@ document.addEventListener('click', async (e) => {
 
 // Contacts of the chosen agent
 function drawContacts() {
-  const mine = mineContacts(current);
-  $('#d-list').innerHTML = mine.length ? mine.map((c) => `<div class="row contact">
+  const all = mineContacts(current);
+  const q = $('#c-q').value.trim().toLowerCase(); const qd = q.replace(/\D/g, '');
+  const mine = all.filter((c) => matches(q, c.name) || (qd && c.phone.includes(qd)));
+  $('#c-q').hidden = all.length < 6 && !q;
+  $('#d-list').innerHTML = !mine.length && all.length ? `<p class="empty">No contact matches “${esc($('#c-q').value.trim())}”.</p>` : mine.length ? mine.map((c) => `<div class="row contact">
       <div class="who"><b>${esc(c.name || 'No name')}</b><small>+${esc(c.phone)}</small></div>
       <span class="sub"><button type="button" class="scope" data-scope="contact" data-key="${esc(c.phone)}">${esc(shared(c, current))}</button></span>
       <select data-dmode="${esc(c.phone)}" aria-label="When ${esc(c.name || c.phone)} writes back">${Object.entries(CMODE).map(([v, t]) => `<option value="${v}" ${v === (c.mode || 'listen') ? 'selected' : ''}>${t}</option>`).join('')}</select>
@@ -491,7 +498,9 @@ function drawGroups() {
   const known = new Map(groupRows.map((g) => [g.jid, g]));
   for (const g of groupPicked) if (!known.has(g.jid)) known.set(g.jid, { jid: g.jid, name: g.name, agents: [g.agent], members: 0, gone: true });
   const on = (jid) => groupPicked.some((p) => p.jid === jid && forAgent(p, current));
-  const rows = [...known.values()].sort((a, b) => (on(b.jid) - on(a.jid)) || ((b.agents || []).includes(current) - (a.agents || []).includes(current)) || a.name.localeCompare(b.name));
+  const q = $('#g-q').value.trim().toLowerCase();
+  $('#g-q').hidden = known.size < 6 && !q;
+  const rows = [...known.values()].filter((g) => matches(q, g.name, g.jid)).sort((a, b) => (on(b.jid) - on(a.jid)) || ((b.agents || []).includes(current) - (a.agents || []).includes(current)) || a.name.localeCompare(b.name));
   $('#g-list').innerHTML = rows.length ? rows.map((g) => {
     const p = groupPicked.find((x) => x.jid === g.jid);
     const via = p?.agent || (g.agents || [])[0];
@@ -501,7 +510,7 @@ function drawGroups() {
       <input type="checkbox" id="${id}" data-gjid="${esc(g.jid)}" ${on(g.jid) ? 'checked' : ''}>
       <label class="who" for="${id}"><b>${esc(g.name)}</b><small>${esc(bits)}</small></label>
       <span class="sub">${p ? `<button type="button" class="scope" data-scope="group" data-key="${esc(g.jid)}">${esc(shared(p, current))}</button>` : ''}</span></div>`;
-  }).join('') : '<p class="empty">No groups found. Add an agent\'s number to a WhatsApp group, then press Refresh list.</p>';
+  }).join('') : q ? `<p class="empty">No group matches “${esc($('#g-q').value.trim())}”.</p>` : '<p class="empty">No groups found. Add an agent\'s number to a WhatsApp group, then press Refresh list.</p>';
 }
 async function loadGroups() {
   try { const d = await api('groups'); groupRows = d.groups; groupPicked = d.designated; drawAll(); } catch (e) { $('#g-msg').textContent = e.message; }
@@ -570,6 +579,9 @@ $('#scope-form').addEventListener('submit', async (e) => {
   $('#scope-dlg').close();
 });
 document.addEventListener('click', (e) => { const b = e.target.closest('[data-scope]'); if (b) openScope(b.dataset.scope, b.dataset.key); });
+
+$('#c-q').addEventListener('input', drawContacts);
+$('#g-q').addEventListener('input', drawGroups);
 
 readHash();
 window.addEventListener('hashchange', () => { readHash(); drawAll(); });
