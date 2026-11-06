@@ -4,6 +4,10 @@ name: Diagnose LRMagent on the VPS
 # is public, so the report is encrypted to a key held outside GitHub before it is printed.
 on:
   workflow_dispatch:
+    inputs:
+      part:
+        description: "all, or browser (sign-ins only, a short report)"
+        default: all
 
 jobs:
   diagnose:
@@ -23,8 +27,10 @@ jobs:
           cp deploy/known_hosts "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/ln_vps" "$HOME/.ssh/known_hosts"
       - name: Collect and encrypt
+        env:
+          PART: ${{ inputs.part == 'browser' && 'browser' || '' }}
         run: |
-          ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes "$VPS" 'bash -s' < deploy/diagnose.sh 2>&1 | tr '\r' '\n' | cut -c1-400 | tail -n 400 > report.txt || true
+          ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes "$VPS" 'bash -s' < "deploy/diagnose${PART:+-$PART}.sh" 2>&1 | tr '\r' '\n' | cut -c1-400 | tail -n 400 > report.txt || true
           openssl rand -out key.bin 32
           echo "KEY:$(openssl pkeyutl -encrypt -pubin -inkey deploy/diagnose.pub.pem -pkeyopt rsa_padding_mode:oaep -in key.bin | base64 -w0)"
           gzip -9c report.txt | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:key.bin | base64 -w 0 | fold -w 4000 | sed 's/^/DATA:/'
