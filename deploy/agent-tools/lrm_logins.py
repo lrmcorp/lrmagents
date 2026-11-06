@@ -200,11 +200,17 @@ def sign_in(page, url=None):
             page.get_by_label(re.compile(r"(remember|keep me|ingat)", re.I)).first.check(timeout=1500)
         except Exception:
             pass
+        accepted = []
+        def _on_response(r):
+            if r.request.method == "POST" and 200 <= r.status < 300 and host_of(r.url) == host and "/cdn-cgi/" not in r.url:
+                accepted.append(r.url)
+        page.on("response", _on_response)
         page.locator(_PASS_SEL).first.press("Enter")
-        try:
-            page.wait_for_load_state("networkidle", timeout=15000)
-        except Exception:
-            page.wait_for_timeout(4000)
+        # Single-page apps sign in with a fetch and move on a few seconds later: wait for the page to leave the form.
+        for _ in range(30):
+            page.wait_for_timeout(1000)
+            if not signed_out(page):
+                break
         if signed_out(page):
             text = ""
             try:
@@ -215,6 +221,9 @@ def sign_in(page, url=None):
                 return False, f"{host} asks for a one-time code: the owner has to finish this sign-in on the Browser page."
             if re.search(r"(captcha|not a robot|bukan robot)", text):
                 return False, f"{host} shows a captcha: the owner has to finish this sign-in on the Browser page."
+            if accepted:
+                return False, (f"{host} answered the sign-in with success, then showed its sign-in page again. "
+                               "Usually the site's fault, not the password.")
             return False, f"Signing in to {host} did not work (wrong or changed password?). The owner can check it on the Browser page."
         return True, f"Signed in to {host}."
     except Exception as e:
@@ -222,3 +231,7 @@ def sign_in(page, url=None):
         return False, f"Signing in to {host} failed: {type(e).__name__}. The owner can sign in on the Browser page."
     finally:
         password = None  # noqa: F841
+        try:
+            page.remove_listener("response", _on_response)
+        except Exception:
+            pass
