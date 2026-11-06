@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       part:
-        description: "all, browser (sign-ins) or tasks (scheduled tasks): the last two are short reports"
+        description: "all, browser (sign-ins), logins (replay saved logins) or tasks (scheduled tasks): all but the first are short reports"
         default: all
 
 jobs:
@@ -28,7 +28,7 @@ jobs:
           chmod 600 "$HOME/.ssh/ln_vps" "$HOME/.ssh/known_hosts"
       - name: Collect and encrypt
         env:
-          PART: ${{ (inputs.part == 'browser' || inputs.part == 'tasks') && inputs.part || '' }}
+          PART: ${{ (inputs.part == 'browser' || inputs.part == 'tasks' || inputs.part == 'logins') && inputs.part || '' }}
         run: |
           ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes "$VPS" 'bash -s' < "deploy/diagnose${PART:+-$PART}.sh" 2>&1 | tr '\r' '\n' | cut -c1-400 | tail -n 400 > report.txt || true
           openssl rand -out key.bin 32
