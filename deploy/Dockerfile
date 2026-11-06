@@ -20,6 +20,7 @@ COPY deploy/agent-tools/lrm_usage_api.py /app/channel/web/api/lrm_usage.py
 COPY deploy/agent-tools/lrm_errors.py /app/agent/lrm_errors.py
 COPY deploy/agent-tools/lrm_browser_keep.py /app/agent/lrm_browser_keep.py
 COPY deploy/agent-tools/lrm_browser_tabs.py /app/agent/lrm_browser_tabs.py
+COPY deploy/agent-tools/lrm_task_runs.py /app/agent/lrm_task_runs.py
 COPY deploy/agent-tools/lrm_busy.py /app/agent/lrm_busy.py
 COPY deploy/agent-tools/lrm_logins.py /app/agent/lrm_logins.py
 COPY deploy/agent-tools/lrm_team.py /app/agent/lrm_team.py

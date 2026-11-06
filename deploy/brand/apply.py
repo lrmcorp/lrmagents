@@ -686,6 +686,13 @@ patch("agent/tools/browser/browser_tool.py",
       "        try:\n            return handler(self, args)\n        except Exception as e:\n",
       "        try:\n            from agent.lrm_browser_tabs import run as _lrm_run\n            return _lrm_run(self, handler, args)\n        except Exception as e:\n", root=app)
 
+# Scheduled runs: a clean history every run, and the run's own recipients known while it works, so a
+# whatsapp send to them is skipped without an approval (agent/lrm_task_runs.py, agent/lrm_activity.py).
+patch("agent/tools/scheduler/integration.py", '            reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=False)\n', '            # LRMagent: every run starts clean (an earlier run\'s unsent message or pending action is not\n            # carried over), and the run is known while it works (agent/lrm_task_runs.py).\n            from agent import lrm_task_runs as _lrm_runs\n            _lrm_runs.start(scheduler_session_id, task, (output_sink or {}).get("run_id", ""))\n            try:\n                reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=True)\n            finally:\n                _lrm_runs.finish(scheduler_session_id)\n', root=app)
+
+# Tasks page, run detail: a link to that run's tool calls and approvals (Activity page, ?run=).
+patch("static/js/views/tasks.js", '    fetch(`/api/scheduler/runs/detail?run_id=${encodeURIComponent(run.run_id)}`)\n', '    // LRMagent: the run\'s tool calls and approvals, on the Activity page.\n    document.getElementById(\'lrm-run-trace\')?.remove();\n    if (run.run_id) outEl.insertAdjacentHTML(\'afterend\', `<a id="lrm-run-trace" href="/assets/brand/activity.html?run=${encodeURIComponent(run.run_id)}" target="_blank" rel="noopener" class="inline-block mt-3 text-xs font-semibold underline">Tool calls and approvals of this run</a>`);\n    fetch(`/api/scheduler/runs/detail?run_id=${encodeURIComponent(run.run_id)}`)\n')
+
 # Tasks: LRMagent's WhatsApp numbers as delivery channels in the task form (upstream listed none);
 # channel/lrm_whatsapp_relay.py supplies them, and delivery goes through its relay.
 patch("agent/tools/scheduler/integration.py",

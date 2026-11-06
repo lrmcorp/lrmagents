@@ -54,6 +54,11 @@ def _connect():
     conn.row_factory = sqlite3.Row
     if not _ready:
         conn.executescript(_SCHEMA)
+        for table in ("activity", "approvals"):  # the scheduled run a row belongs to (agent/lrm_task_runs.py)
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN run TEXT")
+            except sqlite3.OperationalError:
+                pass
         _ready = True
     return conn
 
@@ -234,6 +239,22 @@ def _where(executor):
             str(getattr(model, "channel_type", "") or ""))
 
 
+def _run_id(session_id):
+    try:
+        from agent import lrm_task_runs
+        run = lrm_task_runs.current(session_id)
+        return run["run_id"] if run else ""
+    except Exception:
+        return ""
+
+
+REPEAT_WINDOW = 12 * 3600
+
+
+def _when(ts):
+    return time.strftime("%H:%M", time.localtime(ts))
+
+
 def _new_code(conn):
     for _ in range(20):
         code = "".join(secrets.choice(CODE_ALPHABET) for _ in range(4))
@@ -314,6 +335,11 @@ def gate(executor, tool_name, arguments, tool_call_id):
         private = vault_refusal(executor, tool_name, arguments)
         if private:
             return private
+        from agent import lrm_task_runs
+        duplicate = lrm_task_runs.scheduled_duplicate(_where(executor)[1], tool_name, arguments)
+        if duplicate:
+            executor._lrm_approval = "skipped: delivered by the schedule"
+            return duplicate
         if tool_name == "browser":
             waited = _wait_for_browser(executor, tool_call_id)
             if waited:
@@ -323,24 +349,41 @@ def gate(executor, tool_name, arguments, tool_call_id):
             return None
         agent_id, session_id, channel = _where(executor)
         summary = summarize(tool_name, arguments)
+        _expire()
         with _lock, _connect() as conn:
-            code = _new_code(conn)
-            conn.execute("INSERT INTO approvals (code, ts, agent, session, channel, tool, summary, reason, status) "
-                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
-                         (code, time.time(), agent_id, session_id, channel, tool_name, summary, why))
+            same = "agent=? AND tool=? AND summary=?"
+            # The same action asked again: a refusal or an unanswered request stays final for 12 hours,
+            # and one still waiting is shared instead of asking the owner twice.
+            done = conn.execute(f"SELECT * FROM approvals WHERE {same} AND status IN ('denied','expired') AND ts > ? ORDER BY ts DESC LIMIT 1",
+                                (agent_id, tool_name, summary, time.time() - REPEAT_WINDOW)).fetchone()
+            waiting = None if done else conn.execute(f"SELECT * FROM approvals WHERE {same} AND status='pending' ORDER BY ts DESC LIMIT 1",
+                                                      (agent_id, tool_name, summary)).fetchone()
+            if not done and not waiting:
+                code = _new_code(conn)
+                conn.execute("INSERT INTO approvals (code, ts, agent, session, channel, tool, summary, reason, status, run) "
+                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
+                             (code, time.time(), agent_id, session_id, channel, tool_name, summary, why, _run_id(session_id)))
+        if done:
+            executor._lrm_approval = f"{done['status']} {done['code']} (repeat)"
+            what = "refused" if done["status"] == "denied" else "left unanswered"
+            return (f"The owner already {what} this same action at {_when(done['ts'])} (approval {done['code']}), so it is not "
+                    "asked again and did not run. This is final: do not retry it; say in your answer what you would have done.")
+        if waiting:
+            code = waiting["code"]
+            logger.info(f"[Approvals] {code}: the same action is already waiting for the owner; not asked again")
         minutes = max(1, TIMEOUT // 60)
         executor._emit_event("tool_execution_progress", {
             "tool_call_id": tool_call_id, "tool_name": tool_name,
             "message": f"⏳ Waiting for your approval (code {code}): this {why}. Approve or deny below, on the Activity page, "
                        f"or reply yes / no on your WhatsApp. Expires in {minutes} min.",
         })
-        if channel != "web":
+        if channel != "web" and not waiting:
             _notify_owner(agent_id, f"🔐 Approval needed ({_agent_name(agent_id)}): it wants to {why}.\n\n{tool_name}: {summary}\n\n"
                                     f"Reply *yes* to allow or *no* to refuse. Expires in {minutes} min.")
-        deadline = time.time() + TIMEOUT
+        deadline = (waiting["ts"] if waiting else time.time()) + TIMEOUT
         cancel = getattr(executor, "cancel_event", None)
         status = "pending"
-        asked_at, phoned = time.time(), channel != "web"
+        asked_at, phoned = time.time(), channel != "web" or bool(waiting)
         while time.time() < deadline:
             if not phoned and time.time() - asked_at > 60:
                 # Asked in the console and nobody answered (a scheduled run, or the owner is away): WhatsApp too.
@@ -389,10 +432,10 @@ def record(executor, tool_name, arguments, result):
         if tool_name == "browser" and status == "success":
             remember_refs(executor, (result or {}).get("result"))
         with _lock, _connect() as conn:
-            conn.execute("INSERT INTO activity (ts, agent, session, channel, tool, summary, status, duration, approval) "
-                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            conn.execute("INSERT INTO activity (ts, agent, session, channel, tool, summary, status, duration, approval, run) "
+                         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                          (time.time(), agent_id, session_id, channel, tool_name, summarize(tool_name, arguments), status,
-                          float((result or {}).get("execution_time") or 0), approval))
+                          float((result or {}).get("execution_time") or 0), approval, _run_id(session_id)))
             if time.time() - _last_prune[0] > 3600:
                 _last_prune[0] = time.time()
                 cutoff = time.time() - KEEP_DAYS * 86400
@@ -402,10 +445,10 @@ def record(executor, tool_name, arguments, result):
         logger.debug(f"[Activity] not recorded: {e}")
 
 
-def query(days=7, agent="", tool="", status="", q="", limit=500):
+def query(days=7, agent="", tool="", status="", q="", limit=500, run=""):
     sql = "SELECT * FROM activity WHERE ts >= ?"
     params = [time.time() - max(1, min(int(days), KEEP_DAYS)) * 86400]
-    for col, value in (("agent", agent), ("tool", tool), ("status", status)):
+    for col, value in (("agent", agent), ("tool", tool), ("status", status), ("run", run)):
         if value:
             sql += f" AND {col} = ?"
             params.append(value)
@@ -417,5 +460,6 @@ def query(days=7, agent="", tool="", status="", q="", limit=500):
     with _lock, _connect() as conn:
         rows = [dict(r) for r in conn.execute(sql, params)]
         decided = [dict(r) for r in conn.execute(
-            "SELECT * FROM approvals WHERE status != 'pending' AND ts >= ? ORDER BY ts DESC LIMIT 100", (params[0],))]
+            "SELECT * FROM approvals WHERE status != 'pending' AND ts >= ?" + (" AND run = ?" if run else "") + " ORDER BY ts DESC LIMIT 100",
+            (params[0], run) if run else (params[0],))]
     return rows, decided

@@ -46,6 +46,8 @@
   tr:last-child td { border-bottom: 0; }
   td.when { white-space: nowrap; color: var(--text-3); font-size: 12px; }
   td.what { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-word; max-width: 520px; }
+  .linkish { border: 0; background: none; padding: 0; min-height: 0; font: inherit; color: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .run-chip { margin: 0 0 8px; font-size: 13px; color: var(--text-2); }
   .tag { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 999px; padding: 1px 8px; background: var(--muted-bg); color: var(--text-2); white-space: nowrap; }
   .tag.ok { background: var(--ok-bg); color: var(--ok); } .tag.bad { background: var(--bad-bg); color: var(--bad); } .tag.warn { background: var(--warn-bg); color: var(--warn); }
   .empty { color: var(--text-3); padding: 18px; text-align: center; }
@@ -75,6 +77,7 @@
     <select id="status"><option value="">Any result</option><option value="success">Succeeded</option><option value="error">Failed or refused</option></select>
     <input type="search" id="q" placeholder="Search commands, files, chats…">
   </div>
+  <p class="run-chip" id="run-chip" hidden><span></span> <button class="linkish" data-run="">Show all</button></p>
   <div class="panel scroll"><table id="rows"></table></div>
 
   <h2>Recent decisions</h2>
@@ -98,10 +101,12 @@ let data = null;
 
 function toast(m, err) { const t = document.createElement('div'); t.className = 'toast' + (err ? ' err' : ''); t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 3000); }
 const when = (ts) => { const d = new Date(ts * 1000); return `${d.toLocaleDateString('en-GB').replace(/\//g, '-')} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`; };
-const where = (r) => (r.session || '').startsWith('openai:conversation:whatsapp:') ? 'WhatsApp' : (CHANNEL[r.channel] || r.channel || '—');
+const where = (r) => (r.session || '').startsWith('scheduler_') ? (r.run ? `<button class="linkish" data-run="${esc(r.run)}" title="Show only this run">Scheduled run</button>` : 'Scheduled run')
+  : esc((r.session || '').startsWith('openai:conversation:whatsapp:') ? 'WhatsApp' : (CHANNEL[r.channel] || r.channel || '—'));
+let runFilter = new URLSearchParams(location.search).get('run') || '';
 
 async function api(body) {
-  const params = new URLSearchParams({ days: $('#days').value, agent: $('#agent').value, tool: $('#tool').value, status: $('#status').value, q: $('#q').value });
+  const params = new URLSearchParams({ days: $('#days').value, agent: $('#agent').value, tool: $('#tool').value, status: $('#status').value, q: $('#q').value, run: runFilter });
   const r = await fetch(body ? '/api/lrm/activity' : `/api/lrm/activity?${params}`, body
     ? { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : { credentials: 'same-origin' });
   if (r.status === 401) { (window.top || window).location.href = '/'; throw new Error('Signed out'); }
@@ -116,7 +121,7 @@ function render() {
   $('#pend-h').hidden = !data.pending.length;
   $('#pending').innerHTML = data.pending.map((p) => `<div class="req"><div><b>${esc(p.agent)}</b> wants to ${esc(p.reason)} <span class="tag warn">code ${esc(p.code)}</span></div>
     <code>${esc(TOOL[p.tool] || p.tool)}: ${esc(p.summary)}</code>
-    <div class="meta">${esc(where(p))} · asked ${when(p.ts)} · expires ${new Date((p.ts + data.timeout) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+    <div class="meta">${where(p)} · asked ${when(p.ts)} · expires ${new Date((p.ts + data.timeout) * 1000).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
     <div class="row"><button class="primary" data-decide="approve" data-code="${esc(p.code)}"><i class="fas fa-check"></i>Approve</button><button class="danger" data-decide="deny" data-code="${esc(p.code)}"><i class="fas fa-xmark"></i>Deny</button></div></div>`).join('');
   const agents = [...new Set(data.rows.map((r) => r.agent))].sort();
   const tools = [...new Set(data.rows.map((r) => r.tool))].sort();
@@ -125,16 +130,19 @@ function render() {
     el.innerHTML = `<option value="">${label}</option>` + [...new Set([...list, cur].filter(Boolean))].map((v) => `<option value="${esc(v)}">${esc(sel === '#tool' ? (TOOL[v] || v) : v)}</option>`).join('');
     el.value = cur;
   }
+  $('#run-chip').hidden = !runFilter;
+  $('#run-chip span').textContent = runFilter ? `Showing one scheduled run (${runFilter})` : '';
   $('#rows').innerHTML = data.rows.length ? `<tr><th>When</th><th>Agent</th><th>Where</th><th>Action</th><th>What</th><th>Result</th></tr>` + data.rows.map((r) => {
     const ok = r.status === 'success';
-    const appr = r.approval ? ` <span class="tag ${r.approval.startsWith('approved') ? 'ok' : 'bad'}">${esc(r.approval.split(' ')[0])}</span>` : '';
-    return `<tr><td class="when">${when(r.ts)}</td><td>${esc(r.agent)}</td><td>${esc(where(r))}</td><td>${esc(TOOL[r.tool] || r.tool)}</td><td class="what">${esc(r.summary)}</td>
+    const appr = !r.approval ? '' : r.approval.startsWith('skipped') ? ' <span class="tag warn" title="The schedule delivers it">Skipped</span>'
+      : ` <span class="tag ${r.approval.startsWith('approved') ? 'ok' : 'bad'}">${esc(r.approval.split(' ')[0])}</span>`;
+    return `<tr><td class="when">${when(r.ts)}</td><td>${esc(r.agent)}</td><td>${where(r)}</td><td>${esc(TOOL[r.tool] || r.tool)}</td><td class="what">${esc(r.summary)}</td>
       <td><span class="tag ${ok ? 'ok' : 'bad'}">${ok ? 'OK' : 'Failed'}</span>${appr}${r.duration > 1 ? ` <small>${r.duration.toFixed(1)}s</small>` : ''}</td></tr>`;
   }).join('') : '<tr><td class="empty">Nothing in this period yet.</td></tr>';
   $('#decided').innerHTML = data.approvals.length ? `<tr><th>When</th><th>Agent</th><th>Asked to</th><th>What</th><th>Decision</th></tr>` + data.approvals.map((a) => {
     const cls = a.status === 'approved' ? 'ok' : a.status === 'expired' ? 'warn' : 'bad';
     const label = { approved: 'Approved', denied: 'Denied', expired: 'No answer' }[a.status] || a.status;
-    return `<tr><td class="when">${when(a.ts)}</td><td>${esc(a.agent)}</td><td>${esc(a.reason)}</td><td class="what">${esc(a.summary)}</td><td><span class="tag ${cls}">${label}</span>${a.decided_via ? ` <small>via ${esc(a.decided_via)}</small>` : ''}</td></tr>`;
+    return `<tr><td class="when">${when(a.ts)}</td><td>${esc(a.agent)}</td><td>${esc(a.reason)}</td><td class="what">${esc(a.summary)}${a.run ? ` <button class="linkish" data-run="${esc(a.run)}">run</button>` : ''}</td><td><span class="tag ${cls}">${label}</span>${a.decided_via ? ` <small>via ${esc(a.decided_via)}</small>` : ''}</td></tr>`;
   }).join('') : '<tr><td class="empty">No approvals asked in this period.</td></tr>';
 }
 
@@ -145,6 +153,7 @@ document.addEventListener('click', async (e) => {
   if (!b) return;
   try {
     if (b.dataset.mode) { await api({ op: 'mode', mode: b.dataset.mode }); toast('Saved'); }
+    if (b.dataset.run !== undefined) { runFilter = b.dataset.run; load(); return; }
     if (b.dataset.decide) { await api({ op: 'decide', code: b.dataset.code, decision: b.dataset.decide }); toast(b.dataset.decide === 'approve' ? 'Approved' : 'Denied'); }
     load();
   } catch (err) { toast(err.message, true); }

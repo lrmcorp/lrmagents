@@ -28,12 +28,12 @@ class LrmActivityHandler:
         _require_auth()
         web.header("Content-Type", "application/json; charset=utf-8")
         from agent import lrm_activity as act
-        p = web.input(days="7", agent="", tool="", status="", q="")
+        p = web.input(days="7", agent="", tool="", status="", q="", run="")
         try:
             days = int(p.days)
         except ValueError:
             days = 7
-        rows, decided = act.query(days, p.agent, p.tool, p.status, p.q.strip())
+        rows, decided = act.query(days, p.agent, p.tool, p.status, p.q.strip(), run=p.run.strip())
         return json.dumps({"status": "success", "mode": act.get_mode(), "pending": act.pending(),
                            "approvals": decided, "rows": rows, "timeout": act.TIMEOUT}, ensure_ascii=False)
 
