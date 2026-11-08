@@ -248,7 +248,10 @@ def _run_id(session_id):
         return ""
 
 
-REPEAT_WINDOW = 12 * 3600
+# A flat "no" from the owner is final for good; an unanswered (expired) request is
+# held this long so the same content to the same target is not asked over and over.
+EXPIRE_WINDOW = 48 * 3600
+REPEAT_WINDOW = EXPIRE_WINDOW  # kept for callers that import the old name
 
 
 def _when(ts):
@@ -354,8 +357,9 @@ def gate(executor, tool_name, arguments, tool_call_id):
             same = "agent=? AND tool=? AND summary=?"
             # The same action asked again: a refusal or an unanswered request stays final for 12 hours,
             # and one still waiting is shared instead of asking the owner twice.
-            done = conn.execute(f"SELECT * FROM approvals WHERE {same} AND status IN ('denied','expired') AND ts > ? ORDER BY ts DESC LIMIT 1",
-                                (agent_id, tool_name, summary, time.time() - REPEAT_WINDOW)).fetchone()
+            done = conn.execute(f"SELECT * FROM approvals WHERE {same} AND "
+                                "((status='denied') OR (status='expired' AND ts > ?)) ORDER BY ts DESC LIMIT 1",
+                                (agent_id, tool_name, summary, time.time() - EXPIRE_WINDOW)).fetchone()
             waiting = None if done else conn.execute(f"SELECT * FROM approvals WHERE {same} AND status='pending' ORDER BY ts DESC LIMIT 1",
                                                       (agent_id, tool_name, summary)).fetchone()
             if not done and not waiting:

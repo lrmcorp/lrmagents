@@ -567,6 +567,58 @@ patch(_integ, '                output_sink["preview"] = str(reply.content)\n',
       '                output_sink["preview"] = str(reply.content) + getattr(channel, "delivery_note", "")\n', root=app)
 patch(_integ, '            output_sink["preview"] = str(content)\n',
       '            output_sink["preview"] = str(content) + getattr(channel, "delivery_note", "")\n', count="all", root=app)
+# Only a marked final answer is delivered (agent/lrm_task_output.py): the run wraps what to
+# send in a marker, so the model's intermediate thinking never reaches WhatsApp. A run with no
+# usable final answer (empty, or thinking only) retries once, then is recorded failed and the
+# owner is told — it is not sent and not left as a silent "done".
+patch(_integ,
+      '            f"任务描述：\\n{task_description}"\n'
+      '        )\n',
+      '            f"任务描述：\\n{task_description}"\n'
+      '        )\n'
+      '        from agent.lrm_task_output import INSTRUCTION as _lrm_final_instruction\n'
+      '        execution_prompt = execution_prompt + _lrm_final_instruction\n')
+patch(_integ,
+      '            if not (reply and reply.content):\n'
+      '                # Empty is a valid outcome: the task ran and decided there was\n'
+      '                # nothing worth reporting (conditional reminders, monitors with\n'
+      '                # no alert). Send nothing rather than a placeholder message.\n'
+      '                logger.info(\n'
+      '                    f"[Scheduler] Task {task[\'id\']}: agent produced no content, nothing to send"\n'
+      '                )\n'
+      '                return True\n',
+      '            from agent import lrm_task_output as _lrm_out\n'
+      '            outcome, payload = _lrm_out.classify(getattr(reply, "content", "") if reply else "")\n'
+      '            if outcome == "failed":\n'
+      '                _lrm_runs.start(scheduler_session_id, task, (output_sink or {}).get("run_id", ""))\n'
+      '                try:\n'
+      '                    reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=True)\n'
+      '                finally:\n'
+      '                    _lrm_runs.finish(scheduler_session_id)\n'
+      '                outcome, payload = _lrm_out.classify(getattr(reply, "content", "") if reply else "")\n'
+      '            if outcome == "failed":\n'
+      '                if output_sink is not None:\n'
+      '                    output_sink["status"] = "error"\n'
+      '                    output_sink["error"] = payload\n'
+      '                _lrm_out.note_failed(agent_id, task, payload)\n'
+      '                logger.error(f"[Scheduler] Task {task[\'id\']}: {payload}; nothing sent")\n'
+      '                return True\n'
+      '            if outcome == "silent":\n'
+      '                logger.info(f"[Scheduler] Task {task[\'id\']}: nothing to send")\n'
+      '                return True\n'
+      '            reply.content = payload\n')
+patch(_integ,
+      '        if not ok:\n'
+      '            status = "error"\n'
+      '            error = "deferred or delivery failed"\n'
+      '        return ok\n',
+      '        if sink.get("status"):\n'
+      '            status = sink["status"]\n'
+      '            error = sink.get("error", "") or error\n'
+      '        elif not ok:\n'
+      '            status = "error"\n'
+      '            error = "deferred or delivery failed"\n'
+      '        return ok\n')
 # Tasks page: create and update accept action.receivers (checked against the allow-list)
 patch("api/scheduler.py",
       '            if action_type == "send_message":\n                action["content"] = content\n',

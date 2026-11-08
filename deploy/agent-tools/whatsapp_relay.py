@@ -189,13 +189,20 @@ class FanOut:
         self.results = []
         self.delivery_note = ""
 
+    def targets(self):
+        """Every receiver of the task, primary first, de-duplicated. The primary
+        is always included so a task that saved only extra receivers still
+        reaches the person it was addressed to."""
+        primary = self.action.get("receiver")
+        return list(dict.fromkeys(r for r in [primary, *(self.action.get("receivers") or [])] if r))
+
     def send(self, reply, context=None):
         text = str(getattr(reply, "content", "") or "").strip()
         if not text:
             return
         names = {r["receiver"]: r["name"] for r in task_recipients()}
         transient = False
-        for receiver in self.action.get("receivers") or []:
+        for receiver in self.targets():
             relay = relay_for(receiver)
             if relay is None:
                 self.results.append((receiver, False, "not a WhatsApp recipient"))
@@ -213,6 +220,7 @@ class FanOut:
 
 def fanout(channel, action, channel_type):
     """The task's delivery: to every receiver when it has several, else the usual channel."""
-    if channel_type == "openai_api" and len((action or {}).get("receivers") or []) > 1:
-        return FanOut(channel, action)
-    return channel
+    if channel_type != "openai_api":
+        return channel
+    fan = FanOut(channel, action)
+    return fan if len(fan.targets()) > 1 else channel
