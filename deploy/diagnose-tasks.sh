@@ -14,7 +14,11 @@ for f in glob.glob("/home/agent/cow/scheduler/tasks.json"):
     tasks = data.get("tasks", data) if isinstance(data, dict) else data
     tasks = tasks.values() if isinstance(tasks, dict) else tasks
     for t in sorted(tasks, key=lambda t: str(t.get("next_run_at"))):
-        print(str(t.get("id"))[:8], "on " if t.get("enabled") else "off", "next", t.get("next_run_at"), "| last", t.get("last_run_at"), "|", str(t.get("name"))[:60])
+        a = t.get("action") or {}
+        extra = a.get("receivers") or []
+        print(str(t.get("id"))[:8], "on " if t.get("enabled") else "off", "next", t.get("next_run_at"), "| last", t.get("last_run_at"), "|", str(t.get("name"))[:50])
+        print("    type", a.get("type"), "ch", a.get("channel_type"), "inst", str(a.get("instance_id"))[:28],
+              "| receiver", str(a.get("receiver"))[-28:], "| receivers[", len(extra), "]:", ", ".join(str(r)[-24:] for r in extra) or "none")
 PY
 echo "== scheduler, relay and errors, last 6h"
 dc logs --no-color --since 6h cowagent 2>&1 | grep -E '\[Scheduler\]|WhatsAppRelay|FanOut|Traceback|ERROR|busy|wait-idle' | cut -c1-260 | tail -60
