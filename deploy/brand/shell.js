@@ -385,12 +385,17 @@
     // designated contacts, ticked groups); the server checks every one against that list.
     const lrmEsc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     function lrmTaskState() {
+        // The task modal (js/views/tasks-modal.js) is an ES module, so its state is not global.
+        // It publishes a live view on window.__lrmTask; the chosen recipient is also mirrored
+        // into the hidden #task-edit-receiver field, which is the reliable source for the primary.
         try {
-            const inst = selectedTaskInstanceId || '';
-            const all = (taskAllRecipients || []).filter((r) => (r.instance_id || r.channel_type) === inst);
-            let primary = '';
-            try { primary = (taskRecipientMap[getDropdownValue(document.getElementById('task-edit-recipient'))] || {}).receiver || ''; } catch { /* none */ }
-            const saved = taskModalMode !== 'create' && currentEditingTask ? (currentEditingTask.action?.receivers || []) : [];
+            const s = window.__lrmTask;
+            if (!s) return null;
+            const inst = s.inst || '';
+            const all = (s.recips || []).filter((r) => (r.instance_id || r.channel_type) === inst);
+            const recvEl = document.getElementById('task-edit-receiver');
+            const primary = (recvEl && recvEl.value) || '';
+            const saved = s.mode !== 'create' && s.task ? (s.task.action?.receivers || []) : [];
             return { inst, all, primary, saved };
         } catch { return null; }
     }

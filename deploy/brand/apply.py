@@ -45,6 +45,18 @@ patch("static/js/core/theme.js", "|| window.__COW_DEFAULT_THEME__ || 'dark';", "
 # loads after themes.css and after the console's own scripts.
 patch("chat.html", '<script defer src="/assets/js/workspace.js"></script>',
       '<script defer src="/assets/js/workspace.js"></script>\n    <script defer src="/assets/brand/shell.js"></script>')
+# The task modal is an ES module, so its state is private. Publish a live view on
+# window.__lrmTask so the brand "Also send to" box (shell.js) can read the chosen
+# instance, the recipient directory and the task being edited.
+patch("static/js/views/tasks-modal.js",
+      "let selectedTaskInstanceId = '';\n",
+      "let selectedTaskInstanceId = '';\n"
+      "try { Object.defineProperties((window.__lrmTask = window.__lrmTask || {}), {\n"
+      "  task: { get: () => currentEditingTask, configurable: true },\n"
+      "  recips: { get: () => taskAllRecipients, configurable: true },\n"
+      "  inst: { get: () => selectedTaskInstanceId, configurable: true },\n"
+      "  mode: { get: () => taskModalMode, configurable: true },\n"
+      "}); } catch (_e) { /* older modal: the add-on falls back to the DOM */ }\n")
 patch("chat.html",
       '<link rel="stylesheet" href="/assets/css/themes.css">',
       '<link rel="stylesheet" href="/assets/css/themes.css">\n'
