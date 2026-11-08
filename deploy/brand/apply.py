@@ -577,7 +577,7 @@ patch(_integ,
       '            f"任务描述：\\n{task_description}"\n'
       '        )\n'
       '        from agent.lrm_task_output import INSTRUCTION as _lrm_final_instruction\n'
-      '        execution_prompt = execution_prompt + _lrm_final_instruction\n')
+      '        execution_prompt = execution_prompt + _lrm_final_instruction\n', root=app)
 patch(_integ,
       '            if not (reply and reply.content):\n'
       '                # Empty is a valid outcome: the task ran and decided there was\n'
@@ -606,7 +606,7 @@ patch(_integ,
       '            if outcome == "silent":\n'
       '                logger.info(f"[Scheduler] Task {task[\'id\']}: nothing to send")\n'
       '                return True\n'
-      '            reply.content = payload\n')
+      '            reply.content = payload\n', root=app)
 patch(_integ,
       '        if not ok:\n'
       '            status = "error"\n'
@@ -618,7 +618,7 @@ patch(_integ,
       '        elif not ok:\n'
       '            status = "error"\n'
       '            error = "deferred or delivery failed"\n'
-      '        return ok\n')
+      '        return ok\n', root=app)
 # Tasks page: create and update accept action.receivers (checked against the allow-list)
 patch("api/scheduler.py",
       '            if action_type == "send_message":\n                action["content"] = content\n',
