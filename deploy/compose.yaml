@@ -51,6 +51,8 @@ services:
       default:
       edge:
         aliases: [cowagent]
+      # Private link to the sandbox (no internet); chat-driven shell runs there.
+      sandbox_net:
 
   # WhatsApp Web (QR) links, one number per agent; Caddy routes /whatsapp/* here.
   whatsapp-gateway:
@@ -112,6 +114,10 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    # Only the private cowagent<->sandbox network: no internet egress, so a shell
+    # command driven by an untrusted chat cannot exfiltrate the workspace or vault.
+    networks:
+      - sandbox_net
     depends_on:
       - cowagent
 
@@ -168,6 +174,10 @@ networks:
   edge:
     name: lnint-edge
     external: true
+  # cowagent <-> sandbox only, with no gateway to the internet: chat-driven shell
+  # in the sandbox can reach neither the internet nor other services.
+  sandbox_net:
+    internal: true
 
 volumes:
   workspace:
