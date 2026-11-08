@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Runs on the VPS (diagnose.yml with part=src): prints the scheduler save path and the console's
-# scheduler fetch URLs so the receivers[] save can be traced. No secrets are printed.
+# Runs on the VPS (diagnose.yml with part=src): dumps the refactored tasks modal so the brand
+# "Also send to" hook can be matched to it. No secrets are printed.
 cd ~/cowagent || exit 1
 dc() { sudo -n docker compose -f deploy/compose.yaml exec -T cowagent "$@" </dev/null; }
-echo "== api/scheduler.py: route dispatch + create/update + receivers"
-dc sh -lc 'grep -n "def \|op ==\|action_type\|/scheduler\|receivers\|path\|self.path\|action_in\|updates\[" /app/api/scheduler.py 2>/dev/null | head -60'
-echo "== console JS files that mention scheduler"
-dc sh -lc 'grep -rln "scheduler" /app/channel/web/static 2>/dev/null | head'
-echo "== how the console calls scheduler create/update (fetch URLs)"
-dc sh -lc 'grep -rnoE "/api/scheduler[a-zA-Z0-9/_?=-]*|scheduler\?op=[a-z]+|op=.(create|update)" /app/channel/web/static 2>/dev/null | sort -u | head -40'
+echo "== tasks-modal.js: ids, globals, recipient + instance + body building"
+dc sh -lc 'grep -nE "id=.task-edit|getElementById\(|task-edit-recipient|instance|recipient|window\.[a-zA-Z]+ *=|currentEditingTask|taskModalMode|selectedTask|body.action|action.receiver|buildBody|create\x27|update\x27|export" /app/channel/web/static/js/views/tasks-modal.js 2>/dev/null | head -80'
+echo "== recipient-wrap / markup ids referenced"
+dc sh -lc 'grep -noE "task-edit-[a-z-]+|lrm-[a-z-]+" /app/channel/web/static/js/views/tasks-modal.js 2>/dev/null | sort -u'
