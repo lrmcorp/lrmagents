@@ -1,6 +1,6 @@
 # LRMagent teammates: Codex, Claude Code, Gemini CLI and OpenCode (Grok, DeepSeek),
 # signed in with the owner's own plans, plus the page and API that drive them.
-FROM node:22-bookworm-slim
+FROM node:22-bookworm-slim@sha256:5ec23b7c622b00547753bc6ffd78085dd868a68aeb41c8e0a1418f033e13d96d
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates git curl openssh-client python3 make g++ \
        ripgrep procps less nano jq unzip \

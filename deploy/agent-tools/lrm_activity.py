@@ -140,14 +140,21 @@ def risk(tool, args, mode, refs=None):
     if tool == "browser":
         action = str(args.get("action", "")).lower()
         if action in ("click", "type", "fill", "press", "submit", "select", "evaluate"):
+            # evaluate runs arbitrary JS on the page: always gated, and no page-supplied
+            # label can downgrade it (a hostile page controls its own element text).
+            if action == "evaluate":
+                return "runs a script on a website"
             text = " ".join(str(args.get(k, "")) for k in ("selector", "text", "value", "key", "element", "description"))
             try:
                 text += " " + (refs or {}).get(int(args.get("ref")), "")
             except (TypeError, ValueError):
                 pass
-            if _SIGN_IN.search(text) and not _MONEY_OR_LOSS.search(text) and action != "evaluate":
+            # A sign-in stays un-gated so a scheduled run can still reach the owner's sites,
+            # but only a plain click/press/select is exempt — never a submit. Otherwise a
+            # hostile page could relabel a "pay/confirm" submit as "login" to skip approval.
+            if _SIGN_IN.search(text) and not _MONEY_OR_LOSS.search(text) and action in ("click", "press", "select"):
                 return ""
-            if _RISKY_WEB.search(text) or action in ("submit", "evaluate"):
+            if _RISKY_WEB.search(text) or action == "submit":
                 return "acts on a website (submit, buy, post or delete)"
             return "acts on a website" if mode == "always" else ""
         return ""

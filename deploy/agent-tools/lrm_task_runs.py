@@ -51,31 +51,40 @@ def current(session_id):
         return _runs.get(str(session_id or ""))
 
 
+def _recipient_hit(run, to):
+    """The run recipient a 'to' names, or None. Matches the owner, a phone (last 9 digits),
+    a group jid/name, or a designated contact by name."""
+    low = to.lower()
+    digits = re.sub(r"\D", "", to)
+    for r in run["receivers"]:
+        name = r["name"].lower()
+        if low in OWNER_WORDS and name.startswith("you (owner)"):
+            return r
+        if r["digits"] and digits and digits.endswith(r["digits"][-9:]):
+            return r
+        if r["group"]:
+            wanted = low.removeprefix("group").strip(" :")
+            group = name.removeprefix("group:").strip()
+            if to == r["chat"] or (wanted and group and (wanted == group or (len(wanted) >= 3 and wanted in group))):
+                return r
+        elif name and len(low) >= 3 and (low == name or low in name or name in low):
+            # a designated contact named in the send (no digits), e.g. "Hansel"
+            return r
+    return None
+
+
 def scheduled_duplicate(session_id, tool_name, args):
-    """The refusal for a whatsapp send to one of this run's own recipients, else None."""
+    """During a scheduled run the scheduler delivers the final answer itself, so a whatsapp
+    send from the agent would double-send and ask the owner for a needless approval. Refuse
+    every whatsapp send during the run (not just ones we can match to a recipient); the agent
+    puts the message in its final answer instead. Returns the refusal, or None."""
     run = current(session_id)
     if not run or tool_name != "whatsapp" or str((args or {}).get("action") or "").strip() != "send":
         return None
     to = str((args or {}).get("to") or "me").strip()
-    low = to.lower()
-    hit = None
-    for r in run["receivers"]:
-        name = r["name"].lower()
-        if low in OWNER_WORDS and name.startswith("you (owner)"):
-            hit = r
-        elif r["digits"] and re.sub(r"\D", "", to) and re.sub(r"\D", "", to).endswith(r["digits"][-9:]):
-            hit = r
-        elif r["group"]:
-            wanted = low.removeprefix("group").strip(" :")
-            group = name.removeprefix("group:").strip()
-            if to == r["chat"] or (wanted and group and (wanted == group or (len(wanted) >= 3 and wanted in group))):
-                hit = r
-        if hit:
-            break
-    if not hit:
-        return None
-    who = hit["name"] or hit["chat"]
-    logger.info(f"[TaskRuns] {run['task_id']}: whatsapp send to its own recipient {who} skipped")
-    return (f"Not sent, and no approval was asked: this is the scheduled task '{run['name']}', and its final answer is "
-            f"delivered to {who} automatically when the run ends. Put the message in your final answer instead of "
-            "sending it yourself.")
+    hit = _recipient_hit(run, to)
+    who = (hit["name"] or hit["chat"]) if hit else to
+    logger.info(f"[TaskRuns] {run['task_id']}: whatsapp send to {who} during the run skipped")
+    return (f"Not sent, and no approval was asked: this is the scheduled task '{run['name']}', and its result is "
+            "delivered to the task's recipients automatically when the run ends. Put anything you want sent in your "
+            "final answer instead of sending it yourself.")

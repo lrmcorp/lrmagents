@@ -1,7 +1,7 @@
 # LRMagent voice: speech-to-text (faster-whisper) and text-to-speech (Kokoro) for the
 # personal assistant and WhatsApp voice replies. CPU only; models load on first use
 # into the voice_models volume (checksummed where the publisher gives fixed files).
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:935c3c5b12357a7e10caa9c1e6ca5692344d97cf229832ef584be2cec9fc03df
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

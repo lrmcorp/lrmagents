@@ -631,6 +631,14 @@ patch(_integ,
       '            status = "error"\n'
       '            error = "deferred or delivery failed"\n'
       '        return ok\n', root=app)
+# Each run gets its own isolated session, keyed on the run (not the recipient's chat), so an
+# earlier run's history or a pending action is never carried into another run and two tasks to
+# the same owner never share a session. Only the final answer is delivered to the recipient.
+patch(_integ,
+      '        scheduler_session_id = f"scheduler_{receiver}_{task[\'id\']}"\n',
+      '        import uuid as _lrm_uuid\n'
+      '        scheduler_session_id = f"scheduler_{task[\'id\']}_{(output_sink or {}).get(\'run_id\') or _lrm_uuid.uuid4().hex[:8]}"\n',
+      root=app)
 # Tasks page: create and update accept action.receivers (checked against the allow-list)
 patch("api/scheduler.py",
       '            if action_type == "send_message":\n                action["content"] = content\n',
