@@ -33,6 +33,10 @@ jobs:
           for f in deploy/*.sh; do bash -n "$f"; done
           python3 -m py_compile deploy/brand/apply.py deploy/agent-tools/*.py deploy/agent-tools/*/*.py
           python3 deploy/agent-tools/test_lrm_task_output.py
+          # A lazy runtime import of an agent.lrm_* module is invisible to compileall, so a
+          # module referenced but not COPYed into /app/agent/ only fails when a scheduled run
+          # executes (as lrm_task_output did). This check fails the build instead.
+          python3 deploy/check_agent_copies.py
           node --check deploy/brand/vault.js
           node --check deploy/brand/topology.js
           python3 -m py_compile voice/server.py
