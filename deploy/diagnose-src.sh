@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Runs on the VPS (diagnose.yml with part=src): dumps the model/fallback logic in agent_bridge.
+# Runs on the VPS (diagnose.yml with part=src): verify the scheduler's runtime imports resolve.
 cd ~/cowagent || exit 1
 dc() { sudo -n docker compose -f deploy/compose.yaml exec -T cowagent "$@" </dev/null; }
-echo "== agent_bridge.py: model selection + fallback_config + chain + per-agent model"
-dc sh -lc 'grep -n "def .*fallback\|fallback_config\|chat_fallback\|def _model\|per.agent\|agent.*model\|use_fallback\|def model\|model_for\|custom:\|chain" /app/bridge/agent_bridge.py 2>/dev/null | head -50'
-echo "== fallback_config body"
-dc sh -lc 'n=$(grep -n "def _fallback_config\|def fallback_config" /app/bridge/agent_bridge.py | head -1 | cut -d: -f1); [ -n "$n" ] && nl -ba /app/bridge/agent_bridge.py | sed -n "$((n)),$((n+60))p"'
-echo "== where per-agent model is applied (registry/profile model)"
-dc sh -lc 'grep -rn "profile.model\|agent.*\.model\|override.*model\|cp.get(.model\|builtin_model\|model_override" /app/bridge/agent_bridge.py /app/agent/registry.py 2>/dev/null | head -30'
+echo "== import check: agent.lrm_task_output present and working"
+dc python -c "import sys; sys.path.insert(0,'/app'); import agent.lrm_task_output as o; print('import OK; marker', o.FINAL_OPEN, o.FINAL_CLOSE); print('classify sample:', o.classify('[KIRIM]Laporan uji[/KIRIM]'))" 2>&1
+echo "== file present in image"
+dc sh -lc 'ls -l /app/agent/lrm_task_output.py'
+echo "== scheduler errors in the last 20 min (should be no ImportError)"
+dc sh -lc 'true' ; sudo -n docker compose -f deploy/compose.yaml logs --no-color --since 20m cowagent 2>&1 | grep -E "lrm_task_output|No module|_execute_agent_task|executed successfully|result sent" | tail -20
