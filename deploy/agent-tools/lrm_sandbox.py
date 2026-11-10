@@ -23,7 +23,7 @@ _SECRET_NAMES = re.compile(r"(^|/)(config\.json|\.env(\..*)?|lrm_google\.json|.*
 
 
 def origin_session(session):
-    """The chat a session acts for. A scheduled run ("scheduler_<receiver>_<task id>") acts for the
+    """The chat a session acts for. A scheduled run ("scheduler_<run id>_<task id>") acts for the
     chat its task was set up in; an unknown task counts as an outside chat (sandboxed)."""
     session = str(session or "")
     if not session.startswith("scheduler_"):

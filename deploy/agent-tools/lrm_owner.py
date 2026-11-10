@@ -25,7 +25,7 @@ def owner_session(session_id):
     """(allowed, whatsapp target {agentId, chat} or None)."""
     session_id = str(session_id or "")
     if session_id.startswith("scheduler_"):
-        # A scheduled run (its own session "scheduler_<receiver>_<task id>"): the owner's only
+        # A scheduled run (its own session "scheduler_<run id>_<task id>"): the owner's only
         # when the task was set up by the owner (console, Tasks page, their own WhatsApp chat),
         # never because a contact or a group member got an agent to schedule it.
         try:

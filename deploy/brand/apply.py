@@ -637,7 +637,7 @@ patch(_integ,
 patch(_integ,
       '        scheduler_session_id = f"scheduler_{receiver}_{task[\'id\']}"\n',
       '        import uuid as _lrm_uuid\n'
-      '        scheduler_session_id = f"scheduler_{task[\'id\']}_{(output_sink or {}).get(\'run_id\') or _lrm_uuid.uuid4().hex[:8]}"\n',
+      '        scheduler_session_id = f"scheduler_{(output_sink or {}).get(\'run_id\') or _lrm_uuid.uuid4().hex[:8]}_{task[\'id\']}"\n',
       count="all", root=app)
 # Tasks page: create and update accept action.receivers (checked against the allow-list)
 patch("api/scheduler.py",
