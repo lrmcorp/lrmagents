@@ -31,6 +31,31 @@ _REASONING = re.compile(
     r"okay,? (so|let|i)\b|that was a bad|confirmed\s*[—-]|i'?ve|let me call|"
     r"let me finalize|let me get|let me just|to be precise)")
 
+# A run that hits an access or verification wall produces a coherent "report failed"
+# message as its answer (e.g. an inter-agent call refused because the run was not taken
+# as the owner's, or branch data that could not be read). That is not a report: it must
+# not be delivered to the recipients as if it were one — the run is marked failed and only
+# the owner is told. These phrases name the owner/console access model or an unverifiable
+# source, not ordinary report content (a rejected transaction is not matched).
+_FAILURE = re.compile(
+    r"(?i)("
+    r"akses[^.\n]{0,80}\bditolak|access[^.\n]{0,80}\bdenied|"
+    r"\bditolak[^.\n]{0,80}(pemilik|owner|konsol|console|akun pemilik)|"
+    r"tidak (di|ber)jalan(kan)?[^.\n]{0,50}(konsol|console|akun pemilik|chat[^.\n]{0,20}pemilik)|"
+    r"tidak berasal dari[^.\n]{0,40}(konsol|akun|chat)[^.\n]{0,20}pemilik|"
+    r"message yourself|chat whatsapp pemilik sendiri|"
+    r"only the owner can use it|from the lrmagent console|"
+    r"tidak dapat diverifikasi|could not be verified|cannot be verified|"
+    r"laporan gagal dibuat|gagal dibuat karena akses"
+    r")")
+
+
+def _is_failure_report(text):
+    """True when the deliverable is itself a system access/verification failure, not a
+    report. Guarded so an incidental mention deep inside a real, long report does not
+    trip it: only a short message or a failure stated up front counts."""
+    return bool(_FAILURE.search(text) and (len(text) < 700 or _FAILURE.search(text[:250])))
+
 
 def _between(text):
     """The text the run wrapped in the final-answer marker, or None if unmarked."""
@@ -50,11 +75,17 @@ def classify(raw):
         return ("failed", "the run produced no output")
     inner = _between(text)
     if inner is not None:
-        return ("final", inner) if inner else ("silent", "")
-    hits = len(_REASONING.findall(text))
-    if hits >= 2 or (hits == 1 and len(text) < 400):
-        return ("failed", "the run returned its thinking, not a final answer")
-    return ("final", text)
+        if not inner:
+            return ("silent", "")
+        candidate = inner
+    else:
+        hits = len(_REASONING.findall(text))
+        if hits >= 2 or (hits == 1 and len(text) < 400):
+            return ("failed", "the run returned its thinking, not a final answer")
+        candidate = text
+    if _is_failure_report(candidate):
+        return ("failed", "the agent could not reach the data it needs (access denied or unverifiable)")
+    return ("final", candidate)
 
 
 def note_failed(agent_id, task, reason):
