@@ -30,7 +30,10 @@ def origin_session(session):
         return session
     try:
         from agent.tools.scheduler.integration import get_task_store
-        task = get_task_store().get_task(session.rsplit("_", 1)[-1])
+        store = get_task_store()
+        # Resolve the task from whichever underscore field of the session is its id, so the
+        # lookup does not depend on where the task id sits (run id vs task id ordering).
+        task = next((t for t in (store.get_task(f) for f in session[len("scheduler_"):].split("_") if f) if t), None)
     except Exception:
         task = None
     if not task:

@@ -30,7 +30,10 @@ def owner_session(session_id):
         # never because a contact or a group member got an agent to schedule it.
         try:
             from agent.tools.scheduler.integration import get_task_store
-            task = get_task_store().get_task(session_id.rsplit("_", 1)[-1])
+            store = get_task_store()
+            # Resolve the task from whichever underscore field of the session is its id, so the
+            # owner check does not depend on where the task id sits (run id vs task id ordering).
+            task = next((t for t in (store.get_task(f) for f in session_id[len("scheduler_"):].split("_") if f) if t), None)
         except Exception as e:
             logger.warning(f"[owner] scheduled task not found for {session_id[-12:]}: {e}")
             return False, None
