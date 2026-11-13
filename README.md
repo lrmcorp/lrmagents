@@ -2,7 +2,8 @@
 
 Deploys **LRMagent**, the LRM agent console built on the open-source [CowAgent](https://github.com/zhayujie/CowAgent) (web console, port 9899), to the same Tencent Lighthouse VPS as the `ln` demo (`43.152.240.47`, `int.lnint.xyz`).
 
-- Public URL: `https://agent.lnint.xyz` now; `https://lrmcorporation.id` once that domain is switched on (see below). TLS terminates in the existing `ln` Caddy container, which reaches LRMagent over the shared `lnint-edge` Docker network.
+- Public URL: `https://agent.hasseedev.com` now; `https://lrmcorporation.id` once that domain is switched on (see below). TLS terminates in the existing `ln` Caddy container, which reaches LRMagent over the shared `lnint-edge` Docker network.
+- The old address `agent.lnint.xyz` still reaches the console while the `ln` Caddyfile lists it, but every link LRMagent sends (WhatsApp notices, reports, Google sign-in) uses `WEB_PUBLIC_URL`, which the deploy sets from the first `AGENT_DOMAIN` host.
 - The LRMagent container is not on the `ln` network, so it cannot reach the `ln` PostgreSQL database.
 - Workspace (skills, memory) and data (`config.json`, logs) live in Docker volumes `cowagent_workspace` and `cowagent_data`. They survive redeploys.
 
@@ -26,8 +27,8 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
 
 ## One-time setup
 
-1. **DNS (DNSPod, `lnint.xyz`):** add an `A` record with host `agent` and value `43.152.240.47`. Do not add an `AAAA` record.
-2. **`ln` repo:** deploy the `ln` change that adds the `agent.lnint.xyz` site to `deploy/Caddyfile.domain` and joins Caddy to `lnint-edge`.
+1. **DNS (Cloudflare, `hasseedev.com`):** add an `A` record with name `agent` and value `43.152.240.47`, proxy status **DNS only** so Caddy can get its certificate. Do not add an `AAAA` record.
+2. **`ln` repo:** deploy the `ln` change that serves `agent.hasseedev.com` to `deploy/Caddyfile.domain` and joins Caddy to `lnint-edge`.
 3. **This repo → Settings → Secrets and variables → Actions:**
    - Secret `VPS_SSH_KEY`: the same Tencent private key used by `lrmcorp/ln`.
    - Secret `COWAGENT_WEB_PASSWORD`: the web console password, 12 or more characters, including at least one letter (an all-digit value is parsed as a number). It is required because the agent can run shell commands inside its container.
@@ -42,7 +43,7 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
 2. In **both** `lrmcorp/ln` and `lrmcorp/lrmagents`, add the repository variable `AGENT_DOMAIN=lrmcorporation.id,www.lrmcorporation.id`.
 3. Re-run the `ln` deploy workflow, which makes Caddy request certificates for the new hosts. Then re-run this repository's workflow, which updates the console's public URL and checks HTTPS.
 
-`agent.lnint.xyz` stops being served after the switch. Delete the variable to go back to it.
+`agent.hasseedev.com` stops being served after the switch. Delete the variable to go back to it.
 
 ## Switch models by asking
 
