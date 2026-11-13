@@ -100,7 +100,7 @@ jobs:
     env:
       VPS: ubuntu@43.152.240.47
       # Keep in sync with the AGENT_DOMAIN variable in lrmcorp/ln; first host is the public URL.
-      AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.lnint.xyz' }}
+      AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.hasseedev.com' }}
     steps:
       - uses: actions/checkout@v5
       - name: Prepare pinned SSH identity

@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 5
     env:
       VPS: ubuntu@43.152.240.47
-      AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.lnint.xyz' }}
+      AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.hasseedev.com' }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       TITLE: 'LRMagent health alert'
