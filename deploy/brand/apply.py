@@ -60,7 +60,10 @@ patch("static/js/views/tasks-modal.js",
 patch("chat.html",
       '<link rel="stylesheet" href="/assets/css/themes.css">',
       '<link rel="stylesheet" href="/assets/css/themes.css">\n'
-      '    <link rel="stylesheet" href="/assets/brand/brand.css">')
+      '    <link rel="stylesheet" href="/assets/brand/brand.css">\n'
+      # Home-screen / add-to-dock icon (favicon.ico, already linked upstream, carries the tab).
+      '    <link rel="apple-touch-icon" sizes="180x180" href="/assets/brand/apple-touch-icon.png">\n'
+      '    <link rel="manifest" href="/assets/site.webmanifest">')
 
 # English only: every language lookup resolves to English.
 for page in ("chat.html", "templates/guest/page.html"):
