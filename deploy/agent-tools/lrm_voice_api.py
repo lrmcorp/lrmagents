@@ -97,6 +97,41 @@ def voice_model():
     return next((m for m in models if re.search(r"flash|mini|haiku|fast|lite", m, re.I)), None)
 
 
+# Asia/Jakarta is a fixed UTC+7 (no daylight saving), so the owner's wall clock needs no tz database.
+_WIB = datetime.timezone(datetime.timedelta(hours=7))
+_ID_DAYS = ("Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu")
+# Anchored to the whole utterance so "jam berapa meeting besok" is left to the model, not answered as the time.
+_TIME_Q = re.compile(r"^(?:hey |ok )?(?:sora[, ]+)?(?:what(?:'s| is)? the time|what time is it(?: now)?|time now|current time|the time|"
+                     r"jam berapa(?: sekarang)?|pukul berapa(?: sekarang)?|sekarang jam berapa)\s*\??$", re.I)
+_DATE_Q = re.compile(r"^(?:hey |ok )?(?:sora[, ]+)?(?:what(?:'s| is)? (?:the |today'?s )?date|what day is it(?: today)?|today'?s date|"
+                     r"what(?:'s| is) today|hari apa(?: (?:ini|sekarang))?|hari ini hari apa|tanggal berapa(?: (?:ini|sekarang|hari ini))?|"
+                     r"tanggal berapa hari ini)\s*\??$", re.I)
+
+
+def reflex(text, lang=None):
+    """An instant answer for the few deterministic, high-frequency asks (the current time and
+    date), so the orb replies without a model round-trip. Returns {text, hud} or None. English
+    and Bahasa Indonesia only; anything else falls through to the model."""
+    q = (text or "").strip()
+    if not q or len(q) > 48:
+        return None
+    is_time = bool(_TIME_Q.match(q))
+    is_date = bool(_DATE_Q.match(q))
+    if not (is_time or is_date):
+        return None
+    want_id = lang == "id" or (lang != "en" and bool(re.search(r"\b(jam|pukul|berapa|hari|tanggal|sekarang|ini)\b", q, re.I)))
+    now = datetime.datetime.now(_WIB)
+    hhmm = now.strftime("%H:%M")
+    dmy = now.strftime("%d-%m-%Y")
+    if is_time and not is_date:
+        said = f"Sekarang jam {hhmm}." if want_id else f"It's {hhmm}."
+    elif want_id:
+        said = f"Hari ini {_ID_DAYS[now.weekday()]}, {dmy}" + (f", jam {hhmm}." if is_time else ".")
+    else:
+        said = f"Today is {now.strftime('%A')}, {dmy}" + (f", {hhmm}." if is_time else ".")
+    return {"text": said, "hud": []}
+
+
 def chat(text, image=None, lang=None):
     from agent import lrm_personal
     from config import conf
@@ -104,6 +139,10 @@ def chat(text, image=None, lang=None):
     profile = lrm_personal.profile()
     if profile is None:
         raise RuntimeError("the personal assistant does not exist yet")
+    # Deterministic quick asks skip the model entirely (not when a camera frame is attached).
+    quick = reflex(text, lang) if image is None else None
+    if quick is not None:
+        return {"text": quick["text"], "hud": quick["hud"], "agent": {"id": profile.id, "name": profile.name}}
     parts = ["[Voice conversation on the Personal page: answer at once in one to three short spoken sentences, like a person "
              "talking; use tools only when the question needs them; put details in a ```hud block.]"]
     if lang:
@@ -120,6 +159,12 @@ def chat(text, image=None, lang=None):
     fast = voice_model()
     if fast:
         body["model"] = fast
+    else:
+        logger.warning("[Voice] no fast model on offer; using the agent's own model (slower). Set LRMAGENT_VOICE_MODEL.")
+    # A spoken answer is one to three short sentences; capping it keeps the reply, and so the voice, quick.
+    cap = int(os.environ.get("LRMAGENT_VOICE_MAX_TOKENS", "220") or 0)
+    if cap > 0:
+        body["max_tokens"] = cap
 
     def ask(payload):
         request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", method="POST", data=json.dumps(payload).encode(),
