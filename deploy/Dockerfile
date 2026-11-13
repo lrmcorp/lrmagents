@@ -75,6 +75,7 @@ RUN set -eux; \
     python /tmp/brand/fetch_mediapipe.py "$static/brand/vendor/mediapipe"; \
     cp /tmp/brand/img/logo.jpg "$static/logo.jpg"; \
     cp /tmp/brand/img/favicon.ico "$static/favicon.ico"; \
+    cp /tmp/brand/site.webmanifest "$static/site.webmanifest"; \
     chmod -R a+rX "$static"; \
     mkdir -p /media/whatsapp && chown 1000:1000 /media/whatsapp; \
     rm -rf /tmp/brand
