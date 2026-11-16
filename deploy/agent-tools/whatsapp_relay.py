@@ -19,15 +19,41 @@ SESSION_PREFIX = "openai:conversation:whatsapp:"
 GATEWAY_URL = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/")
 
 
+def _task_mentions(action):
+    """The E.164 numbers to tag for this task (group recipients only; the gateway ignores them
+    for a personal chat)."""
+    return [str(n).strip() for n in (action or {}).get("mentions") or [] if str(n).strip()]
+
+
+def _mention_note(result):
+    """A short History note from the gateway's reply: who was tagged, who was skipped and why,
+    and the message id. Empty when no mentions were involved, so ordinary deliveries read as before."""
+    if not isinstance(result, dict):
+        return ""
+    bits = []
+    if result.get("mentioned"):
+        bits.append("tagged " + ", ".join("+" + str(n) for n in result["mentioned"]))
+    for s in result.get("skipped") or []:
+        bits.append(f"skipped +{s.get('number')} ({s.get('reason')})")
+    if not bits:
+        return ""
+    if result.get("messageId"):
+        bits.append("msg " + str(result["messageId"]))
+    return " [" + "; ".join(bits) + "]"
+
+
 class WhatsAppRelay:
     def __init__(self, agent_id, chat):
         self.agent_id = agent_id
         self.chat = chat
+        self.mentions = None       # set for a single-recipient group task (see fanout)
+        self.last_result = {}       # the gateway's reply to the last send
+        self.delivery_note = ""     # appended to the task's History preview
 
-    def post(self, text):
+    def post(self, text, mentions=None):
         """(ok, error) for one message, without raising."""
         try:
-            self._post(text)
+            self._post(text, mentions=mentions)
             return True, ""
         except urllib.error.HTTPError as e:
             try:
@@ -44,13 +70,17 @@ class WhatsAppRelay:
         text = str(getattr(reply, "content", "") or "").strip()
         if not text:
             return
-        self._post(text, swallow_refusal=True)
+        self._post(text, swallow_refusal=True, mentions=self.mentions)
+        self.delivery_note = _mention_note(self.last_result)
 
-    def _post(self, text, swallow_refusal=False):
+    def _post(self, text, swallow_refusal=False, mentions=None):
         token = str(conf().get("external_api_token") or "")
+        payload = {"agentId": self.agent_id, "chat": self.chat, "text": text}
+        if mentions:
+            payload["mentions"] = [str(n) for n in mentions]
         request = urllib.request.Request(
             f"{GATEWAY_URL}/whatsapp/internal/send",
-            data=json.dumps({"agentId": self.agent_id, "chat": self.chat, "text": text}).encode(),
+            data=json.dumps(payload).encode(),
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             method="POST",
         )
@@ -60,6 +90,10 @@ class WhatsAppRelay:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if response.status != 200:
                     raise RuntimeError(f"WhatsApp gateway answered {response.status}")
+                try:
+                    self.last_result = json.loads(response.read() or b"{}")
+                except Exception:
+                    self.last_result = {}
         except urllib.error.HTTPError as e:
             if swallow_refusal and e.code in (400, 403):
                 logger.warning(f"[WhatsAppRelay] gateway refused {self.agent_id}/...{self.chat[-8:]}: {e.read()[:200]!r}")
@@ -201,21 +235,23 @@ class FanOut:
         if not text:
             return
         names = {r["receiver"]: r["name"] for r in task_recipients()}
+        mentions = _task_mentions(self.action)
         transient = False
         for receiver in self.targets():
             relay = relay_for(receiver)
             if relay is None:
-                self.results.append((receiver, False, "not a WhatsApp recipient"))
+                self.results.append((receiver, False, "not a WhatsApp recipient", ""))
                 continue
-            ok, why = relay.post(text)
-            self.results.append((names.get(receiver, receiver.rsplit(":", 1)[-1]), ok, why))
+            ok, why = relay.post(text, mentions=mentions)
+            self.results.append((names.get(receiver, receiver.rsplit(":", 1)[-1]), ok, why, _mention_note(relay.last_result) if ok else ""))
             if not ok and not getattr(relay, "refused", False):
                 transient = True
-        self.delivery_note = "\n\nDelivered: " + ", ".join(f"{n} {'✓' if ok else '✗ (' + why + ')'}" for n, ok, why in self.results)
+        self.delivery_note = "\n\nDelivered: " + ", ".join(
+            f"{n} {'✓' + note if ok else '✗ (' + why + ')'}" for n, ok, why, note in self.results)
         logger.info(f"[WhatsAppRelay] fan-out {self.delivery_note.strip()}")
         # Nobody got it: retry only when a failure may pass (offline), not when every one was refused.
-        if self.results and not any(ok for _, ok, _ in self.results) and transient:
-            raise RuntimeError("no recipient got it: " + "; ".join(f"{n}: {why}" for n, _, why in self.results))
+        if self.results and not any(ok for _, ok, _, _ in self.results) and transient:
+            raise RuntimeError("no recipient got it: " + "; ".join(f"{n}: {why}" for n, _, why, _ in self.results))
 
 
 def fanout(channel, action, channel_type):
@@ -223,4 +259,9 @@ def fanout(channel, action, channel_type):
     if channel_type != "openai_api":
         return channel
     fan = FanOut(channel, action)
-    return fan if len(fan.targets()) > 1 else channel
+    if len(fan.targets()) > 1:
+        return fan
+    # One recipient: the raw relay delivers, so hand it the task's mentions directly.
+    if isinstance(channel, WhatsAppRelay):
+        channel.mentions = _task_mentions(action)
+    return channel

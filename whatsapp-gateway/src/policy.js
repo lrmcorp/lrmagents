@@ -154,6 +154,46 @@ export function removeMentions(text, myJids) {
   return out.trim();
 }
 
+// WhatsApp caps how many tags one message may carry before it reads as spam.
+export const MAX_MENTIONS = 10;
+
+// A participant JID, reduced for membership comparison. Phone-number and LID addressing are
+// kept apart: a number's phone JID must not match a LID participant, or the tag will not show.
+function memberKey(jid) {
+  const s = String(jid ?? '');
+  return `${bareJid(s)}@${s.endsWith('@lid') ? 'lid' : 'pn'}`;
+}
+
+// Build the mention metadata for a group send. `wanted` is a list of { number, jids } where jids
+// are the candidate JIDs the caller resolved for that number (its phone JID, and its LID when the
+// group uses LID addressing); `members` is the group's participant JIDs. Returns the text with a
+// trailing "cc @<number> …" line (WhatsApp shows a tag only when the text carries that token), the
+// JIDs for Baileys' `mentions`, the numbers tagged, and the ones skipped with a reason. A number
+// that is not in the group is skipped, never fatal, so the message still goes out.
+export function buildMentionPayload(text, wanted, members, { label = 'cc', max = MAX_MENTIONS } = {}) {
+  const memberSet = new Set((members || []).map(memberKey));
+  const body = String(text ?? '');
+  const mentions = [];
+  const mentioned = [];
+  const skipped = [];
+  const tokens = [];
+  const seen = new Set();
+  for (const entry of wanted || []) {
+    const number = digits(entry?.number);
+    if (number.length < 6) { skipped.push({ number: String(entry?.number ?? ''), reason: 'not a valid number' }); continue; }
+    if (seen.has(number)) continue;
+    seen.add(number);
+    if (mentioned.length >= max) { skipped.push({ number, reason: `over the ${max}-mention limit` }); continue; }
+    const jid = (entry.jids || []).find((j) => memberSet.has(memberKey(j)));
+    if (!jid) { skipped.push({ number, reason: 'not in this group' }); continue; }
+    mentions.push(jid);
+    mentioned.push(number);
+    if (!new RegExp(`@${number}(?!\\d)`).test(body)) tokens.push(number); // the tag needs the literal @<number>
+  }
+  const out = tokens.length ? `${body.replace(/\s+$/, '')}\n\n${label} ${tokens.map((n) => `@${n}`).join(' ')}` : body;
+  return { text: out, mentions, mentioned, skipped };
+}
+
 // Decide what to do with one inbound message.
 //   { action: 'ignore', reason }
 //   { action: 'answer', text }
