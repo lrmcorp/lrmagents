@@ -162,8 +162,9 @@ async function route(req, res) {
     if (!internalCaller(req)) return send(res, 403, { error: 'internal endpoint' });
     const body = await readJson(req);
     try {
-      await accounts.deliver(String(body.agentId || ''), String(body.chat || ''), String(body.text || ''), String(body.asAgent || ''));
-      return send(res, 200, { ok: true });
+      const mentions = Array.isArray(body.mentions) ? body.mentions.map((n) => String(n)) : [];
+      const result = await accounts.deliver(String(body.agentId || ''), String(body.chat || ''), String(body.text || ''), String(body.asAgent || ''), mentions);
+      return send(res, 200, { ok: true, ...(result || {}) });
     } catch (error) {
       return send(res, error.status || 503, { error: error.message });
     }

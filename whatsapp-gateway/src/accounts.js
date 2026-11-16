@@ -17,7 +17,7 @@ import { ask, decideApproval, speak } from './cowagent.js';
 import { notePrompt, relayPrompt } from './designated.js';
 import { MonitorLog } from './monitor.js';
 import crypto from 'node:crypto';
-import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, chunks, decide, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
+import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, buildMentionPayload, chunks, decide, digits, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 // Shared with the agent container (read-only there) so its vision and
@@ -519,21 +519,26 @@ class Account {
     }
   }
 
-  async send(sock, chat, text, quoted) {
+  async send(sock, chat, text, quoted, mentions) {
     if (this.monitoring) throw Object.assign(new Error('this number is monitor-only: it never sends'), { status: 403 });
     const { text: body, files } = extractLocalFiles(text, FILE_ROOTS);
     const parts = chunks(toWhatsApp(body));
+    let lastId = '';
     for (let i = 0; i < parts.length; i += 1) {
       // A short human-like pause between parts; bursts of instant messages are
       // the pattern WhatsApp flags most readily.
       if (i) await sleep(800 + Math.random() * 700);
+      const content = { text: parts[i] };
+      // The cc line with the @tokens is at the end, so the tags belong on the last part.
+      if (i === parts.length - 1 && mentions?.length) content.mentions = mentions;
       let sent;
       try {
-        sent = await sock.sendMessage(chat, { text: parts[i] }, i === 0 && quoted ? { quoted } : undefined);
+        sent = await sock.sendMessage(chat, content, i === 0 && quoted ? { quoted } : undefined);
       } catch (error) {
         throw Object.assign(error, { partial: i > 0 });
       }
       if (sent?.key?.id) {
+        lastId = sent.key.id;
         this.sentIds.add(sent.key.id);
         if (this.sentIds.size > 2000) this.sentIds.delete(this.sentIds.values().next().value);
       }
@@ -542,6 +547,7 @@ class Account {
       await sleep(600 + Math.random() * 600);
       await this.sendFile(sock, chat, file);
     }
+    return lastId;
   }
 
   async stop() {
@@ -681,8 +687,31 @@ export class Accounts {
   // A message the agent sends on its own (report, reminder): only to the owner, designated contacts,
   // ticked groups and approved people who talk with it. The key de-duplicates scheduler retries.
   // asAgent: the agent asking (it may send through another agent's number); the contact or
+  // Map requested E.164 numbers to the JIDs this group uses (phone or LID) and build the
+  // cc line + mention list. Numbers that are not members are skipped, not fatal.
+  async groupMentions(account, chat, numbers, text) {
+    const nums = [...new Set((numbers || []).map((n) => digits(n)).filter((n) => n.length >= 6))];
+    if (!nums.length) return { text, mentions: [], mentioned: [], skipped: [] };
+    let participants = [];
+    try {
+      participants = (await account.sock.groupMetadata(chat))?.participants || [];
+    } catch (error) {
+      log.warn({ agent: account.agentId, err: error.message }, 'group metadata for mentions failed');
+    }
+    const members = participants.map((p) => p.id).filter(Boolean);
+    // number -> the exact JID the group addresses that member by (phone number or LID).
+    const byNumber = new Map();
+    for (const p of participants) {
+      const id = String(p.id || '');
+      const pn = phoneOf(id) || digits(p.phoneNumber || p.jid || '') || (id.endsWith('@lid') ? account.lidPhone.get(id) : '') || '';
+      if (pn && !byNumber.has(pn)) byNumber.set(pn, id);
+    }
+    const wanted = nums.map((number) => ({ number, jids: [byNumber.get(number), `${number}@s.whatsapp.net`].filter(Boolean) }));
+    return buildMentionPayload(text, wanted, members);
+  }
+
   // group must be set for that agent. Without it (scheduled deliveries) any designated one counts.
-  async deliver(agentId, chat, text, asAgent = '') {
+  async deliver(agentId, chat, text, asAgent = '', mentions = []) {
     const account = this.get(agentId);
     if (!account || account.status !== 'connected' || !account.sock) throw Object.assign(new Error('WhatsApp is not connected for this agent'), { status: 503 });
     if (!/@(s\.whatsapp\.net|g\.us|lid)$/.test(chat)) throw Object.assign(new Error('not a WhatsApp chat id'), { status: 400 });
@@ -704,11 +733,14 @@ export class Accounts {
     const key = crypto.createHash('sha256').update(`${agentId}\n${chat}\n${text}`).digest('hex');
     const now = Date.now();
     for (const [k, at] of this.deliveries) if (now - at > DELIVERY_DEDUPE_MS) this.deliveries.delete(k);
-    if (this.deliveries.has(key)) return; // already sent (or being sent) within the hour
+    if (this.deliveries.has(key)) return { deduped: true }; // already sent (or being sent) within the hour
     this.deliveries.set(key, now);
+    // Tagging real people only makes sense in a group; a personal chat gets plain text.
+    const tag = chat.endsWith('@g.us') && mentions?.length ? await this.groupMentions(account, chat, mentions, text) : null;
     try {
-      await account.send(account.sock, chat, text);
+      const messageId = await account.send(account.sock, chat, tag ? tag.text : text, undefined, tag?.mentions);
       if (designated) await directory.sent(phone, agentId, text);
+      return { messageId, mentioned: tag?.mentioned || [], skipped: tag?.skipped || [] };
     } catch (error) {
       // Nothing went out yet: let the scheduler retry. A partial send is not retried.
       if (!error.partial) this.deliveries.delete(key);

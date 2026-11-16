@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  approvalReply, batchable, isOwnChat, mediaKind, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp } from '../src/policy.js';
+  approvalReply, batchable, isOwnChat, mediaKind, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp,
+  buildMentionPayload, MAX_MENTIONS } from '../src/policy.js';
 
 const ME = ['6280000000001:7@s.whatsapp.net', '99999@lid'];
 const dm = (from, text, extra = {}) => ({
@@ -186,4 +187,45 @@ test('approvalReply: "ok" or "lanjut" in a conversation is not an approval', () 
   assert.equal(approvalReply('ok'), null);
   assert.equal(approvalReply('lanjut'), null);
   assert.equal(approvalReply('ya').decision, 'approve');
+});
+
+test('mentions: cc line, PN and LID membership, skip non-members', () => {
+  const members = ['6281111111111@s.whatsapp.net', '55501@lid', '6282222222222@s.whatsapp.net'];
+  const wanted = [
+    { number: '+6281111111111', jids: ['6281111111111@s.whatsapp.net'] },           // phone member
+    { number: '6282222222222', jids: ['6282222222222@s.whatsapp.net', '99@lid'] },  // phone member (lid candidate ignored)
+    { number: '+64225802322', jids: ['64225802322@s.whatsapp.net', '55501@lid'] },  // matches via LID
+    { number: '6288888888888', jids: ['6288888888888@s.whatsapp.net'] },            // not a member
+  ];
+  const r = buildMentionPayload('Laporan harian.', wanted, members);
+  assert.deepEqual(r.mentions, ['6281111111111@s.whatsapp.net', '6282222222222@s.whatsapp.net', '55501@lid']);
+  assert.deepEqual(r.mentioned, ['6281111111111', '6282222222222', '64225802322']);
+  assert.deepEqual(r.skipped, [{ number: '6288888888888', reason: 'not in this group' }]);
+  assert.match(r.text, /Laporan harian\.\n\ncc @6281111111111 @6282222222222 @64225802322$/);
+});
+
+test('mentions: existing @token is not duplicated, and no match leaves text plain', () => {
+  const members = ['6281111111111@s.whatsapp.net'];
+  const has = buildMentionPayload('Hi @6281111111111 please check', [{ number: '6281111111111', jids: ['6281111111111@s.whatsapp.net'] }], members);
+  assert.deepEqual(has.mentions, ['6281111111111@s.whatsapp.net']);
+  assert.equal(has.text, 'Hi @6281111111111 please check');
+  const none = buildMentionPayload('Report', [{ number: '6288888888888', jids: ['6288888888888@s.whatsapp.net'] }], members);
+  assert.equal(none.text, 'Report');
+  assert.deepEqual(none.mentions, []);
+  assert.deepEqual(none.skipped, [{ number: '6288888888888', reason: 'not in this group' }]);
+});
+
+test('mentions: capped at MAX_MENTIONS, duplicates collapsed', () => {
+  const members = [];
+  const wanted = [];
+  for (let i = 0; i < MAX_MENTIONS + 3; i += 1) {
+    const n = `6281000000${String(i).padStart(3, '0')}`;
+    members.push(`${n}@s.whatsapp.net`);
+    wanted.push({ number: n, jids: [`${n}@s.whatsapp.net`] });
+  }
+  wanted.push({ number: wanted[0].number, jids: wanted[0].jids }); // duplicate, ignored
+  const r = buildMentionPayload('x', wanted, members);
+  assert.equal(r.mentions.length, MAX_MENTIONS);
+  assert.equal(r.skipped.length, 3);
+  assert.match(r.skipped[0].reason, /over the 10-mention limit/);
 });
