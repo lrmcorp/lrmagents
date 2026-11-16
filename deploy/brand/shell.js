@@ -414,17 +414,97 @@
             ? others.map((r) => `<label class="lrm-recv"><input type="checkbox" value="${lrmEsc(r.receiver)}" ${ticked.has(r.receiver) ? 'checked' : ''}><span>${lrmEsc(r.name)}</span><small>${lrmEsc(r.hint || '')}</small></label>`).join('')
             : '<small class="lrm-recv-none">No one else yet: add designated contacts or tick groups on the WhatsApp page.</small>');
     }
-    setInterval(() => { if (document.getElementById('task-edit-recipient-wrap')) lrmReceiversBox(); }, 500);
+    // Mention field: shown only when a WhatsApp group is the recipient. Multi-select of the
+    // group's members (from the gateway) plus any number added by hand; saved as E.164.
+    const lrmMembersCache = {};
+    const lrmNorm = (n) => { const d = String(n ?? '').replace(/\D/g, ''); return d.length >= 6 ? '+' + d : ''; };
+    function lrmSelectedGroupJid() {
+        const st = lrmTaskState();
+        if (!st || !st.inst.startsWith('lrm-wa:')) return '';
+        const picks = [st.primary];
+        const rbox = document.getElementById('lrm-receivers');
+        if (rbox) picks.push(...[...rbox.querySelectorAll('input:checked')].map((i) => i.value));
+        for (const r of picks) { const jid = String(r || '').split(':').pop(); if (jid.endsWith('@g.us')) return jid; }
+        return '';
+    }
+    async function lrmLoadMembers(jid) {
+        if (Array.isArray(lrmMembersCache[jid])) return lrmMembersCache[jid];
+        try {
+            const r = await fetch('/whatsapp/api/groups/members?jid=' + encodeURIComponent(jid), { credentials: 'same-origin' });
+            const d = await r.json();
+            lrmMembersCache[jid] = Array.isArray(d.members) ? d.members : [];
+        } catch { lrmMembersCache[jid] = []; }
+        return lrmMembersCache[jid];
+    }
+    function lrmAddChip(box, v) {
+        const chips = box.querySelector('.lrm-ment-chips');
+        if (!v || [...chips.querySelectorAll('[data-num]')].some((c) => c.dataset.num === v)) return;
+        const chip = document.createElement('span'); chip.className = 'lrm-ment-chip'; chip.dataset.num = v;
+        chip.innerHTML = `${lrmEsc(v)} <button type="button" aria-label="Remove">×</button>`;
+        chip.querySelector('button').onclick = () => chip.remove();
+        chips.appendChild(chip);
+    }
+    function lrmMentionBox() {
+        const wrap = document.getElementById('task-edit-recipient-wrap');
+        let box = document.getElementById('lrm-mentions');
+        const jid = lrmSelectedGroupJid();
+        if (!wrap || !jid || wrap.classList.contains('hidden')) { box?.remove(); return; }
+        if (box && box.dataset.jid === jid) return; // keep the user's edits between polls
+        const s = window.__lrmTask;
+        const saved = (s && s.mode !== 'create' && s.task ? (s.task.action?.mentions || []) : []).map(lrmNorm).filter(Boolean);
+        const fromText = Boolean(s && s.mode !== 'create' && s.task && s.task.action?.mention_from_text);
+        if (!box) { box = document.createElement('div'); box.id = 'lrm-mentions'; }
+        (document.getElementById('lrm-receivers') || wrap).after(box);
+        box.dataset.jid = jid;
+        box.innerHTML = `<div class="lrm-recv-title">Mention in the group</div>
+            <div class="lrm-ment-list"><small class="lrm-ment-note">Loading members…</small></div>
+            <div class="lrm-ment-add"><input type="tel" inputmode="tel" placeholder="+62… add a number" aria-label="Add a number to mention"><button type="button" class="lrm-ment-addbtn">Add</button></div>
+            <div class="lrm-ment-chips"></div>
+            <label class="lrm-recv"><input type="checkbox" class="lrm-ment-fromtext" ${fromText ? 'checked' : ''}><span>Also tag @numbers written in the reply</span></label>`;
+        const addInput = box.querySelector('.lrm-ment-add input');
+        const addNum = () => {
+            const v = lrmNorm(addInput.value); addInput.value = '';
+            if (!v) return;
+            const cb = [...box.querySelectorAll('.lrm-ment-list input')].find((i) => i.value === v);
+            if (cb) cb.checked = true; else lrmAddChip(box, v);
+        };
+        box.querySelector('.lrm-ment-addbtn').onclick = addNum;
+        addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addNum(); } });
+        lrmLoadMembers(jid).then((members) => {
+            if (box.dataset.jid !== jid) return;
+            const list = box.querySelector('.lrm-ment-list');
+            const savedSet = new Set(saved);
+            const rows = members.map((m) => {
+                const v = lrmNorm(m.number); if (!v) return '';
+                return `<label class="lrm-recv"><input type="checkbox" value="${v}" ${savedSet.has(v) ? 'checked' : ''}><span>${lrmEsc(m.name || v)}</span><small>${lrmEsc(v)}</small></label>`;
+            }).filter(Boolean);
+            list.innerHTML = rows.length ? rows.join('') : '<small class="lrm-ment-note">No members read back (a LID-only group). Add the numbers by hand below.</small>';
+            const inList = new Set(members.map((m) => lrmNorm(m.number)).filter(Boolean));
+            for (const v of saved) if (!inList.has(v)) lrmAddChip(box, v);
+        });
+    }
+    setInterval(() => { if (document.getElementById('task-edit-recipient-wrap')) { lrmReceiversBox(); lrmMentionBox(); } }, 500);
     const lrmFetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
         try {
             const url = typeof input === 'string' ? input : input?.url || '';
             if (/\/api\/scheduler\/(create|update)$/.test(url.split('?')[0]) && init && typeof init.body === 'string') {
-                const box = document.getElementById('lrm-receivers');
                 const body = JSON.parse(init.body);
-                if (box && body.action && String(body.action.instance_id || '').startsWith('lrm-wa:')) {
-                    const extra = [...box.querySelectorAll('input:checked')].map((i) => i.value);
-                    body.action.receivers = extra.length ? [body.action.receiver, ...extra].filter(Boolean) : [];
+                if (body.action && String(body.action.instance_id || '').startsWith('lrm-wa:')) {
+                    const rbox = document.getElementById('lrm-receivers');
+                    if (rbox) {
+                        const extra = [...rbox.querySelectorAll('input:checked')].map((i) => i.value);
+                        body.action.receivers = extra.length ? [body.action.receiver, ...extra].filter(Boolean) : [];
+                    }
+                    const mbox = document.getElementById('lrm-mentions');
+                    if (mbox) {
+                        const picked = [...mbox.querySelectorAll('.lrm-ment-list input:checked')].map((i) => i.value)
+                            .concat([...mbox.querySelectorAll('.lrm-ment-chips [data-num]')].map((c) => c.dataset.num));
+                        body.action.mentions = [...new Set(picked)].slice(0, 10);
+                        body.action.mention_from_text = Boolean(mbox.querySelector('.lrm-ment-fromtext')?.checked);
+                    } else {
+                        body.action.mentions = []; // no group chosen: carry no tags
+                    }
                     init = { ...init, body: JSON.stringify(body) };
                 }
             }
