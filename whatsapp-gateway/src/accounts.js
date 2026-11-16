@@ -801,6 +801,26 @@ export class Accounts {
     return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  // A group's members (number + name) for the Tasks form's Mention field. Numbers that cannot
+  // be resolved from the metadata (a LID with no phone on record) are left out; the owner can
+  // still add such a number by hand, and the send-time mapping will try it.
+  async groupMembers(jid) {
+    for (const account of this.byAgent.values()) {
+      if (account.status !== 'connected' || !account.sock) continue;
+      let meta;
+      try { meta = await account.sock.groupMetadata(jid); } catch { continue; }
+      if (!meta?.participants) continue;
+      const out = [];
+      for (const p of meta.participants) {
+        const id = String(p.id || '');
+        const number = phoneOf(id) || digits(p.phoneNumber || p.jid || '') || (id.endsWith('@lid') ? account.lidPhone.get(id) : '') || '';
+        if (number) out.push({ number, name: p.notify || p.name || '', admin: p.admin || '' });
+      }
+      return out.sort((a, b) => (a.name || a.number).localeCompare(b.name || b.number));
+    }
+    return null;
+  }
+
   // The monitor report of a branch number (src/monitor.js).
   async monitorReport(agentId, from, to) {
     const account = this.get(agentId);

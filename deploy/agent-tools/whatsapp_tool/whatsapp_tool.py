@@ -55,6 +55,8 @@ class WhatsAppTool(BaseTool):
             "action": {"type": "string", "enum": ["status", "send"]},
             "to": {"type": "string", "description": "For 'send': 'me', a group's name (from 'status'), or a phone number with country code like 6281234567890"},
             "text": {"type": "string", "description": "For 'send': the message"},
+            "mentions": {"type": "array", "items": {"type": "string"},
+                         "description": "For 'send' to a group only: phone numbers to @-tag, with country code (e.g. 6281234567890). Ignored for a personal chat. At most 10."},
         },
         "required": ["action"],
     }
@@ -123,8 +125,15 @@ class WhatsAppTool(BaseTool):
                 via = next((a for a in accounts if a.get("agent") == group.get("agent") and a.get("status") == "connected"), None)
                 if via is None:
                     return ToolResult.fail(f"The number that posts in '{group.get('name')}' is not connected right now; nothing was posted.")
-                _call("/whatsapp/internal/send", {"agentId": via["agent"], "chat": group["jid"], "text": text, "asAgent": me})
-                return ToolResult.success(f"Posted in the WhatsApp group '{group.get('name')}'.")
+                mentions = [str(n) for n in (args.get("mentions") or []) if str(n).strip()]
+                result = _call("/whatsapp/internal/send", {"agentId": via["agent"], "chat": group["jid"], "text": text, "asAgent": me, "mentions": mentions})
+                note = ""
+                if isinstance(result, dict) and result.get("mentioned"):
+                    note = " Tagged " + ", ".join("+" + str(n) for n in result["mentioned"]) + "."
+                    skipped = [f"+{s.get('number')}" for s in result.get("skipped") or []]
+                    if skipped:
+                        note += " Not in the group (not tagged): " + ", ".join(skipped) + "."
+                return ToolResult.success(f"Posted in the WhatsApp group '{group.get('name')}'.{note}")
             if not re.search(r"\d{6,}", to):
                 names = ", ".join(f"'{g.get('name')}'" for g in groups) or "none"
                 return ToolResult.fail(f"'{to}' is not a group you may post to (yours: {names}) and not a phone number. "

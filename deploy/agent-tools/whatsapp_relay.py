@@ -9,6 +9,7 @@ network. Installed as channel/lrm_whatsapp_relay.py by the LRMagent image.
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -19,10 +20,29 @@ SESSION_PREFIX = "openai:conversation:whatsapp:"
 GATEWAY_URL = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/")
 
 
+_AT_NUMBER = re.compile(r"@(\+?\d{8,15})\b")
+
+
 def _task_mentions(action):
     """The E.164 numbers to tag for this task (group recipients only; the gateway ignores them
     for a personal chat)."""
     return [str(n).strip() for n in (action or {}).get("mentions") or [] if str(n).strip()]
+
+
+def _mentions_for(action, text):
+    """The numbers to tag: the task's own list, plus (only when the task opts in) any @number
+    the agent wrote in its reply. Normalised to +digits and de-duplicated. Default: list only,
+    so customer numbers in a report are never tagged by accident."""
+    nums = list(_task_mentions(action))
+    if (action or {}).get("mention_from_text"):
+        nums += [m.group(1) for m in _AT_NUMBER.finditer(text or "")]
+    seen, out = set(), []
+    for n in nums:
+        d = re.sub(r"\D", "", str(n))
+        if len(d) >= 6 and d not in seen:
+            seen.add(d)
+            out.append("+" + d)
+    return out
 
 
 def _mention_note(result):
@@ -46,7 +66,7 @@ class WhatsAppRelay:
     def __init__(self, agent_id, chat):
         self.agent_id = agent_id
         self.chat = chat
-        self.mentions = None       # set for a single-recipient group task (see fanout)
+        self.action = {}            # the task's action, set for a single-recipient task (see fanout)
         self.last_result = {}       # the gateway's reply to the last send
         self.delivery_note = ""     # appended to the task's History preview
 
@@ -70,7 +90,7 @@ class WhatsAppRelay:
         text = str(getattr(reply, "content", "") or "").strip()
         if not text:
             return
-        self._post(text, swallow_refusal=True, mentions=self.mentions)
+        self._post(text, swallow_refusal=True, mentions=_mentions_for(self.action, text))
         self.delivery_note = _mention_note(self.last_result)
 
     def _post(self, text, swallow_refusal=False, mentions=None):
@@ -235,7 +255,7 @@ class FanOut:
         if not text:
             return
         names = {r["receiver"]: r["name"] for r in task_recipients()}
-        mentions = _task_mentions(self.action)
+        mentions = _mentions_for(self.action, text)
         transient = False
         for receiver in self.targets():
             relay = relay_for(receiver)
@@ -261,7 +281,7 @@ def fanout(channel, action, channel_type):
     fan = FanOut(channel, action)
     if len(fan.targets()) > 1:
         return fan
-    # One recipient: the raw relay delivers, so hand it the task's mentions directly.
+    # One recipient: the raw relay delivers, so hand it the task's action (mentions and flags).
     if isinstance(channel, WhatsAppRelay):
-        channel.mentions = _task_mentions(action)
+        channel.action = action or {}
     return channel

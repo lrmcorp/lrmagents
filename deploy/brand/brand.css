@@ -267,6 +267,18 @@ div:has(> #cfg-password-save),
 @media (pointer: coarse) { #lrm-receivers .lrm-recv { min-height: 44px; } }
 #lrm-receivers .lrm-recv input { width: auto; margin: 0; }
 #lrm-receivers .lrm-recv small, #lrm-receivers .lrm-recv-none { color: var(--lrm-muted); font-size: 12px; }
+#lrm-mentions { margin-top: 10px; display: grid; gap: 6px; }
+#lrm-mentions .lrm-recv-title { font-size: 12px; font-weight: 600; color: var(--lrm-muted); }
+#lrm-mentions .lrm-ment-list { display: grid; gap: 2px; max-height: 190px; overflow: auto; }
+#lrm-mentions .lrm-recv { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; min-height: 36px; cursor: pointer; }
+@media (pointer: coarse) { #lrm-mentions .lrm-recv { min-height: 44px; } }
+#lrm-mentions .lrm-recv input { width: auto; margin: 0; }
+#lrm-mentions .lrm-recv small, #lrm-mentions .lrm-ment-note { color: var(--lrm-muted); font-size: 12px; }
+#lrm-mentions .lrm-ment-add { display: flex; gap: 6px; }
+#lrm-mentions .lrm-ment-add input { flex: 1; min-width: 0; }
+#lrm-mentions .lrm-ment-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#lrm-mentions .lrm-ment-chip { display: inline-flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--lrm-muted) 22%, transparent); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+#lrm-mentions .lrm-ment-chip button { border: 0; background: transparent; cursor: pointer; font-size: 15px; line-height: 1; color: inherit; padding: 0 2px; min-height: 0; }
 
 /* Agents page grouped by the Team page: a heading per group, Level 2 under its Level 1. */
 .lrm-agent-section { display: flex; align-items: baseline; gap: 8px; margin: 14px 4px 4px; font-size: 12.5px; font-weight: 650; color: rgb(var(--cw-slate-700)); }

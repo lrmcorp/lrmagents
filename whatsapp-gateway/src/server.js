@@ -271,6 +271,12 @@ async function route(req, res) {
     const body = await readJson(req);
     return send(res, 200, { designated: await designated.setGroups(body.groups) });
   }
+  // A group's members, for the Tasks form's Mention field (signed-in console only).
+  if (url.pathname === '/whatsapp/api/groups/members' && req.method === 'GET') {
+    const jid = String(url.searchParams.get('jid') || '');
+    if (!/@g\.us$/.test(jid)) return send(res, 400, { error: 'jid must be a WhatsApp group' });
+    return send(res, 200, { members: (await accounts.groupMembers(jid)) || [] });
+  }
   if (url.pathname === '/whatsapp/api/designated') {
     if (req.method === 'GET') return send(res, 200, { contacts: designated.contacts });
     if (req.method !== 'POST' || !sameSite(req)) return send(res, 403, { error: 'refused' });
