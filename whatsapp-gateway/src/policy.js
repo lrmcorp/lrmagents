@@ -164,10 +164,26 @@ function memberKey(jid) {
   return `${bareJid(s)}@${s.endsWith('@lid') ? 'lid' : 'pn'}`;
 }
 
+// The @token WhatsApp needs in the text for a mentioned JID: its user part (phone or LID).
+export function mentionToken(jid) {
+  return bareJid(String(jid ?? ''));
+}
+
+// The mentioned JIDs whose @token appears in this piece of text, so each chunk of a long
+// message carries the tags it shows.
+export function mentionsIn(text, mentions) {
+  const body = String(text ?? '');
+  return (mentions || []).filter((jid) => tokenPattern(mentionToken(jid)).test(body));
+}
+
+function tokenPattern(token) {
+  return new RegExp(`@${token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\d)`);
+}
+
 // Build the mention metadata for a group send. `wanted` is a list of { number, jids } where jids
 // are the candidate JIDs the caller resolved for that number (its phone JID, and its LID when the
 // group uses LID addressing); `members` is the group's participant JIDs. Returns the text with a
-// trailing "cc @<number> …" line (WhatsApp shows a tag only when the text carries that token), the
+// trailing "cc @<token> …" line (the JID's user part: the phone, or the LID for a LID member), the
 // JIDs for Baileys' `mentions`, the numbers tagged, and the ones skipped with a reason. A number
 // that is not in the group is skipped, never fatal, so the message still goes out.
 export function buildMentionPayload(text, wanted, members, { label = 'cc', max = MAX_MENTIONS } = {}) {
@@ -188,10 +204,20 @@ export function buildMentionPayload(text, wanted, members, { label = 'cc', max =
     if (!jid) { skipped.push({ number, reason: 'not in this group' }); continue; }
     mentions.push(jid);
     mentioned.push(number);
-    if (!new RegExp(`@${number}(?!\\d)`).test(body)) tokens.push(number); // the tag needs the literal @<number>
+    // WhatsApp renders a tag only when the text carries @<user part of the mentioned JID>.
+    const token = mentionToken(jid);
+    if (!tokenPattern(token).test(body)) tokens.push(token);
   }
-  const out = tokens.length ? `${body.replace(/\s+$/, '')}\n\n${label} ${tokens.map((n) => `@${n}`).join(' ')}` : body;
+  const out = tokens.length ? `${body.replace(/\s+$/, '')}\n\n${label} ${tokens.map((t) => `@${t}`).join(' ')}` : body;
   return { text: out, mentions, mentioned, skipped };
+}
+
+// Idempotency key for an agent-initiated send. The tag list is part of it, so the same text
+// sent again with different people tagged is a new message, not a duplicate.
+export function deliveryKey(agentId, chat, text, mentions = []) {
+  const tags = [...new Set((mentions || []).map(digits).filter(Boolean))].sort();
+  const base = `${agentId}\n${chat}\n${text}`;
+  return crypto.createHash('sha256').update(tags.length ? `${base}\n${tags.join(',')}` : base).digest('hex');
 }
 
 // Decide what to do with one inbound message.

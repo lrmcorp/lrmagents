@@ -275,6 +275,7 @@ async function route(req, res) {
   if (url.pathname === '/whatsapp/api/groups/members' && req.method === 'GET') {
     const jid = String(url.searchParams.get('jid') || '');
     if (!/@g\.us$/.test(jid)) return send(res, 400, { error: 'jid must be a WhatsApp group' });
+    if (!designated.group(jid)) return send(res, 404, { error: 'not a group ticked on the WhatsApp page' });
     return send(res, 200, { members: (await accounts.groupMembers(jid)) || [] });
   }
   if (url.pathname === '/whatsapp/api/designated') {

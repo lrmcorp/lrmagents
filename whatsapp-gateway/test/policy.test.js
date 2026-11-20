@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   approvalReply, batchable, isOwnChat, mediaKind, PairingBook, chunks, decide, normalizeSettings, senderPhone, toWhatsApp,
-  buildMentionPayload, MAX_MENTIONS } from '../src/policy.js';
+  buildMentionPayload, MAX_MENTIONS, deliveryKey, mentionsIn } from '../src/policy.js';
 
 const ME = ['6280000000001:7@s.whatsapp.net', '99999@lid'];
 const dm = (from, text, extra = {}) => ({
@@ -201,7 +201,8 @@ test('mentions: cc line, PN and LID membership, skip non-members', () => {
   assert.deepEqual(r.mentions, ['6281111111111@s.whatsapp.net', '6282222222222@s.whatsapp.net', '55501@lid']);
   assert.deepEqual(r.mentioned, ['6281111111111', '6282222222222', '64225802322']);
   assert.deepEqual(r.skipped, [{ number: '6288888888888', reason: 'not in this group' }]);
-  assert.match(r.text, /Laporan harian\.\n\ncc @6281111111111 @6282222222222 @64225802322$/);
+  // A LID member is tagged by its LID user part; WhatsApp ignores @<phone> for it.
+  assert.match(r.text, /Laporan harian\.\n\ncc @6281111111111 @6282222222222 @55501$/);
 });
 
 test('mentions: existing @token is not duplicated, and no match leaves text plain', () => {
@@ -228,4 +229,31 @@ test('mentions: capped at MAX_MENTIONS, duplicates collapsed', () => {
   assert.equal(r.mentions.length, MAX_MENTIONS);
   assert.equal(r.skipped.length, 3);
   assert.match(r.skipped[0].reason, /over the 10-mention limit/);
+});
+
+test('mentions: an existing LID token counts, the phone token does not', () => {
+  const members = ['55501@lid'];
+  const wanted = [{ number: '64225802322', jids: ['64225802322@s.whatsapp.net', '55501@lid'] }];
+  const has = buildMentionPayload('Hi @55501 see below', wanted, members);
+  assert.equal(has.text, 'Hi @55501 see below');
+  assert.deepEqual(has.mentions, ['55501@lid']);
+  const phoneOnly = buildMentionPayload('Hi @64225802322', wanted, members);
+  assert.equal(phoneOnly.text, 'Hi @64225802322\n\ncc @55501');
+});
+
+test('mentionsIn: only the JIDs whose token is in this text', () => {
+  const jids = ['6281111111111@s.whatsapp.net', '55501@lid', '6282222222222@s.whatsapp.net'];
+  assert.deepEqual(mentionsIn('top @6281111111111 and @55501', jids), ['6281111111111@s.whatsapp.net', '55501@lid']);
+  assert.deepEqual(mentionsIn('@628222222222299 is a longer number', jids), []);
+  assert.deepEqual(mentionsIn('nothing here', jids), []);
+  assert.deepEqual(mentionsIn('@55501', undefined), []);
+});
+
+test('deliveryKey: tag list matters, order and formatting do not', () => {
+  const plain = deliveryKey('a', 'g@g.us', 'Report');
+  assert.equal(plain, deliveryKey('a', 'g@g.us', 'Report', []));
+  assert.notEqual(plain, deliveryKey('a', 'g@g.us', 'Report', ['6281111111111']));
+  assert.equal(deliveryKey('a', 'g@g.us', 'Report', ['+62 811-1111-1111', '6282222222222']),
+    deliveryKey('a', 'g@g.us', 'Report', ['6282222222222', '6281111111111', '6281111111111']));
+  assert.notEqual(deliveryKey('a', 'g@g.us', 'Report', ['6281111111111']), deliveryKey('a', 'g@g.us', 'Report', ['6282222222222']));
 });

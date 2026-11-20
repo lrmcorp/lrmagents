@@ -16,8 +16,7 @@ import makeWASocket, {
 import { ask, decideApproval, speak } from './cowagent.js';
 import { notePrompt, relayPrompt } from './designated.js';
 import { MonitorLog } from './monitor.js';
-import crypto from 'node:crypto';
-import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, buildMentionPayload, chunks, decide, digits, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
+import { GroupHistory, PairingBook, RateLimiter, approvalReply, bareJid, batchable, buildMentionPayload, chunks, decide, deliveryKey, digits, extractLocalFiles, isOwnChat, isSelfChat, mediaKind, mentionsIn, messageText, normalizeSettings, phoneOf, senderPhone, toWhatsApp } from './policy.js';
 
 const DATA_DIR = process.env.DATA_DIR || '/data';
 // Shared with the agent container (read-only there) so its vision and
@@ -53,6 +52,8 @@ const MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.zip': 'application/zip', '.mp3': 'audio/mpeg', '.mp4': 'video/mp4', '.html': 'text/html' };
 const DELIVERY_DEDUPE_MS = 60 * 60 * 1000;
+// Short enough that membership changes show up soon, long enough to absorb retries and the form.
+const GROUP_META_TTL_MS = 60 * 1000;
 
 let waVersion;
 async function version() {
@@ -90,6 +91,8 @@ class Account {
     this.me = null;
     this.error = '';
     this.sock = null;
+    this.starting = null; // in-flight open(), shared by every caller
+    this.linking = null; // in-flight console link
     this.settings = normalizeSettings();
     this.pairing = new PairingBook();
     this.limiter = new RateLimiter();
@@ -177,7 +180,18 @@ class Account {
     };
   }
 
-  async start() {
+  // One socket at a time: a start already under way is joined, not repeated.
+  start() {
+    if (!this.starting) this.starting = this.open().finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  // The socket that is live now; a reply after a long agent call must not use a replaced one.
+  live(sock) {
+    return this.sock || sock;
+  }
+
+  async open() {
     this.stopped = false;
     this.status = this.retry ? 'reconnecting' : 'starting';
     this.error = '';
@@ -193,9 +207,15 @@ class Account {
       shouldSyncHistoryMessage: () => false,
       generateHighQualityLinkPreview: false,
     });
+    const previous = this.sock;
     this.sock = sock;
-    sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('connection.update', (update) => this.onConnection(sock, update));
+    if (previous && previous !== sock) {
+      try { previous.end(undefined); } catch { /* already closed */ }
+    }
+    sock.ev.on('creds.update', (creds) => { if (sock === this.sock) saveCreds(creds); });
+    sock.ev.on('connection.update', (update) => {
+      this.onConnection(sock, update).catch((e) => log.error({ agent: this.agentId, err: e.message }, 'connection update failed'));
+    });
     // A monitor-only number never sends: messages, read receipts and "typing" are refused
     // right at the connection, whatever asks for them.
     for (const name of ['sendMessage', 'readMessages', 'sendPresenceUpdate', 'sendReceipt', 'sendReceipts']) {
@@ -208,6 +228,7 @@ class Account {
       };
     }
     sock.ev.on('messages.upsert', ({ messages, type }) => {
+      if (sock !== this.sock) return;
       if (this.monitoring) {
         // the customers' messages and the staff's replies from the branch phone
         if (type === 'notify' || type === 'append') for (const msg of messages) this.observe(msg).catch((e) => log.warn({ err: e.message }, 'monitor record failed'));
@@ -217,7 +238,7 @@ class Account {
       for (const msg of messages) this.enqueue(sock, msg);
     });
     for (const event of ['contacts.upsert', 'contacts.update']) {
-      sock.ev.on(event, (list) => { if (this.monitoring) this.monitor.contacts(list).catch(() => {}); });
+      sock.ev.on(event, (list) => { if (sock === this.sock && this.monitoring) this.monitor.contacts(list).catch(() => {}); });
     }
   }
 
@@ -413,9 +434,9 @@ class Account {
 
     // 👀 while working on it, like OpenClaw; cleared when the answer is sent.
     await sock.sendMessage(chat, { react: { text: '👀', key: msg.key } }).catch(() => {});
-    const unreact = () => sock.sendMessage(chat, { react: { text: '', key: msg.key } }).catch(() => {});
+    const unreact = () => this.live(sock).sendMessage(chat, { react: { text: '', key: msg.key } }).catch(() => {});
     await sock.sendPresenceUpdate('composing', chat).catch(() => {});
-    const typing = setInterval(() => sock.sendPresenceUpdate('composing', chat).catch(() => {}), 10_000);
+    const typing = setInterval(() => this.live(sock).sendPresenceUpdate('composing', chat).catch(() => {}), 10_000);
     try {
       let prompt = verdict.text;
       if (verdict.media) {
@@ -453,7 +474,7 @@ class Account {
           `⚠️ LRMagent (${this.agentId}) couldn't answer ${who}: ${reason}`).catch(() => {});
       }
     } finally {
-      await sock.sendPresenceUpdate('paused', chat).catch(() => {});
+      await this.live(sock).sendPresenceUpdate('paused', chat).catch(() => {});
     }
   }
 
@@ -463,7 +484,7 @@ class Account {
     try {
       const audio = await speak(stripMarkdown(text).slice(0, 1500));
       if (!audio) return;
-      const sent = await sock.sendMessage(chat, { audio, ptt: true, mimetype: 'audio/ogg; codecs=opus' });
+      const sent = await this.live(sock).sendMessage(chat, { audio, ptt: true, mimetype: 'audio/ogg; codecs=opus' });
       if (sent?.key?.id) this.sentIds.add(sent.key.id);
     } catch (error) {
       log.warn({ agent: this.agentId, err: error.message }, 'voice reply skipped');
@@ -511,11 +532,11 @@ class Account {
       const content = file.image
         ? { image: data, caption: file.caption || undefined }
         : { document: data, fileName: file.name, mimetype: MIME[ext] || 'application/octet-stream', caption: file.caption && file.caption !== file.name ? file.caption : undefined };
-      const sent = await sock.sendMessage(chat, content);
+      const sent = await this.live(sock).sendMessage(chat, content);
       if (sent?.key?.id) this.sentIds.add(sent.key.id);
     } catch (error) {
       log.warn({ agent: this.agentId, file: file.name, err: error.message }, 'attachment not sent');
-      await sock.sendMessage(chat, { text: `(Could not attach ${file.name}.)` }).catch(() => {});
+      await this.live(sock).sendMessage(chat, { text: `(Could not attach ${file.name}.)` }).catch(() => {});
     }
   }
 
@@ -529,11 +550,12 @@ class Account {
       // the pattern WhatsApp flags most readily.
       if (i) await sleep(800 + Math.random() * 700);
       const content = { text: parts[i] };
-      // The cc line with the @tokens is at the end, so the tags belong on the last part.
-      if (i === parts.length - 1 && mentions?.length) content.mentions = mentions;
+      // A tag renders only in the part that shows its @token.
+      const tags = mentionsIn(parts[i], mentions);
+      if (tags.length) content.mentions = tags;
       let sent;
       try {
-        sent = await sock.sendMessage(chat, content, i === 0 && quoted ? { quoted } : undefined);
+        sent = await this.live(sock).sendMessage(chat, content, i === 0 && quoted ? { quoted } : undefined);
       } catch (error) {
         throw Object.assign(error, { partial: i > 0 });
       }
@@ -590,6 +612,7 @@ export class Accounts {
     relayHook = (account, sock, msg, phone) => this.relay(account, sock, msg, phone);
     this.byAgent = new Map();
     this.deliveries = new Map(); // idempotency key -> time, so a retried reminder is not sent twice
+    this.groupMetaCache = new Map(); // agent + group jid -> { at, meta: Promise }
   }
 
   // Each linked number for the agents' whatsapp tool: status, owner numbers, mode.
@@ -636,10 +659,17 @@ export class Accounts {
     return fresh.view();
   }
 
-  async link(agentId) {
+  link(agentId) {
     const account = this.get(agentId, true);
+    // A double click or a second tab joins the link already under way.
+    if (!account.linking) account.linking = this.openLink(account).finally(() => { account.linking = null; });
+    return account.linking;
+  }
+
+  async openLink(account) {
     await account.loadSettings();
     await account.loadKnownChats();
+    await account.starting?.catch(() => {});
     if (['connected', 'qr', 'starting', 'reconnecting'].includes(account.status) && account.sock) return account.view();
     await account.stop();
     account.retry = 0;
@@ -676,7 +706,7 @@ export class Accounts {
   // A message to the owner (their own "Message yourself" chat), from this agent's
   // number or, when that one is not linked, from any linked number that is not monitor-only.
   async notifyOwner(agentId, text) {
-    const accounts = [this.get(agentId), ...this.byAgent.values()].filter((a) => a && a.status === 'connected' && a.sock?.user && !a.monitoring);
+    const accounts = [agentId ? this.get(agentId) : null, ...this.byAgent.values()].filter((a) => a && a.status === 'connected' && a.sock?.user && !a.monitoring);
     const account = accounts[0];
     if (!account) throw Object.assign(new Error('no WhatsApp number is linked'), { status: 503 });
     // To the owner's own phone when one is set (they may not watch the linked phone), else "Message yourself".
@@ -692,11 +722,13 @@ export class Accounts {
   async groupMentions(account, chat, numbers, text) {
     const nums = [...new Set((numbers || []).map((n) => digits(n)).filter((n) => n.length >= 6))];
     if (!nums.length) return { text, mentions: [], mentioned: [], skipped: [] };
-    let participants = [];
+    let participants;
     try {
-      participants = (await account.sock.groupMetadata(chat))?.participants || [];
+      participants = (await this.groupMeta(account, chat))?.participants || [];
     } catch (error) {
       log.warn({ agent: account.agentId, err: error.message }, 'group metadata for mentions failed');
+      // The report still goes out, untagged; the caller learns why nobody was tagged.
+      return { text, mentions: [], mentioned: [], skipped: nums.map((number) => ({ number, reason: 'group member list unavailable' })) };
     }
     const members = participants.map((p) => p.id).filter(Boolean);
     // number -> the exact JID the group addresses that member by (phone number or LID).
@@ -708,6 +740,19 @@ export class Accounts {
     }
     const wanted = nums.map((number) => ({ number, jids: [byNumber.get(number), `${number}@s.whatsapp.net`].filter(Boolean) }));
     return buildMentionPayload(text, wanted, members);
+  }
+
+  // A group's metadata through a short cache; a failed fetch is not kept, so the next call retries.
+  groupMeta(account, jid) {
+    const key = `${account.agentId}\n${jid}`;
+    const now = Date.now();
+    const hit = this.groupMetaCache.get(key);
+    if (hit && now - hit.at < GROUP_META_TTL_MS) return hit.meta;
+    for (const [k, v] of this.groupMetaCache) if (now - v.at >= GROUP_META_TTL_MS) this.groupMetaCache.delete(k);
+    const meta = Promise.resolve().then(() => account.sock.groupMetadata(jid));
+    this.groupMetaCache.set(key, { at: now, meta });
+    meta.catch(() => { if (this.groupMetaCache.get(key)?.meta === meta) this.groupMetaCache.delete(key); });
+    return meta;
   }
 
   // group must be set for that agent. Without it (scheduled deliveries) any designated one counts.
@@ -730,7 +775,7 @@ export class Accounts {
         + 'The owner can add it under that agent\'s Contacts on the WhatsApp page.'), { status: 403 });
     }
     if (!text.trim()) return;
-    const key = crypto.createHash('sha256').update(`${agentId}\n${chat}\n${text}`).digest('hex');
+    const key = deliveryKey(agentId, chat, text, chat.endsWith('@g.us') ? mentions : []);
     const now = Date.now();
     for (const [k, at] of this.deliveries) if (now - at > DELIVERY_DEDUPE_MS) this.deliveries.delete(k);
     if (this.deliveries.has(key)) return { deduped: true }; // already sent (or being sent) within the hour
@@ -805,10 +850,12 @@ export class Accounts {
   // be resolved from the metadata (a LID with no phone on record) are left out; the owner can
   // still add such a number by hand, and the send-time mapping will try it.
   async groupMembers(jid) {
+    // Only groups the owner ticked; the form has no reason to read any other group's members.
+    if (!directory?.group(jid)) return null;
     for (const account of this.byAgent.values()) {
-      if (account.status !== 'connected' || !account.sock) continue;
+      if (account.status !== 'connected' || !account.sock || account.monitoring) continue;
       let meta;
-      try { meta = await account.sock.groupMetadata(jid); } catch { continue; }
+      try { meta = await this.groupMeta(account, jid); } catch { continue; }
       if (!meta?.participants) continue;
       const out = [];
       for (const p of meta.participants) {
