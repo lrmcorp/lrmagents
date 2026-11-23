@@ -101,16 +101,17 @@ def call(path, data, ctype):
     t = time.time()
     req = urllib.request.Request("http://voice:8095" + path, data=data, method="POST", headers={"Authorization": "Bearer " + tok, "Content-Type": ctype})
     with urllib.request.urlopen(req, timeout=300) as r:
-        return r.read(), r.headers.get("Content-Type"), time.time() - t
+        return r.read(), f'{r.headers.get("Content-Type")} voice={r.headers.get("X-Voice")}', time.time() - t
 for lang, text in (("en", "Yes, I can hear you loud and clear. What can I do for you?"), ("id", "Ya, saya bisa mendengar Anda dengan jelas.")):
     try:
-        wav, ctype, secs = call("/tts", json.dumps({"text": text, "lang": lang, "format": "wav"}).encode(), "application/json")
+        wav, ctype, secs = call("/tts", json.dumps({"text": text, "lang": lang, "format": "wav", "engine": "google"}).encode(), "application/json")
         print(f"tts {lang}: {len(wav)} bytes {ctype} in {secs:.1f}s")
         out, _, secs = call("/stt", wav, "application/octet-stream")
         print(f"stt {lang}: {json.loads(out).get('text')!r} in {secs:.1f}s")
     except Exception as e:
         print(f"{lang} failed: {e} {getattr(e, 'read', lambda: b'')()[:200]!r}")
 PY
+echo "== voice log (Google fallbacks)"; dc logs --no-color --tail 300 voice 2>&1 | grep -iE "google|kokoro|error" | tail -15
 echo "== scheduled tasks"
 sudo -n docker compose -f deploy/compose.yaml exec -T cowagent python - <<'PY' 2>&1 | grep -v '^\[' | tail -20
 import sys; sys.path.insert(0, "/app")

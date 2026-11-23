@@ -165,6 +165,8 @@
 
   // Audio in
   async function mic() {
+    // iPhone: the session must allow recording before the microphone is asked for; after Sora speaks it is still "playback".
+    session('play-and-record');
     if (S.stream) return S.stream;
     S.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     S.ctx = S.ctx || new (window.AudioContext || window.webkitAudioContext)();
@@ -252,8 +254,8 @@
   function pickType() { for (const t of ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm']) if (window.MediaRecorder?.isTypeSupported?.(t)) return t; return ''; }
   async function startRec() {
     if (S.rec || S.busy) return;
-    try { await mic(); } catch (e) { toast(e?.name === 'NotAllowedError' ? 'Microphone permission was refused. Allow it for this site in the browser.' : `No microphone: ${e.message || e}`); return; }
     stopSpeaking();
+    try { await mic(); } catch (e) { toast(e?.name === 'NotAllowedError' ? 'Microphone permission was refused. Allow it for this site in the browser.' : `No microphone: ${e.message || e}`); return; }
     S.chunks = []; const type = pickType();
     S.rec = new MediaRecorder(S.stream, type ? { mimeType: type } : undefined);
     S.rec.ondataavailable = (e) => { if (e.data.size) S.chunks.push(e.data); };
