@@ -23,7 +23,7 @@ import web
 
 from common.log import logger
 
-MIN_TOKEN = 24
+MIN_TOKEN = 20
 MAX_FAILURES = 10
 WINDOW = 600
 ASK_MAX = 2000

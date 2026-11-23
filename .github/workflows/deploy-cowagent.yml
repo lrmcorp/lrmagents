@@ -148,7 +148,7 @@ jobs:
           MODEL_FALLBACK: ${{ vars.LRMAGENT_MODEL_FALLBACK }}
           # Optional prices for the Usage page: {"model-prefix": [usd_per_M_input, usd_per_M_output]}.
           LRMAGENT_PRICES: ${{ vars.LRMAGENT_PRICES }}
-          # The iPhone Shortcuts API (/api/lrm/shortcut); empty or under 24 characters keeps it off.
+          # The iPhone Shortcuts API (/api/lrm/shortcut); empty or under 20 characters keeps it off.
           LRMAGENT_SHORTCUT_TOKEN: ${{ secrets.LRMAGENT_SHORTCUT_TOKEN }}
         run: |
           host="${AGENT_DOMAIN%%,*}"; export WEB_PUBLIC_URL="https://${host// /}"
