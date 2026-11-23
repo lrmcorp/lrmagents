@@ -10,6 +10,7 @@ Every call but /health needs "Authorization: Bearer <COWAGENT_API_TOKEN>".
 Languages: English and Mandarin use Kokoro's native voices; Bahasa Indonesia is spoken
 with Indonesian phonemes (espeak-ng) on a Kokoro voice, as Kokoro has no Indonesian speaker.
 """
+import base64
 import hashlib
 import hmac
 import io
@@ -20,6 +21,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -150,11 +152,90 @@ def synthesize(text, lang=None, voice=None, speed=1.0):
     return np.concatenate(pieces), rate, lang, voice
 
 
+# Google Cloud Chirp 3 HD: natural voices with a free monthly character quota. Kokoro stays the
+# fallback when there is no key, Google fails, or this month's quota is nearly used up.
+GOOGLE_KEY = os.environ.get("GOOGLE_TTS_API_KEY", "").strip()
+GOOGLE_VOICE = os.environ.get("GOOGLE_TTS_VOICE", "Aoede").strip() or "Aoede"
+GOOGLE_RATE = float(os.environ.get("GOOGLE_TTS_RATE", "1.1") or 1.0)
+GOOGLE_LIMIT = int(os.environ.get("GOOGLE_TTS_MONTHLY_CHARS", "950000") or 0)
+GOOGLE_LOCALE = {"id": "id-ID", "en": "en-US", "zh": "cmn-CN"}
+GOOGLE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
+_USAGE = os.path.join(MODELS, "google_tts_usage.json")
+_usage_lock = threading.Lock()
+
+
+def google_usage():
+    """Characters sent to Google this calendar month."""
+    try:
+        with open(_USAGE) as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return 0
+    return int(d.get("chars", 0)) if d.get("month") == time.strftime("%Y-%m") else 0
+
+
+def _add_usage(n):
+    with _usage_lock:
+        used = google_usage() + n
+        tmp = _USAGE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"month": time.strftime("%Y-%m"), "chars": used}, f)
+        os.replace(tmp, _USAGE)
+
+
+def google_request(text, lang, voice=None, rate=None):
+    """The Text-to-Speech request body for one answer."""
+    locale = GOOGLE_LOCALE.get(lang, "en-US")
+    body = {"input": {"text": text},
+            "voice": {"languageCode": locale, "name": f"{locale}-Chirp3-HD-{voice or GOOGLE_VOICE}"},
+            "audioConfig": {"audioEncoding": "LINEAR16", "sampleRateHertz": 24000}}
+    rate = GOOGLE_RATE if rate is None else float(rate)
+    if abs(rate - 1.0) > 0.01:
+        body["audioConfig"]["speakingRate"] = max(0.7, min(1.5, rate))
+    return body
+
+
+def synthesize_google(text, lang=None, voice=None, rate=None, post=None):
+    """(wav bytes, lang, voice name) from Chirp 3 HD; raises so the caller can fall back to Kokoro."""
+    text = clean_for_speech(text)[:MAX_TEXT]
+    if not text:
+        raise ValueError("nothing to say")
+    if not GOOGLE_KEY:
+        raise RuntimeError("no Google key")
+    if GOOGLE_LIMIT and google_usage() + len(text) > GOOGLE_LIMIT:
+        raise RuntimeError("this month's Google quota is nearly used up")
+    lang = lang if lang in GOOGLE_LOCALE else detect_lang(text)
+    body = google_request(text, lang, voice, rate)
+    post = post or _google_post
+    try:
+        audio = post(body)
+    except urllib.error.HTTPError as e:
+        # A voice that does not take a speaking rate: try once at normal speed.
+        if e.code != 400 or "speakingRate" not in body["audioConfig"]:
+            raise
+        body["audioConfig"].pop("speakingRate")
+        audio = post(body)
+    _add_usage(len(text))
+    return audio, lang, body["voice"]["name"]
+
+
+def _google_post(body):
+    # The key goes in a header, so it never shows up in a URL or a log line.
+    request = urllib.request.Request(GOOGLE_URL, data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json", "X-Goog-Api-Key": GOOGLE_KEY})
+    with urllib.request.urlopen(request, timeout=20) as r:
+        return base64.b64decode(json.loads(r.read())["audioContent"])
+
+
 def encode(samples, rate, fmt):
     import soundfile as sf
     buf = io.BytesIO()
     sf.write(buf, samples, rate, format="WAV", subtype="PCM_16")
-    wav = buf.getvalue()
+    return wav_as(buf.getvalue(), fmt)
+
+
+def wav_as(wav, fmt):
+    """WAV bytes as the requested format: wav as is, or ogg/opus for WhatsApp."""
     if fmt != "ogg":
         return wav, "audio/wav"
     proc = subprocess.run(["ffmpeg", "-v", "error", "-f", "wav", "-i", "pipe:0", "-c:a", "libopus", "-b:a", "32k", "-ac", "1", "-f", "ogg", "pipe:1"],
@@ -220,7 +301,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            return self._send(200, {"ok": True, "tts_loaded": _kokoro is not None, "stt_loaded": _whisper is not None, "whisper": WHISPER_MODEL})
+            return self._send(200, {"ok": True, "tts_loaded": _kokoro is not None, "stt_loaded": _whisper is not None, "whisper": WHISPER_MODEL,
+                                    "google": bool(GOOGLE_KEY), "google_voice": GOOGLE_VOICE, "google_chars": google_usage(), "google_limit": GOOGLE_LIMIT})
         if not self._authorised():
             return self._send(403, {"error": "internal endpoint"})
         if self.path == "/voices":
@@ -239,8 +321,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, result)
             if self.path == "/tts":
                 req = json.loads(self._body(64 << 10) or b"{}")
-                samples, rate, lang, voice = synthesize(str(req.get("text") or ""), req.get("lang"), req.get("voice"), req.get("speed") or 1.0)
-                data, ctype = encode(samples, rate, req.get("format") or "wav")
+                fmt = req.get("format") or "wav"
+                engine = str(req.get("engine") or "").lower()
+                data = None
+                if engine != "kokoro" and GOOGLE_KEY:
+                    try:
+                        wav, lang, voice = synthesize_google(str(req.get("text") or ""), req.get("lang"), req.get("gvoice"), req.get("rate"))
+                        data, ctype = wav_as(wav, fmt)
+                    except ValueError:
+                        raise
+                    except Exception as e:  # noqa: BLE001 - Kokoro answers instead
+                        if engine == "google":
+                            raise
+                        print(f"[voice] Google TTS unavailable, using Kokoro: {type(e).__name__}: {str(e)[:120]}", flush=True)
+                if data is None:
+                    samples, rate, lang, voice = synthesize(str(req.get("text") or ""), req.get("lang"), req.get("voice"), req.get("speed") or 1.0)
+                    data, ctype = encode(samples, rate, fmt)
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(data)))

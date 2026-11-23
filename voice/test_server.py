@@ -18,6 +18,33 @@ class Tests(unittest.TestCase):
         self.assertEqual(server.chunks("你好。今天好吗？"), ["你好。 今天好吗？"])
 
 
+    def test_google(self):
+        import tempfile
+        import urllib.error
+        tmp = tempfile.mkdtemp()
+        server._USAGE = f"{tmp}/usage.json"
+        server.GOOGLE_KEY, server.GOOGLE_LIMIT = "k", 1000
+        body = server.google_request("Halo", "id", "Kore", 1.1)
+        self.assertEqual(body["voice"], {"languageCode": "id-ID", "name": "id-ID-Chirp3-HD-Kore"})
+        self.assertEqual(body["audioConfig"]["speakingRate"], 1.1)
+        self.assertNotIn("speakingRate", server.google_request("Hi", "en", rate=1.0)["audioConfig"])
+        sent = []
+        wav, lang, name = server.synthesize_google("Laporan hari ini sudah siap untuk dibacakan", post=lambda b: sent.append(b) or b"RIFF")
+        self.assertEqual((wav, lang, name), (b"RIFF", "id", "id-ID-Chirp3-HD-Aoede"))
+        self.assertEqual(server.google_usage(), len("Laporan hari ini sudah siap untuk dibacakan"))
+
+        def no_rate(b):
+            if "speakingRate" in b["audioConfig"]:
+                raise urllib.error.HTTPError(server.GOOGLE_URL, 400, "bad", {}, None)
+            return b"RIFF"
+        self.assertEqual(server.synthesize_google("Halo semua", rate=1.2, post=no_rate)[0], b"RIFF")
+        # Near the monthly limit: refused, so the caller speaks with Kokoro instead.
+        with self.assertRaises(RuntimeError):
+            server.synthesize_google("x" * 990, post=lambda b: b"RIFF")
+        server.GOOGLE_KEY = ""
+        with self.assertRaises(RuntimeError):
+            server.synthesize_google("Halo", post=lambda b: b"RIFF")
+
     def test_decode(self):
         import shutil
         import subprocess

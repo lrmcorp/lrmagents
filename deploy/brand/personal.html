@@ -86,7 +86,7 @@
   <button id="camera" title="Camera: let it see" aria-pressed="false"><i class="fa-solid fa-camera"></i><span class="l">Camera</span></button>
   <button id="keyboard" title="Type a message" aria-label="Type a message" aria-pressed="false"><i class="fa-regular fa-keyboard" aria-hidden="true"></i></button>
   <button id="mute" title="Spoken answers on/off" aria-label="Spoken answers" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
-  <select id="voice" title="Sora's voice"><option value="device">Fast voice</option><option value="server">Sora voice (slower)</option></select>
+  <select id="voice" title="Sora's voice"><option value="device">Fast voice</option><option value="server">Sora voice</option></select>
   <select id="lang" title="Language you speak"><option value="">Auto</option><option value="en">English</option><option value="id">Bahasa Indonesia</option><option value="zh">中文</option></select>
 </div>
 <div class="toast" id="toast"></div>
@@ -535,6 +535,8 @@
     const name = d.agent?.name || 'Personal';
     $('#name').textContent = name.toUpperCase().slice(0, 10); $('#who').textContent = `${name} · personal assistant`; document.title = `${name} · LRMagent`;
     if (!d.voice?.ok) toast('The voice service is starting or not reachable yet; typed questions still work.');
+    // Sora's natural (Google) voice is quick enough to be the default unless the owner picked one.
+    if (d.voice?.google && store.get('lrm_p_voice', null) == null) $('#voice').value = 'server';
     setState('idle');
   }).catch(() => { setState('idle'); toast('Sign in to the LRMagent console first.'); });
 })();

@@ -172,6 +172,10 @@ services:
     env_file:
       - path: ../.env.whatsapp
         format: raw
+      # GOOGLE_TTS_API_KEY for Sora's Chirp 3 HD voice; written by the deploy, may be empty.
+      - path: ../.env.voice
+        format: raw
+        required: false
     environment:
       WHISPER_MODEL: small
       OMP_NUM_THREADS: "2"
