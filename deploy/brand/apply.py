@@ -509,7 +509,9 @@ _lrm_original_run_stream = Agent.run_stream
 
 
 def _lrm_counted_run_stream(self, *args, **kwargs):
-    from agent import lrm_busy
+    from agent import lrm_busy, lrm_task_runs
+    # a scheduled run's Stop or time limit sets this run's cancel flag (agent/lrm_task_runs.py)
+    lrm_task_runs.bind_cancel(kwargs.get("cancel_event"))
     with lrm_busy.running(getattr(self, "agent_id", "") or ""):
         return _lrm_original_run_stream(self, *args, **kwargs)
 
@@ -754,9 +756,9 @@ patch("agent/tools/browser/browser_service.py",
 # report no longer delays the next one. Each has its own browser tab (agent/lrm_browser_tabs.py).
 patch("agent/tools/scheduler/scheduler_service.py", '                    try:\n                        ok = self._execute_task(task)\n                    finally:\n                        self._release_task(task[\'id\'])\n                    if not ok:\n                        # Leave next_run_at as-is so the next loop retries.\n                        # Cron tasks within the catch-up window will keep\n                        # firing; beyond it _is_task_due will reschedule.\n                        logger.warning(\n                            f"[Scheduler] Task {task[\'id\']} delivery failed, will retry next tick"\n                        )\n                        continue\n\n                    next_run = self._calculate_next_run(task, now)\n                    last_run_at = format_scheduled_time(scheduled_reference_time(task, now))\n                    if next_run:\n                        self.task_store.finish_scheduled_run(\n                            task[\'id\'], observed_task,\n                            {"next_run_at": format_scheduled_time(next_run)},\n                            last_run_at=last_run_at,\n                        )\n                    else:\n                        removed = self.task_store.finish_scheduled_run(\n                            task[\'id\'], observed_task, None, last_run_at=last_run_at\n                        )\n                        if removed:\n                            logger.info(f"[Scheduler] One-time task completed and removed: {task[\'id\']}")\n', '                    threading.Thread(target=self._lrm_run_due, args=(task, observed_task, now),\n                                     name=f"lrm-task-{task[\'id\']}", daemon=True).start()\n', root=app)
 patch("agent/tools/scheduler/scheduler_service.py", "    def run_task_now(self, task_id: str) -> None:\n",
-      '    def _lrm_run_due(self, task, observed_task, now):\n        """One due task on its own thread (LRMagent: tasks no longer wait for each other)."""\n        with _LRM_PARALLEL:\n            try:\n                try:\n                    ok = self._execute_task(task)\n                finally:\n                    self._release_task(task[\'id\'])\n                if not ok:\n                    # Leave next_run_at as-is so the next loop retries.\n                    # Cron tasks within the catch-up window will keep\n                    # firing; beyond it _is_task_due will reschedule.\n                    logger.warning(\n                        f"[Scheduler] Task {task[\'id\']} delivery failed, will retry next tick"\n                    )\n                    return\n\n                next_run = self._calculate_next_run(task, now)\n                last_run_at = format_scheduled_time(scheduled_reference_time(task, now))\n                if next_run:\n                    self.task_store.finish_scheduled_run(\n                        task[\'id\'], observed_task,\n                        {"next_run_at": format_scheduled_time(next_run)},\n                        last_run_at=last_run_at,\n                    )\n                else:\n                    removed = self.task_store.finish_scheduled_run(\n                        task[\'id\'], observed_task, None, last_run_at=last_run_at\n                    )\n                    if removed:\n                        logger.info(f"[Scheduler] One-time task completed and removed: {task[\'id\']}")\n            except Exception as e:\n                logger.error(f"[Scheduler] Error processing task {task.get(\'id\')}: {e}")\n\n' + "    def run_task_now(self, task_id: str) -> None:\n", root=app)
+      '    def _lrm_run_due(self, task, observed_task, now):\n        """One due task on its own thread (LRMagent: tasks no longer wait for each other)."""\n        with _LRM_PARALLEL:\n            try:\n                try:\n                    ok = _lrm_guard(task, lambda: self._execute_task(task))\n                finally:\n                    self._release_task(task[\'id\'])\n                if not ok:\n                    # Leave next_run_at as-is so the next loop retries.\n                    # Cron tasks within the catch-up window will keep\n                    # firing; beyond it _is_task_due will reschedule.\n                    logger.warning(\n                        f"[Scheduler] Task {task[\'id\']} delivery failed, will retry next tick"\n                    )\n                    return\n\n                next_run = self._calculate_next_run(task, now)\n                last_run_at = format_scheduled_time(scheduled_reference_time(task, now))\n                if next_run:\n                    self.task_store.finish_scheduled_run(\n                        task[\'id\'], observed_task,\n                        {"next_run_at": format_scheduled_time(next_run)},\n                        last_run_at=last_run_at,\n                    )\n                else:\n                    removed = self.task_store.finish_scheduled_run(\n                        task[\'id\'], observed_task, None, last_run_at=last_run_at\n                    )\n                    if removed:\n                        logger.info(f"[Scheduler] One-time task completed and removed: {task[\'id\']}")\n            except Exception as e:\n                logger.error(f"[Scheduler] Error processing task {task.get(\'id\')}: {e}")\n\n' + "    def run_task_now(self, task_id: str) -> None:\n", root=app)
 patch("agent/tools/scheduler/scheduler_service.py", "from common.log import logger\n",
-      "from common.log import logger\n\n_LRM_PARALLEL = threading.BoundedSemaphore(4)\n", root=app)
+      "from common.log import logger\nfrom agent.lrm_task_runs import guard as _lrm_guard\n\n_LRM_PARALLEL = threading.BoundedSemaphore(4)\n", root=app)
 patch("agent/tools/browser/browser_tool.py",
       "        try:\n            return handler(self, args)\n        except Exception as e:\n",
       "        try:\n            from agent.lrm_browser_tabs import run as _lrm_run\n            return _lrm_run(self, handler, args)\n        except Exception as e:\n", root=app)
@@ -764,6 +766,33 @@ patch("agent/tools/browser/browser_tool.py",
 # Scheduled runs: a clean history every run, and the run's own recipients known while it works, so a
 # whatsapp send to them is skipped without an approval (agent/lrm_task_runs.py, agent/lrm_activity.py).
 patch("agent/tools/scheduler/integration.py", '            reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=False)\n', '            # LRMagent: every run starts clean (an earlier run\'s unsent message or pending action is not\n            # carried over), and the run is known while it works (agent/lrm_task_runs.py).\n            from agent import lrm_task_runs as _lrm_runs\n            _lrm_runs.start(scheduler_session_id, task, (output_sink or {}).get("run_id", ""))\n            try:\n                reply = agent_bridge.agent_reply(execution_prompt, context=context, on_event=None, clear_history=True)\n            finally:\n                _lrm_runs.finish(scheduler_session_id)\n', root=app)
+
+# Time limit and Stop button (agent/lrm_task_runs.py guard): a hung run no longer holds one of the 4
+# task slots forever. A stopped run delivers nothing and keeps its failed row; rows a restart left Running close.
+patch(_integ, '            reply.content = payload\n',
+      '            if _lrm_runs.stopped():\n                return True\n            reply.content = payload\n', root=app)
+patch(_integ, '                _lrm_out.note_failed(agent_id, task, payload)\n',
+      '                if not _lrm_runs.stopped():\n                    _lrm_out.note_failed(agent_id, task, payload)\n', root=app)
+patch(_integ, '    sink: Dict[str, str] = {"run_id": run[1]} if run is not None else {}\n',
+      '    sink: Dict[str, str] = {"run_id": run[1]} if run is not None else {}\n'
+      '    from agent import lrm_task_runs as _lrm_runs\n    _lrm_runs.attach(run, agent_id)\n', root=app)
+patch(_integ, '                store.finish_run(run_id, status=status, error=error, extras=extras)\n',
+      '                _lrm_runs.close(store, run_id, status=status, error=error, extras=extras)\n', root=app)
+patch(_integ, '            _scheduler_service = service\n',
+      '            _scheduler_service = service\n            from agent import lrm_task_runs as _lrm_runs\n            _lrm_runs.close_stale()\n', root=app)
+patch("agent/tools/scheduler/scheduler_service.py", '                ok = self._execute_task(task, trigger="manual")\n',
+      '                ok = _lrm_guard(task, lambda: self._execute_task(task, trigger="manual"))\n', root=app)
+patch("api/scheduler.py", '            runs = store.list_runs(\n',
+      '            from agent import lrm_task_runs as _lrm_runs\n            _lrm_runs.close_stale()\n            runs = store.list_runs(\n')
+patch("static/js/views/tasks.js", "    card.addEventListener('click', () => showRunDetailModal(run));\n",
+      "    card.addEventListener('click', () => showRunDetailModal(run));\n"
+      "    // LRMagent: a running run can be stopped from its card (shell.js).\n"
+      "    if (run.status === 'running') window.lrmStopRunButton?.(run, card);\n")
+patch("web_channel.py", "from channel.web.api.lrm_busy import LrmBusyHandler  # noqa: F401,E402\n",
+      "from channel.web.api.lrm_busy import LrmBusyHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_runs import LrmRunsHandler  # noqa: F401,E402\n")
+patch("web_channel.py", "    '/api/lrm/busy', 'LrmBusyHandler',\n",
+      "    '/api/lrm/busy', 'LrmBusyHandler',\n    '/api/lrm/runs', 'LrmRunsHandler',\n")
 
 # Tasks page, run detail: a link to that run's tool calls and approvals (Activity page, ?run=).
 patch("static/js/views/tasks.js", '    fetch(`/api/scheduler/runs/detail?run_id=${encodeURIComponent(run.run_id)}`)\n', '    // LRMagent: the run\'s tool calls and approvals, on the Activity page.\n    document.getElementById(\'lrm-run-trace\')?.remove();\n    if (run.run_id) outEl.insertAdjacentHTML(\'afterend\', `<a id="lrm-run-trace" href="/assets/brand/activity.html?run=${encodeURIComponent(run.run_id)}" target="_blank" rel="noopener" class="inline-block mt-3 text-xs font-semibold underline">Tool calls and approvals of this run</a>`);\n    fetch(`/api/scheduler/runs/detail?run_id=${encodeURIComponent(run.run_id)}`)\n')

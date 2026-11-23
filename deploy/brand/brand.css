@@ -299,6 +299,11 @@ div:has(> #cfg-password-save),
 #lrm-mentions button:disabled, #lrm-mentions input:disabled { cursor: not-allowed; opacity: .55; }
 /* Task card: who the task tags in its WhatsApp group. */
 .lrm-card-ment { margin: -4px 0 8px; font-size: 12px; color: var(--lrm-muted); overflow-wrap: anywhere; }
+/* Task history: Stop on a running run. */
+.lrm-run-stop { min-height: 28px; padding: 0 10px; border: 1px solid var(--lrm-warn); border-radius: 8px; background: var(--lrm-surface); color: var(--lrm-warn); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; flex-shrink: 0; }
+.lrm-run-stop:focus-visible { outline: 2px solid var(--lrm-ring); outline-offset: 2px; }
+.lrm-run-stop:disabled { cursor: default; opacity: .6; }
+@media (pointer: coarse) { .lrm-run-stop { min-height: 44px; } }
 
 /* Agents page grouped by the Team page: a heading per group, Level 2 under its Level 1. */
 .lrm-agent-section { display: flex; align-items: baseline; gap: 8px; margin: 14px 4px 4px; font-size: 12.5px; font-weight: 650; color: rgb(var(--cw-slate-700)); }

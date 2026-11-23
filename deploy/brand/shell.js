@@ -588,10 +588,18 @@
     }
     setInterval(lrmTaskTick, 500);
     const lrmFetch = window.fetch.bind(window);
+    // Only the Save of the open, visible form adds its "Also send to" and mentions, and only for the
+    // task that form is editing; any other create/update call goes out exactly as it was sent.
+    function lrmIsModalSave(path, body) {
+        const s = window.__lrmTask;
+        if (!s || !lrmModalOpen()) return false;
+        if (path.endsWith('/create')) return s.mode === 'create' && !body.task_id;
+        return s.mode === 'edit' && Boolean(s.task) && body.task_id != null && String(s.task.id) === String(body.task_id);
+    }
     function lrmTaskBody(body) {
         const s = window.__lrmTask;
         const current = lrmTaskKey();
-        const task = s && s.mode !== 'create' && s.task && (!body.task_id || s.task.id === body.task_id) ? s.task : null;
+        const task = s && s.mode !== 'create' ? s.task : null;
         const stored = task?.action || {};
         const rbox = document.getElementById('lrm-receivers');
         if (rbox && rbox.dataset.task === current) {
@@ -622,7 +630,7 @@
             listRequest = path === '/api/scheduler' && (!init || !init.method || init.method === 'GET');
             if (/\/api\/scheduler\/(create|update)$/.test(path) && init && typeof init.body === 'string') {
                 const body = JSON.parse(init.body);
-                if (body.action && String(body.action.instance_id || '').startsWith('lrm-wa:')) {
+                if (body.action && String(body.action.instance_id || '').startsWith('lrm-wa:') && lrmIsModalSave(path, body)) {
                     lrmTaskBody(body);
                     init = { ...init, body: JSON.stringify(body) };
                 }
@@ -639,6 +647,39 @@
             }).catch(() => {});
             return r;
         });
+    };
+
+    // Task history: a running run gets a Stop button (tasks.js calls this for each running card).
+    // Stopping marks the run failed and sends nothing; the agent stops at its next step.
+    window.lrmStopRunButton = (run, card) => {
+        const del = card?.querySelector('.run-delete-btn');
+        if (!del || !run?.run_id || card.querySelector('.lrm-run-stop')) return;
+        const btn = document.createElement('button');
+        btn.type = 'button'; btn.className = 'lrm-run-stop'; btn.textContent = 'Stop';
+        btn.title = 'Stop this run. Nothing is sent to its recipients.';
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation(); // the card itself opens the run detail
+            btn.disabled = true; btn.textContent = 'Stopping…';
+            let d = null;
+            try {
+                const r = await fetch('/api/lrm/runs', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: 'stop', run_id: run.run_id }) });
+                d = await r.json();
+            } catch { d = null; }
+            if (!d || d.status !== 'success') {
+                btn.disabled = false; btn.textContent = 'Stop';
+                btn.title = (d && d.message) || 'Could not reach LRMagent. Try again.';
+                if (d && d.message) { btn.textContent = 'Not running'; btn.disabled = true; }
+                return;
+            }
+            run.status = 'error'; run.error = 'stopped by the owner';
+            const badge = card.querySelector('.fa-spinner')?.parentElement;
+            if (badge) {
+                badge.className = 'inline-flex items-center gap-1 text-red-500';
+                badge.innerHTML = '<i class="fas fa-circle-xmark text-xs"></i><span class="text-xs font-medium">Stopped</span>';
+            }
+            btn.remove();
+        });
+        del.before(btn);
     };
 
     // The private vault's 7-day clock: using the console counts as the owner being around.

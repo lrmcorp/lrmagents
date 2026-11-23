@@ -29,6 +29,7 @@ COPY deploy/agent-tools/lrm_team.py /app/agent/lrm_team.py
 COPY deploy/agent-tools/lrm_org.py /app/agent/lrm_org.py
 COPY deploy/agent-tools/lrm_org_api.py /app/channel/web/api/lrm_org.py
 COPY deploy/agent-tools/lrm_busy_api.py /app/channel/web/api/lrm_busy.py
+COPY deploy/agent-tools/lrm_runs_api.py /app/channel/web/api/lrm_runs.py
 # Approvals and activity log: recorder/gate, API and page (page copied with the brand files).
 COPY deploy/agent-tools/lrm_activity.py /app/agent/lrm_activity.py
 COPY deploy/agent-tools/lrm_origin.py /app/agent/lrm_origin.py
