@@ -169,6 +169,16 @@ def _speak(text, lang=None):
     return body
 
 
+def _ask_audio(text, lang):
+    started = time.time()
+    answer = _voice_api().chat(text, None, lang, spoken_only=True)["text"][:TTS_MAX] or "Maaf, saya tidak punya jawaban."
+    thought = time.time() - started
+    audio = _speak(answer, lang)
+    logger.info(f"[Shortcut] ask_audio: model {thought:.1f}s, voice {time.time() - started - thought:.1f}s, "
+                f"{len(text)} chars in, {len(answer)} out, {len(audio) // 1024} KB")
+    return audio
+
+
 def _op():
     return (parse_qs(web.ctx.env.get("QUERY_STRING", "")).get("op") or [""])[0]
 
@@ -232,5 +242,5 @@ class LrmShortcutHandler:
             return _guarded(op, lambda: _speak(text))
         lang = req.get("lang") if isinstance(req.get("lang"), str) and req.get("lang") else None
         if op == "ask_audio":
-            return _guarded(op, lambda: _speak(_voice_api().chat(text, None, lang, spoken_only=True)["text"][:TTS_MAX] or "Maaf, saya tidak punya jawaban.", lang))
+            return _guarded(op, lambda: _ask_audio(text, lang))
         return _guarded(op, lambda: _json("200 OK", {"text": _voice_api().chat(text, None, lang, spoken_only=True)["text"]}))

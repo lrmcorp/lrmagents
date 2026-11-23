@@ -111,6 +111,7 @@ for lang, text in (("en", "Yes, I can hear you loud and clear. What can I do for
     except Exception as e:
         print(f"{lang} failed: {e} {getattr(e, 'read', lambda: b'')()[:200]!r}")
 PY
+echo "== iPhone Shortcut timings"; dc logs --no-color --since 24h cowagent 2>&1 | grep -E '\[Shortcut\]|\[Voice\]' | cut -c1-260 | tail -20
 echo "== voice log (Google fallbacks)"; dc logs --no-color --tail 300 voice 2>&1 | grep -iE "google|kokoro|error" | tail -15
 echo "== scheduled tasks"
 sudo -n docker compose -f deploy/compose.yaml exec -T cowagent python - <<'PY' 2>&1 | grep -v '^\[' | tail -20
