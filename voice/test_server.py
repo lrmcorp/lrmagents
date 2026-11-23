@@ -18,6 +18,22 @@ class Tests(unittest.TestCase):
         self.assertEqual(server.chunks("你好。今天好吗？"), ["你好。 今天好吗？"])
 
 
+    def test_groq_stt(self):
+        sent = {}
+
+        def post(body, boundary):
+            sent["body"], sent["boundary"] = body, boundary
+            return {"text": " Tolong cek Lorium. ", "language": "indonesian", "duration": 2.5}
+        out = server.transcribe_groq(b"AUDIO", "id", "Lorium, Sora.", post=post)
+        self.assertEqual(out, {"text": "Tolong cek Lorium.", "language": "id", "duration": 2.5, "engine": "groq"})
+        body = sent["body"]
+        self.assertIn(b'name="model"\r\n\r\nwhisper-large-v3-turbo', body)
+        self.assertIn(b'name="prompt"\r\n\r\nLorium, Sora.', body)
+        self.assertIn(b'name="language"\r\n\r\nid', body)
+        self.assertIn(b"AUDIO\r\n--" + sent["boundary"].encode() + b"--", body)
+        out = server.transcribe_groq(b"x", None, None, post=lambda b, k: {"text": "hi", "language": "english"})
+        self.assertEqual((out["language"], out["duration"]), ("en", 0.0))
+
     def test_google(self):
         import tempfile
         import urllib.error

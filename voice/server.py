@@ -22,6 +22,8 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
+import uuid
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -309,17 +311,50 @@ def decode(data):
     return np.frombuffer(proc.stdout, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def transcribe(data, lang=None):
+GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+GROQ_MODEL = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+_GROQ_LANG = {"indonesian": "id", "malay": "id", "javanese": "id", "english": "en", "chinese": "zh", "mandarin": "zh"}
+DEFAULT_PROMPT = "LRMagent, Lorium, Sora, Reyner, Liando Reyfort Management."
+
+
+def transcribe_groq(data, lang=None, prompt=None, post=None):
+    """Whisper large-v3-turbo on Groq: far more accurate than the local small model and back in
+    well under a second. The prompt carries names the owner uses (agents, branches)."""
+    boundary = "lrm" + uuid.uuid4().hex
+    fields = {"model": GROQ_MODEL, "response_format": "verbose_json", "temperature": "0", "prompt": (prompt or DEFAULT_PROMPT)[:800]}
+    if lang:
+        fields["language"] = lang
+    body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields.items())
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="speech.webm"\r\n'
+             f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+    if post is None:
+        request = urllib.request.Request("https://api.groq.com/openai/v1/audio/transcriptions", data=body, method="POST",
+                                         headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": f"multipart/form-data; boundary={boundary}"})
+        with urllib.request.urlopen(request, timeout=20) as r:
+            reply = json.loads(r.read())
+    else:
+        reply = post(body, boundary)
+    language = str(reply.get("language") or lang or "").lower()
+    return {"text": str(reply.get("text") or "").strip(), "language": _GROQ_LANG.get(language, language[:2]),
+            "duration": round(float(reply.get("duration") or 0), 2), "engine": "groq"}
+
+
+def transcribe(data, lang=None, prompt=None):
+    if GROQ_KEY:
+        try:
+            return transcribe_groq(data, lang, prompt)
+        except Exception as e:  # noqa: BLE001 - the local model answers instead
+            print(f"[voice] Groq speech-to-text unavailable, using the local model: {type(e).__name__}: {str(e)[:120]}", flush=True)
     audio = decode(data)
     with _stt_lock:
         # Fast settings for short spoken requests: one beam, no timestamps, no carrying text
         # between segments, silence skipped.
         segments, info = whisper().transcribe(audio, language=lang or None, vad_filter=True, beam_size=1, best_of=1,
                                               without_timestamps=True, condition_on_previous_text=False,
-                                              initial_prompt="LRMagent, Lorium, Reyner, Liando Reyfort Management.")
+                                              initial_prompt=(prompt or DEFAULT_PROMPT)[:400])
         text = " ".join(s.text.strip() for s in segments).strip()
     language = {"ms": "id", "jw": "id"}.get(info.language, info.language)
-    return {"text": text, "language": language, "duration": round(info.duration, 2)}
+    return {"text": text, "language": language, "duration": round(info.duration, 2), "engine": "local"}
 
 
 # Http
@@ -349,7 +384,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            return self._send(200, {"ok": True, "tts_loaded": _kokoro is not None, "stt_loaded": _whisper is not None, "whisper": WHISPER_MODEL,
+            return self._send(200, {"ok": True, "tts_loaded": _kokoro is not None, "stt_loaded": _whisper is not None, "whisper": WHISPER_MODEL, "stt_cloud": bool(GROQ_KEY),
                                     "google": bool(GOOGLE_KEY), "google_voice": GOOGLE_VOICE, "google_chars": google_usage(), "google_limit": GOOGLE_LIMIT,
                                     "google_today": google_today(), "google_daily": GOOGLE_DAILY})
         if not self._authorised():
@@ -365,7 +400,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path.startswith("/stt"):
                 lang = self.headers.get("X-Lang") or None
-                result = transcribe(self._body(25 << 20), lang)
+                prompt = urllib.parse.unquote(self.headers.get("X-Prompt") or "") or None
+                result = transcribe(self._body(25 << 20), lang, prompt)
                 result["seconds"] = round(time.time() - started, 2)
                 return self._send(200, result)
             if self.path == "/tts":

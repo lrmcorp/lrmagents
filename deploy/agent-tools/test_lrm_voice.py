@@ -150,5 +150,12 @@ check("no climbing out of the workspace", _voice_src._workspace_file("../" + os.
 check("only pictures are served", _voice_src._workspace_file("USER.md", _ws) is None)
 check("web pictures stay as they are", _voice_src.media_panels("![Logo](https://example.com/a.png)")[1] == [{"type": "image", "title": "Logo", "url": "https://example.com/a.png"}])
 
+
+# Misheard names are fixed; ordinary words are left alone.
+names = ["Lorium", "Sora", "DD Surabaya", "Liando Reyfort Management"]
+check("Morium -> Lorium", _voice_src.fix_names("Coba kamu punya akses untuk Morium langsung", names) == "Coba kamu punya akses untuk Lorium langsung")
+check("Surabya -> Surabaya", _voice_src.fix_names("laporan cabang Surabya", names) == "laporan cabang Surabaya")
+check("ordinary words stay", _voice_src.fix_names("Tolong cek laporan forum sekarang", names) == "Tolong cek laporan forum sekarang")
+
 print("FAILED" if PASS["f"] else "ALL PASSED")
 sys.exit(1 if PASS["f"] else 0)

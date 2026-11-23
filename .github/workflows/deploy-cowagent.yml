@@ -131,6 +131,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           # Sora's natural voice (Google Cloud Chirp 3 HD); empty keeps the free Kokoro voice.
           GOOGLE_TTS_API_KEY: ${{ secrets.GOOGLE_TTS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GOOGLE_TTS_VOICE: ${{ vars.LRMAGENT_GOOGLE_VOICE }}
           # OpenRouter is off (its credit ran out, 402); set the LRMAGENT_USE_OPENROUTER variable to "true" to bring it back.
           USE_OPENROUTER: ${{ vars.LRMAGENT_USE_OPENROUTER }}
@@ -221,8 +222,9 @@ jobs:
             && cp .env.whatsapp .env.teammates \
             && { test -s .env.sandbox || printf "SANDBOX_TOKEN=%s\n" "$(openssl rand -hex 32)" > .env.sandbox; }'
           # The voice service's own file, so the Google key is not shared with the gateway or teammates.
-          { printf 'GOOGLE_TTS_API_KEY=%s\n' "$GOOGLE_TTS_API_KEY"; [[ -n "$GOOGLE_TTS_VOICE" ]] && printf 'GOOGLE_TTS_VOICE=%s\n' "$GOOGLE_TTS_VOICE"; true; } \
+          { printf 'GOOGLE_TTS_API_KEY=%s\n' "$GOOGLE_TTS_API_KEY"; [[ -n "$GROQ_API_KEY" ]] && printf 'GROQ_API_KEY=%s\n' "$GROQ_API_KEY"; [[ -n "$GOOGLE_TTS_VOICE" ]] && printf 'GOOGLE_TTS_VOICE=%s\n' "$GOOGLE_TTS_VOICE"; true; } \
             | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.voice'
+          [[ -n "$GROQ_API_KEY" ]] && echo "Speech-to-text: Groq Whisper large-v3-turbo, local model as fallback" >> "$GITHUB_STEP_SUMMARY" || true
           [[ -n "$GOOGLE_TTS_API_KEY" ]] && echo "Sora's voice: Google Chirp 3 HD (${GOOGLE_TTS_VOICE:-Callirrhoe}), Kokoro as fallback" >> "$GITHUB_STEP_SUMMARY" || true
           # The DeepSeek teammate uses the same DeepSeek key as the agents.
           if [[ -n "$DEEPSEEK_API_KEY" ]]; then printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY" | $SSH "$VPS" 'umask 077 && cat >> ~/cowagent/.env.teammates'; fi

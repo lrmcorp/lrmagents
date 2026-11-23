@@ -443,9 +443,9 @@ window.SoraGesture = (() => {
     S.busy = true; setState('thinking', 'understanding');
     try {
       const live = await liveStop();
-      // The browser's own transcript is used at once (Whisper on the server takes about 6 s);
-      // only an unsure or empty one goes to the server.
-      if (live && (live.conf === 0 || live.conf >= 0.6)) { await ask(live.text, { lang: live.lang }); return; }
+      // With cloud Whisper on the server (under a second, far more accurate) the recording goes there;
+      // otherwise the browser's own transcript is used at once (the local model takes about 6 s).
+      if (!S.cloudStt && live && (live.conf === 0 || live.conf >= 0.6)) { await ask(live.text, { lang: live.lang }); return; }
       if (live?.text) $('#you').textContent = `“${live.text}…”`;
       const lang = $('#lang').value;
       const r = await fetch('/api/lrm/voice?op=stt', { method: 'POST', body: blob, headers: lang ? { 'X-Lang': lang } : {}, credentials: 'same-origin' });
@@ -928,6 +928,7 @@ window.SoraGesture = (() => {
     if (!d.voice?.ok) toast('The voice service is starting or not reachable yet; typed questions still work.');
     // Sora's natural (Google) voice is quick enough to be the default unless the owner picked one.
     if (d.voice?.google && store.get('lrm_p_voice', null) == null) $('#voice').value = 'server';
+    S.cloudStt = !!d.voice?.stt_cloud;
     setState('idle');
   }).catch(() => { setState('idle'); toast('Sign in to the LRMagent console first.'); });
 })();

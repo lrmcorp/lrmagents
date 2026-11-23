@@ -115,6 +115,36 @@ def media_panels(text, workspace=None):
     return re.sub(r"\n{3,}", "\n\n", said).strip(), panels
 
 
+def vocabulary():
+    """Names the owner says (agents, the company), for speech-to-text and to fix near-misses."""
+    names = ["LRMagent", "Lorium", "Sora", "Reyner", "Liando Reyfort Management"]
+    try:
+        from agent.registry import get_agent_registry
+        names += [p.name for p in get_agent_registry().list() if getattr(p, "name", "")]
+    except Exception:
+        pass
+    seen, out = set(), []
+    for n in names:
+        if n and n.lower() not in seen:
+            seen.add(n.lower())
+            out.append(n)
+    return out
+
+
+def fix_names(text, names=None):
+    """A misheard name ("Morium") becomes the real one ("Lorium"): words of 5+ letters only."""
+    import difflib
+    words = {w.lower(): w for n in (names if names is not None else vocabulary()) for w in re.findall(r"[A-Za-z]{5,}", n)}
+
+    def fix(m):
+        w = m.group(0)
+        if w.lower() in words:
+            return w
+        best = difflib.get_close_matches(w.lower(), list(words), n=1, cutoff=0.8)
+        return words[best[0]] if best and abs(len(best[0]) - len(w)) <= 1 else w
+    return re.sub(r"[A-Za-z]{5,}", fix, text or "")
+
+
 def _save_image(data_url, ws):
     m = re.match(r"data:image/(jpeg|png|webp);base64,(.+)$", data_url or "", re.S)
     if not m:
@@ -291,6 +321,7 @@ def chat(text, image=None, lang=None, spoken_only=False):
     if profile is None:
         raise RuntimeError("the personal assistant does not exist yet")
     # Deterministic quick asks skip the model entirely (not when a camera frame is attached).
+    text = fix_names(text) if text else text
     quick = reflex(text, lang) if image is None else None
     if quick is not None:
         return {"text": quick["text"], "hud": quick["hud"], "agent": {"id": profile.id, "name": profile.name}}
@@ -398,8 +429,13 @@ class LrmVoiceHandler:
                 if not data or len(data) > 25 << 20:
                     return _json("400 Bad Request", {"error": "send 1 byte to 25 MB of audio"})
                 lang = web.ctx.env.get("HTTP_X_LANG") or ""
-                body, _ = _voice("/stt", data=data, headers={"Content-Type": "application/octet-stream", **({"X-Lang": lang} if lang else {})}, timeout=300)
-                return _json("200 OK", json.loads(body))
+                from urllib.parse import quote
+                prompt = quote(", ".join(vocabulary()) + ".")
+                body, _ = _voice("/stt", data=data, headers={"Content-Type": "application/octet-stream", "X-Prompt": prompt,
+                                                             **({"X-Lang": lang} if lang else {})}, timeout=300)
+                result = json.loads(body)
+                result["text"] = fix_names(result.get("text") or "")
+                return _json("200 OK", result)
             req = json.loads(web.data() or b"{}")
             if op == "tts":
                 body, headers = _voice("/tts", data=json.dumps({"text": str(req.get("text") or "")[:4000], "lang": req.get("lang"),
