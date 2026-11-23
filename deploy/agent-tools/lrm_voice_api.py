@@ -2,7 +2,7 @@
 
 GET                       -> {agent: {id, name}, voice: {...health}}
 POST ?op=stt   (audio)    -> {text, language}           speech to text (voice service)
-POST ?op=tts   {text,lang}-> audio/wav                   the assistant's voice (voice service)
+POST ?op=tts   {text,lang}-> audio/mpeg                  the assistant's voice (voice service)
 POST ?op=chat  {text, image?, lang?} -> {text, speech, hud, agent}
      One turn with the personal agent in today's voice conversation; an image (a camera
      frame, data URL) is saved in its workspace and handed to its vision tool.
@@ -16,6 +16,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import web
 
@@ -165,6 +166,76 @@ def reflex(text, lang=None):
     return {"text": said, "hud": []}
 
 
+# Fast lane: small talk and general questions go straight to the model (under a second);
+# the full agent (tools, memory, about 8 s) only when the model says the turn needs it.
+FAST = os.environ.get("LRMAGENT_VOICE_FAST", "on").lower() not in ("0", "off", "false", "no")
+FAST_MODEL = os.environ.get("LRMAGENT_VOICE_FAST_MODEL", "deepseek-flash")
+HANDOFF = "[[AGENT]]"
+_HISTORY = {"day": "", "turns": []}
+_FAST_RULES = """You are {name}, the owner's personal assistant at Liando Reyfort Management, talking by voice.
+Warm, calm, quick, like a trusted chief of staff; light humour.
+Answer in one to three short spoken sentences, in the language the owner used, with no markdown, lists or emoji.
+Now: {now} (Asia/Jakarta).
+
+Answer yourself only small talk, general knowledge, advice, explanations, translations, maths and ideas.
+Reply with exactly {handoff} and nothing else when the turn needs anything you do not have here: the owner's
+email, calendar, reports, branches, staff, WhatsApp, reminders, tasks, files, the web or current news, the
+camera, the owner's personal notes or past conversations, or any action to take.
+
+What you know about the owner:
+{owner}"""
+
+
+def _remember(day, user, reply):
+    if _HISTORY["day"] != day:
+        _HISTORY.update(day=day, turns=[])
+    _HISTORY["turns"] = (_HISTORY["turns"] + [{"role": "user", "content": user}, {"role": "assistant", "content": reply}])[-12:]
+
+
+def _owner_notes(profile):
+    try:
+        return (Path(profile.workspace) / "USER.md").read_text(encoding="utf-8")[:2500].strip()
+    except Exception:
+        return ""
+
+
+def fast_reply(text, lang, profile, post=None):
+    """The model's own spoken answer, or None when the turn needs the full agent (or the lane is down)."""
+    from config import conf
+    key = conf().get("deepseek_api_key")
+    if not (FAST and key):
+        return None
+    base = (conf().get("deepseek_api_base") or "https://api.deepseek.com/v1").rstrip("/")
+    day = datetime.date.today().isoformat()
+    turns = _HISTORY["turns"] if _HISTORY["day"] == day else []
+    now = datetime.datetime.now(_WIB)
+    system = _FAST_RULES.format(name=profile.name, handoff=HANDOFF, owner=_owner_notes(profile) or "(nothing yet)",
+                                now=f"{_ID_DAYS[now.weekday()]} {now:%d-%m-%Y %H:%M}")
+    if lang:
+        system += f"\nThe owner spoke {({'id': 'Bahasa Indonesia', 'zh': 'Mandarin', 'en': 'English'}).get(lang, lang)}."
+    body = {"model": FAST_MODEL, "max_tokens": 400, "messages": [{"role": "system", "content": system}, *turns, {"role": "user", "content": text}]}
+    started = time.time()
+    try:
+        if post is None:
+            request = urllib.request.Request(base + "/chat/completions", data=json.dumps(body).encode(), method="POST",
+                                             headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+            with urllib.request.urlopen(request, timeout=20) as r:
+                reply = json.loads(r.read())
+        else:
+            reply = post(body)
+        answer = str(reply["choices"][0]["message"].get("content") or "").strip()
+    except Exception as e:  # noqa: BLE001 - the agent answers instead
+        logger.warning(f"[Voice] fast lane failed, using the agent: {type(e).__name__}: {str(e)[:120]}")
+        return None
+    if not answer or "[[AGENT" in answer or answer.strip("[]. ").upper() == "AGENT":
+        logger.info(f"[Voice] fast lane handed the turn to the agent after {time.time() - started:.1f}s")
+        return None
+    answer = split_hud(answer)[0]
+    _remember(day, text, answer)
+    logger.info(f"[Voice] fast lane answered in {time.time() - started:.1f}s ({len(answer)} chars)")
+    return answer
+
+
 def chat(text, image=None, lang=None, spoken_only=False):
     from agent import lrm_personal
     from config import conf
@@ -176,6 +247,10 @@ def chat(text, image=None, lang=None, spoken_only=False):
     quick = reflex(text, lang) if image is None else None
     if quick is not None:
         return {"text": quick["text"], "hud": quick["hud"], "agent": {"id": profile.id, "name": profile.name}}
+    if image is None and text:
+        said = fast_reply(text, lang, profile)
+        if said:
+            return {"text": said, "hud": [], "agent": {"id": profile.id, "name": profile.name}}
     if spoken_only:
         # The iPhone only plays the voice, so a hud block would be tokens nobody sees.
         parts = ["[Voice call from the owner's iPhone: answer at once in one to three short spoken sentences, like a person "
@@ -189,6 +264,10 @@ def chat(text, image=None, lang=None, spoken_only=False):
         path = _save_image(image, profile.workspace)
         if path:
             parts.append(f"[The owner is showing you their camera; the frame is saved at {path}. Look at it with the vision tool.]")
+    day_turns = _HISTORY["turns"] if _HISTORY["day"] == datetime.date.today().isoformat() else []
+    if day_turns:
+        said = "\n".join(f"{'Owner' if t['role'] == 'user' else 'You'}: {t['content']}" for t in day_turns[-6:])
+        parts.append(f"[Earlier in this voice chat, answered without you:\n{said}]")
     parts.append(text or "What do you see?")
     port = int(conf().get("web_port") or os.environ.get("WEB_PORT") or 9899)
     day = datetime.date.today().isoformat()
@@ -228,6 +307,8 @@ def chat(text, image=None, lang=None, spoken_only=False):
         raise RuntimeError(why or f"the assistant answered {e.code}")
     logger.info(f"[Voice] spoken turn answered in {time.time() - began:.1f}s ({len(answer)} chars)")
     spoken, panels = split_hud(answer)
+    if text and spoken:
+        _remember(day, text, spoken)
     return {"text": spoken, "hud": panels, "agent": {"id": profile.id, "name": profile.name}}
 
 

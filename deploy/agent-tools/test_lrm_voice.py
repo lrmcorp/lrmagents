@@ -93,5 +93,44 @@ check("other unclosed fence not spoken", _voice_src.split_hud("Here:\n```json\n{
 check("closed fence kept", _voice_src.split_hud("Run ```ls``` then go.")[0] == "Run ```ls``` then go.")
 check("hud bad json ignored", _voice_src.split_hud("Hi.\n```hud\nnot json\n```")[0] == "Hi.")
 
+
+# Fast lane: the model's own answer, or a hand-off to the full agent.
+import tempfile  # noqa: E402
+_conf = {"deepseek_api_key": "sk-test"}
+_mod("config").conf = lambda: _conf
+_ws = tempfile.mkdtemp()
+open(os.path.join(_ws, "USER.md"), "w").write("Owner name: Budi.")
+_prof = types.SimpleNamespace(id="personal", name="Sora", workspace=_ws)
+_sent = []
+
+
+def _post(answer):
+    def post(body):
+        _sent.append(body)
+        return {"choices": [{"message": {"content": answer}}]}
+    return post
+
+
+_voice_src._HISTORY.update(day="", turns=[])
+got = _voice_src.fast_reply("Siapa nama saya?", "id", _prof, post=_post("Nama Anda Budi."))
+check("fast lane answers", got == "Nama Anda Budi.")
+check("fast lane prompt has the owner's notes and language", "Owner name: Budi." in _sent[-1]["messages"][0]["content"]
+      and "Bahasa Indonesia" in _sent[-1]["messages"][0]["content"])
+_voice_src.fast_reply("Dan kabarmu?", None, _prof, post=_post("Baik."))
+check("fast lane keeps the conversation", [m["content"] for m in _sent[-1]["messages"][1:]] ==
+      ["Siapa nama saya?", "Nama Anda Budi.", "Dan kabarmu?"])
+check("hand-off to the agent", _voice_src.fast_reply("Ada email baru?", None, _prof, post=_post("[[AGENT]]")) is None)
+check("bare AGENT is a hand-off too", _voice_src.fast_reply("Cek kalender", None, _prof, post=_post("AGENT")) is None)
+check("a word containing agent is not", _voice_src.fast_reply("Apa itu travel agent?", None, _prof, post=_post("Travel agent adalah agen perjalanan.")) is not None)
+
+
+def _boom(body):
+    raise OSError("network down")
+
+
+check("fast lane failure falls back", _voice_src.fast_reply("Halo", None, _prof, post=_boom) is None)
+_conf.pop("deepseek_api_key")
+check("no key, no fast lane", _voice_src.fast_reply("Halo", None, _prof, post=_post("x")) is None)
+
 print("FAILED" if PASS["f"] else "ALL PASSED")
 sys.exit(1 if PASS["f"] else 0)
