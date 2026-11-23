@@ -485,6 +485,8 @@
     function lrmFillMembers(box, key, jid) {
         const list = box.querySelector('.lrm-ment-list');
         const wasError = box.dataset.state === 'error';
+        // After a failure the stored numbers are already chips, so a chip removed before Retry stays removed.
+        if (wasError) box.lrmSaved = [];
         box.dataset.state = 'loading';
         list.innerHTML = '<small class="lrm-ment-note">Loading the group\'s members…</small>';
         lrmMentionLimit(box);
@@ -530,7 +532,7 @@
         box.dataset.key = key; box.dataset.jid = jid; box.lrmSaved = saved;
         box.innerHTML = `<div class="lrm-ment-head"><span class="lrm-recv-title">Mention in the group</span><small class="lrm-ment-count" aria-live="polite"></small></div>
             <div class="lrm-ment-list"></div>
-            <div class="lrm-ment-add"><input type="tel" inputmode="tel" placeholder="+62… add a number" aria-label="Add a number to mention" aria-describedby="lrm-ment-hint"><button type="button" class="lrm-ment-addbtn">Add</button></div>
+            <div class="lrm-ment-add"><input type="tel" inputmode="tel" class="px-3 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500" placeholder="+62… add a number" aria-label="Add a number to mention" aria-describedby="lrm-ment-hint"><button type="button" class="lrm-ment-addbtn">Add</button></div>
             <small class="lrm-ment-hint" id="lrm-ment-hint" role="status" hidden></small>
             <div class="lrm-ment-chips"></div>
             <small class="lrm-ment-full" hidden>That's the limit of ${LRM_MENTION_MAX} per message. Untick someone to add another.</small>
