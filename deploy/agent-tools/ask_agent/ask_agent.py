@@ -4,7 +4,7 @@ Lorium (the lead) collects each team's figures from CFO, HRD, Operations and the
 Sora (the personal assistant) gets reports for the owner. Only in the owner's own chats
 and the scheduled tasks they set up. Sora is never asked by the other agents: the owner's
 personal matters stay with her. The other agent answers in a separate conversation
-(lrm-report:<agent>:<day>), so its regular chats are not mixed up, and it sees only the
+(lrm-report:<agent>:<asker>:<day>), so its regular chats are not mixed up, and it sees only the
 question, not the conversation around it.
 """
 import datetime
@@ -89,7 +89,8 @@ class AskAgent(BaseTool):
         token = str(conf().get("external_api_token") or "")
         port = int(conf().get("web_port") or os.environ.get("WEB_PORT") or 9899)
         day = datetime.date.today().isoformat()
-        body = {"agent_id": target.id, "conversation_id": f"lrm-report:{target.id}:{day}", "stream": False,
+        # One conversation per asker and day: Sora's and Lorium's questions must not share a history.
+        body = {"agent_id": target.id, "conversation_id": f"lrm-report:{target.id}:{me or 'default'}:{day}", "stream": False,
                 "messages": [{"role": "user", "content": f"[{caller} asks on the owner's behalf. Answer with the data and facts asked for, "
                                                          f"as a title and points; say plainly what you could not get and why.]\n{question}"}]}
         request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", method="POST", data=json.dumps(body).encode(),

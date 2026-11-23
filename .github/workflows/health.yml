@@ -6,25 +6,45 @@ on:
   workflow_dispatch:
 
 permissions:
-  issues: write
+  contents: read
 
 concurrency:
   group: lrmagent-health
   cancel-in-progress: false
 
 jobs:
+  # GitHub turns off scheduled workflows in a public repo after 60 days without activity;
+  # re-enabling them once a day resets that clock (for the weekly update check too).
+  keepalive:
+    if: ${{ github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Keep the schedule enabled
+        run: |
+          [[ "$(date -u +%H%M)" < 0015 ]] || exit 0
+          for wf in health.yml updates.yml; do gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/enable"; done
+
   check:
     if: ${{ vars.VPS_DEPLOY_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
     env:
       VPS: ubuntu@43.152.240.47
       AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.hasseedev.com' }}
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       TITLE: 'LRMagent health alert'
+      LABEL: lrmagent-health
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Collect problems
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -33,31 +53,42 @@ jobs:
           printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/ln_vps"
           cp deploy/known_hosts "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/ln_vps" "$HOME/.ssh/known_hosts"
-          problems="$(ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "$VPS" 'bash ~/cowagent/deploy/healthcheck.sh' 2>&1)" \
-            || problems="Could not reach the VPS over SSH: ${problems:-no output}"
+          # The repo is public: only check names reach the log and the issue, never the details
+          # (agent ids, paths, error output). Run deploy/healthcheck.sh on the VPS to read those.
+          if out="$(ssh -i "$HOME/.ssh/ln_vps" -o StrictHostKeyChecking=yes -o ConnectTimeout=15 "$VPS" 'bash ~/cowagent/deploy/healthcheck.sh' 2>/dev/null)"; then
+            checks="$(printf '%s\n' "$out" | sed -n 's/^\([a-z][a-z-]*\): .*/\1/p')"
+            # A problem line without a check name still counts, under a generic name.
+            if printf '%s\n' "$out" | sed '/^$/d' | grep -qv '^[a-z][a-z-]*: '; then checks="${checks:+$checks$'\n'}other"; fi
+          else
+            checks="ssh"
+          fi
           host="${AGENT_DOMAIN%%,*}"; host="${host// /}"
           if getent ahostsv4 "$host" | grep -q '43.152.240.47'; then
-            curl -fsS --connect-timeout 5 --max-time 15 --retry 2 --retry-all-errors -o /dev/null "https://$host/" \
-              || problems="${problems:+$problems$'\n'}https://$host is not reachable from the internet."
+            curl -fsS --connect-timeout 5 --max-time 15 --retry 2 --retry-all-errors -o /dev/null "https://$host/" 2>/dev/null \
+              || checks="${checks:+$checks$'\n'}public-url"
           fi
-          printf '%s\n' "$problems" | sed '/^$/d' > problems.txt
-          echo "Problems:"; cat problems.txt
+          printf '%s\n' "$checks" | sed '/^$/d' | sort -u > problems.txt
+          echo "Failed checks: $(paste -sd ' ' problems.txt)"
       # One open issue at a time: opened on the first failure, commented only when
-      # the problem list changes, closed once everything is healthy again.
+      # the list of failed checks changes, closed once everything is healthy again.
+      # Only an issue the workflow itself opened counts, so nobody else's issue is touched.
       - name: Open, update or close the alert issue
         run: |
-          issue="$(gh issue list --state open --search "\"$TITLE\" in:title" --json number,title --jq "map(select(.title == \"$TITLE\")) | .[0].number // empty")"
+          gh label create "$LABEL" --color B60205 --description "Opened by the LRMagent health workflow" >/dev/null 2>&1 || true
+          issue="$(gh api "repos/$GH_REPO/issues?state=open&labels=$LABEL&creator=github-actions%5Bbot%5D&per_page=20" \
+            --jq "map(select(.user.login == \"github-actions[bot]\" and .title == \"$TITLE\" and (.pull_request | not))) | .[0].number // empty")"
           if [[ -s problems.txt ]]; then
-            body="$(printf 'Detected %s UTC:\n\n' "$(date -u '+%Y-%m-%d %H:%M')"; sed 's/^/- /' problems.txt)"
+            body="$(printf 'Detected %s UTC:\n\n' "$(date -u '+%Y-%m-%d %H:%M')"; sed "s|^|- check failed: |; s|\$|, see $GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID|" problems.txt)"
             if [[ -z "$issue" ]]; then
-              gh issue create --title "$TITLE" --body "$body"$'\n\nThis issue closes itself when the next check is healthy.'
+              gh issue create --title "$TITLE" --label "$LABEL" --body "$body"$'\n\nThis issue closes itself when the next check is healthy.'
             else
-              last="$(gh issue view "$issue" --json comments,body --jq '(.comments | last | .body) // .body')"
-              if [[ "$(printf '%s' "$last" | grep '^- ' )" != "$(sed 's/^/- /' problems.txt)" ]]; then
+              last="$(gh api "repos/$GH_REPO/issues/$issue/comments?per_page=100" --jq 'map(select(.user.login == "github-actions[bot]")) | last | .body // empty')"
+              [[ -n "$last" ]] || last="$(gh api "repos/$GH_REPO/issues/$issue" --jq .body)"
+              if [[ "$(printf '%s' "$last" | sed -n 's/^- check failed: \([a-z-]*\),.*/\1/p')" != "$(cat problems.txt)" ]]; then
                 gh issue comment "$issue" --body "$body"
               fi
             fi
-            echo "::warning::$(paste -sd ' | ' problems.txt)"
+            echo "::warning::Failed checks: $(paste -sd ' ' problems.txt)"
           elif [[ -n "$issue" ]]; then
             gh issue close "$issue" --comment "Healthy again at $(date -u '+%Y-%m-%d %H:%M') UTC."
           fi

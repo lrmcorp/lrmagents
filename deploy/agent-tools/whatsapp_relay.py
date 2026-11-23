@@ -20,7 +20,8 @@ SESSION_PREFIX = "openai:conversation:whatsapp:"
 GATEWAY_URL = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/")
 
 
-_AT_NUMBER = re.compile(r"@(\+?\d{8,15})\b")
+# Not after a word character or dot (budi@62812…, order@2026…), and never a local 0… number.
+_AT_NUMBER = re.compile(r"(?<![\w.])@(\+?[1-9]\d{7,14})\b")
 
 
 def _task_mentions(action):
@@ -90,10 +91,14 @@ class WhatsAppRelay:
         text = str(getattr(reply, "content", "") or "").strip()
         if not text:
             return
-        self._post(text, swallow_refusal=True, mentions=_mentions_for(self.action, text))
-        self.delivery_note = _mention_note(self.last_result)
+        self.last_result = {}
+        refused = self._post(text, swallow_refusal=True, mentions=_mentions_for(self.action, text))
+        # A refusal is final (no retry), so History must say it was not delivered.
+        self.delivery_note = (f"\n\nNot delivered: the WhatsApp gateway refused it ({refused})" if refused
+                              else _mention_note(self.last_result))
 
     def _post(self, text, swallow_refusal=False, mentions=None):
+        """Raises on failure; with swallow_refusal a 400/403 returns its reason instead."""
         token = str(conf().get("external_api_token") or "")
         payload = {"agentId": self.agent_id, "chat": self.chat, "text": text}
         if mentions:
@@ -116,10 +121,16 @@ class WhatsAppRelay:
                     self.last_result = {}
         except urllib.error.HTTPError as e:
             if swallow_refusal and e.code in (400, 403):
-                logger.warning(f"[WhatsAppRelay] gateway refused {self.agent_id}/...{self.chat[-8:]}: {e.read()[:200]!r}")
-                return
+                body = e.read()[:200]
+                logger.warning(f"[WhatsAppRelay] gateway refused {self.agent_id}/...{self.chat[-8:]}: {body!r}")
+                try:
+                    why = json.loads(body or b"{}").get("error") or ""
+                except Exception:
+                    why = ""
+                return (why or f"gateway answered {e.code}")[:160]
             raise
         logger.info(f"[WhatsAppRelay] delivered scheduled message to {self.agent_id}/...{self.chat[-8:]}")
+        return ""
 
 
 def relay_for(receiver):
@@ -268,9 +279,15 @@ class FanOut:
                 transient = True
         self.delivery_note = "\n\nDelivered: " + ", ".join(
             f"{n} {'✓' + note if ok else '✗ (' + why + ')'}" for n, ok, why, note in self.results)
+        delivered = any(ok for _, ok, _, _ in self.results)
+        if transient and delivered:
+            # Raising would make the scheduler re-run the whole agent task (it does not just
+            # re-deliver), so the others would get a second, different report: say so instead.
+            self.delivery_note += "\nNot retried: a recipient was unreachable (offline?); send it to them again if needed."
+            logger.warning(f"[WhatsAppRelay] fan-out partly failed, not retried: {self.delivery_note.strip()}")
         logger.info(f"[WhatsAppRelay] fan-out {self.delivery_note.strip()}")
         # Nobody got it: retry only when a failure may pass (offline), not when every one was refused.
-        if self.results and not any(ok for _, ok, _, _ in self.results) and transient:
+        if self.results and not delivered and transient:
             raise RuntimeError("no recipient got it: " + "; ".join(f"{n}: {why}" for n, _, why, _ in self.results))
 
 

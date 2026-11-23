@@ -202,12 +202,14 @@ function terminal(teammate, shell) {
 }
 
 // ---- task detail ----
+const pollDelay = (failures) => Math.min(30000, 2000 * 2 ** failures);
 async function showJob(id) {
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
   overlay.innerHTML = '<div class="modal"><header><b>Task</b><button data-stop class="danger" hidden><i class="fas fa-stop"></i> Stop</button><button data-close><i class="fas fa-xmark"></i> Close</button></header><div class="result" hidden></div><pre class="log">Loading…</pre></div>';
   document.body.appendChild(overlay);
   let timer;
+  let failures = 0;
   const close = () => { clearTimeout(timer); overlay.remove(); load(); };
   $('[data-close]', overlay).onclick = close;
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
@@ -226,8 +228,14 @@ async function showJob(id) {
       const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
       log.textContent = job.log || '(no output yet)';
       if (atEnd) log.scrollTop = log.scrollHeight;
-      if (!finished) timer = setTimeout(tick, 2000);
-    } catch (e) { $('.log', overlay).textContent = e.message; }
+      failures = 0;
+      if (!finished && overlay.isConnected) timer = setTimeout(tick, pollDelay(failures));
+    } catch (e) {
+      // A dropped request (restart, flaky network) retries with backoff; the log stays as it was.
+      failures += 1;
+      if (failures === 1) toast(`Could not load the task (${e.message}); retrying.`, true);
+      if (overlay.isConnected) timer = setTimeout(tick, pollDelay(failures));
+    }
   };
   tick();
 }

@@ -55,7 +55,11 @@ def split_hud(text):
             panels += data if isinstance(data, list) else [data]
         except ValueError:
             continue
-    spoken = HUD.sub("", text or "").strip()
+    spoken = HUD.sub("", text or "")
+    # A reply cut by max_tokens leaves an unclosed fence (the HUD JSON): never speak it.
+    if spoken.count("```") % 2:
+        spoken = spoken[:spoken.rfind("```")]
+    spoken = spoken.strip()
     clean = []
     for p in panels[:12]:
         if isinstance(p, dict) and p.get("type") in ("stat", "chart", "list", "image", "text"):

@@ -73,6 +73,9 @@ sp, pn = _voice_src.split_hud('All good today.\n```hud\n[{"type":"stat","title":
 check("hud spoken clean", sp == "All good today.")
 check("hud panels filtered", [p["type"] for p in pn] == ["stat", "list"])
 check("hud none", _voice_src.split_hud("Just talking, no panels.") == ("Just talking, no panels.", []))
+check("hud cut by max_tokens not spoken", _voice_src.split_hud('All good.\n```hud\n[{"type":"stat","ti') == ("All good.", []))
+check("other unclosed fence not spoken", _voice_src.split_hud("Here:\n```json\n{\"a\": 1") == ("Here:", []))
+check("closed fence kept", _voice_src.split_hud("Run ```ls``` then go.")[0] == "Run ```ls``` then go.")
 check("hud bad json ignored", _voice_src.split_hud("Hi.\n```hud\nnot json\n```")[0] == "Hi.")
 
 print("FAILED" if PASS["f"] else "ALL PASSED")

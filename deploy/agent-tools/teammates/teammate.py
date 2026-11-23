@@ -13,7 +13,6 @@ import json
 import os
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 
 from agent.tools.base_tool import BaseTool, ToolResult
@@ -21,8 +20,6 @@ from common.log import logger
 from config import conf
 
 TEAMMATES_URL = os.environ.get("TEAMMATES_URL", "http://teammates:8090").rstrip("/")
-GATEWAY_URL = os.environ.get("WHATSAPP_GATEWAY_URL", "http://whatsapp-gateway:8080").rstrip("/")
-WHATSAPP_PREFIX = "openai:conversation:whatsapp:"
 MAX_WAIT = 240
 
 
@@ -76,21 +73,13 @@ class AskTeammate(BaseTool):
 
     def _owner(self, session_id):
         """(allowed, notify target or None, reason)."""
-        if not session_id.startswith("openai:"):
-            return True, None, ""  # the console: only the owner can sign in to it
-        if not session_id.startswith(WHATSAPP_PREFIX):
-            return False, None, "Teammates use the owner's personal plans, so they can't be used from the API."
-        agent_id, _, chat = session_id[len(WHATSAPP_PREFIX):].partition(":")
-        query = urllib.parse.urlencode({"agent": agent_id, "chat": chat})
-        try:
-            owner = _call(f"{GATEWAY_URL}/whatsapp/internal/owner?{query}").get("owner") is True
-        except Exception as e:
-            logger.warning(f"[ask_teammate] owner check failed: {e}")
-            owner = False
-        if not owner:
+        # Shared owner check: also resolves scheduled runs to the chat that set the task up.
+        from agent.lrm_owner import owner_session
+        allowed, target = owner_session(session_id)
+        if not allowed:
             return False, None, ("Teammates run on the owner's personal plans, so only the owner can use them: "
                                  "from the LRMagent console or the WhatsApp number's own chat (Message yourself).")
-        return True, {"agentId": agent_id, "chat": chat}, ""
+        return True, target, ""
 
     # Actions
 

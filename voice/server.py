@@ -103,6 +103,7 @@ def detect_lang(text):
 def clean_for_speech(text):
     """Markdown and links are read badly: keep the words."""
     text = re.sub(r"```.*?```", " ", text, flags=re.S)
+    text = re.sub(r"```.*\Z", " ", text, flags=re.S)  # unclosed fence of a cut-off reply
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
     text = re.sub(r"https?://\S+", " link ", text)

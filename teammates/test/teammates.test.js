@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { explain } from '../src/jobs.js';
+import fs from 'node:fs';
+import { explain, runProcess } from '../src/jobs.js';
 import { TEAMMATES, byId, childEnv, codexModels, pickModel, runArgs, safeFolder } from '../src/teammates.js';
 
 test('every teammate has a sign-in command and a run command', () => {
@@ -64,4 +65,42 @@ test('codexModels: the plan\'s models from the Codex cache, hidden ones left out
   const raw = JSON.stringify({ fetched_at: 'x', models: [{ slug: 'gpt-a', display_name: 'A' }, { slug: 'gpt-b', visibility: 'hide' }, { slug: 'gpt-a' }, 'gpt-c'] });
   assert.deepEqual(codexModels(raw), [{ id: 'gpt-a', name: 'A' }, { id: 'gpt-c', name: 'gpt-c' }]);
   assert.deepEqual(codexModels('not json'), []);
+});
+
+// A CLI that ignores SIGTERM must still end, or its teammate's queue blocks forever.
+const stubborn = ['node', '-e', "process.on('SIGTERM', () => {}); console.log('up'); setInterval(() => {}, 1000)"];
+
+test('runProcess: the time limit escalates to SIGKILL when SIGTERM is ignored', async () => {
+  let timedOut = false;
+  const run = runProcess(stubborn, { env: process.env, timeoutMs: 300, graceMs: 200, onTimeout: () => { timedOut = true; } });
+  const r = await run.done;
+  assert.equal(timedOut, true);
+  assert.equal(run.proc.signalCode, 'SIGKILL');
+  assert.match(r.out, /up/);
+});
+
+test('runProcess: terminate ends a run that ignores SIGTERM', async () => {
+  const run = runProcess(stubborn, { env: process.env, graceMs: 200 });
+  await new Promise((r) => setTimeout(r, 300));
+  run.terminate();
+  const started = Date.now();
+  await run.done;
+  assert.ok(Date.now() - started < 2000);
+});
+
+test('runProcess: a normal exit keeps its code and output', async () => {
+  const r = await runProcess(['node', '-e', "console.log('hi'); process.exit(3)"], { env: process.env }).done;
+  assert.equal(r.code, 3);
+  assert.equal(r.out.trim(), 'hi');
+});
+
+test('task log modal: keeps polling with backoff after a failed request', () => {
+  const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const line = html.match(/const pollDelay = .*;/);
+  assert.ok(line, 'pollDelay is defined');
+  const pollDelay = new Function(`${line[0]} return pollDelay;`)();
+  assert.equal(pollDelay(0), 2000);
+  assert.ok(pollDelay(1) > pollDelay(0));
+  assert.equal(pollDelay(20), 30000);
+  assert.match(html, /timer = setTimeout\(tick, pollDelay\(failures\)\)/);
 });

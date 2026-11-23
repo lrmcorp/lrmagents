@@ -9,6 +9,7 @@ as refused. ``record`` writes every call to the activity log afterwards.
 Installed as agent/lrm_activity.py by the LRMagent image.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -54,9 +55,10 @@ def _connect():
     conn.row_factory = sqlite3.Row
     if not _ready:
         conn.executescript(_SCHEMA)
-        for table in ("activity", "approvals"):  # the scheduled run a row belongs to (agent/lrm_task_runs.py)
+        for table, column in (("activity", "run"), ("approvals", "run"), ("approvals", "key")):
+            # run: the scheduled run a row belongs to (agent/lrm_task_runs.py); key: approval_key()
             try:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN run TEXT")
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
             except sqlite3.OperationalError:
                 pass
         _ready = True
@@ -88,18 +90,49 @@ _RISKY_WEB = re.compile(r"(?i)\b(buy|purchase|pay|payment|checkout|place order|o
 # Signing in is how agents reach the owner's data: never a step to approve (it held every
 # login, and with nobody watching a scheduled report, the run until the request expired).
 _SIGN_IN = re.compile(r"(?i)\b(sign[ -]?in|log[ -]?in|login|masuk|remember me|keep me signed in)\b")
-_MONEY_OR_LOSS = re.compile(r"(?i)\b(buy|purchase|pay|payment|checkout|order|transfer|send money|delete|remove|unsubscribe|publish|post)\b")
+_MONEY_OR_LOSS = re.compile(r"(?i)\b(buy|purchase|pay|payment|checkout|order|transfer|send|delete|remove|unsubscribe|publish|post|"
+                            r"confirm\w*|subscri(be|bes|bing|ption))\b")
 
 
-def redact(text, limit=400):
+def redact(text, limit=400, keep=None):
+    """Secrets masked; long text shown as head … tail (and ``keep``, a part that must stay visible)."""
     text = _SECRET.sub("[secret]", str(text or ""))
-    return text if len(text) <= limit else text[: limit - 1] + "…"
+    if len(text) <= limit:
+        return text
+    tail = limit // 3
+    if keep:
+        keep = _SECRET.sub("[secret]", keep)[: limit // 3]
+        head = text[: limit - tail - len(keep) - 6]
+        if keep not in head and keep not in text[-tail:]:
+            return f"{head} … {keep} … {text[-tail:]}"
+    return f"{text[: limit - tail - 3]} … {text[-tail:]}"
+
+
+def _risky_part(command):
+    for pattern, _ in _RISKY_COMMANDS:
+        m = re.search(pattern, command)
+        if m:
+            return command[m.start(): m.end() + 80]
+    return None
+
+
+def approval_key(tool, args):
+    """The whole call, hashed: two calls share an approval only when every argument is the same."""
+    blob = json.dumps({"tool": tool, "args": args or {}}, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def summarize(tool, args):
     args = args or {}
     if tool == "bash":
-        return redact(args.get("command", ""))
+        command = str(args.get("command", ""))
+        return redact(command, keep=_risky_part(command))
+    if tool == "google":
+        # Recipients and subject always show in full: a long body must not push cc/bcc out of view.
+        head = [f"{k}: {args[k]}" for k in ("action", "to", "cc", "bcc", "attendees", "subject", "title") if args.get(k)]
+        rest = {k: v for k, v in args.items() if k not in ("action", "to", "cc", "bcc", "attendees", "subject", "title")}
+        text = " · ".join(_SECRET.sub("[secret]", str(h)) for h in head)
+        return text + (" · " + redact(json.dumps(rest, ensure_ascii=False, default=str), 300) if rest else "")
     if tool in ("write", "edit", "read", "ls", "search_files"):
         return redact(args.get("path") or args.get("file_path") or args.get("pattern") or json.dumps(args, ensure_ascii=False))
     if tool == "browser":
@@ -152,7 +185,10 @@ def risk(tool, args, mode, refs=None):
             # A sign-in stays un-gated so a scheduled run can still reach the owner's sites,
             # but only a plain click/press/select is exempt — never a submit. Otherwise a
             # hostile page could relabel a "pay/confirm" submit as "login" to skip approval.
-            if _SIGN_IN.search(text) and not _MONEY_OR_LOSS.search(text) and action in ("click", "press", "select"):
+            if _SIGN_IN.search(text) and action in ("click", "press", "select"):
+                # "Log in to confirm subscription": a sign-in label that also pays, sends or deletes still asks.
+                if _MONEY_OR_LOSS.search(text):
+                    return "acts on a website (submit, buy, post or delete)"
                 return ""
             if _RISKY_WEB.search(text) or action == "submit":
                 return "acts on a website (submit, buy, post or delete)"
@@ -350,7 +386,7 @@ def gate(executor, tool_name, arguments, tool_call_id):
         if duplicate:
             executor._lrm_approval = "skipped: delivered by the schedule"
             return duplicate
-        if tool_name == "browser":
+        if tool_name in ("browser", "site_login"):  # site_login types into the same page the owner may be driving
             waited = _wait_for_browser(executor, tool_call_id)
             if waited:
                 return waited
@@ -359,21 +395,28 @@ def gate(executor, tool_name, arguments, tool_call_id):
             return None
         agent_id, session_id, channel = _where(executor)
         summary = summarize(tool_name, arguments)
+        try:  # a click by number: show what the element says, which is what the owner approves
+            label = (getattr(executor, "_lrm_refs", None) or {}).get(int((arguments or {}).get("ref")))
+        except (TypeError, ValueError):
+            label = None
+        if tool_name == "browser" and label:
+            summary = redact(f"{summary} \"{label}\"")
+        key = approval_key(tool_name, {**(arguments or {}), "_label": label} if label else arguments)
         _expire()
         with _lock, _connect() as conn:
-            same = "agent=? AND tool=? AND summary=?"
+            same = "agent=? AND tool=? AND key=?"
             # The same action asked again: a refusal or an unanswered request stays final for 12 hours,
             # and one still waiting is shared instead of asking the owner twice.
             done = conn.execute(f"SELECT * FROM approvals WHERE {same} AND "
                                 "((status='denied') OR (status='expired' AND ts > ?)) ORDER BY ts DESC LIMIT 1",
-                                (agent_id, tool_name, summary, time.time() - EXPIRE_WINDOW)).fetchone()
+                                (agent_id, tool_name, key, time.time() - EXPIRE_WINDOW)).fetchone()
             waiting = None if done else conn.execute(f"SELECT * FROM approvals WHERE {same} AND status='pending' ORDER BY ts DESC LIMIT 1",
-                                                      (agent_id, tool_name, summary)).fetchone()
+                                                      (agent_id, tool_name, key)).fetchone()
             if not done and not waiting:
                 code = _new_code(conn)
-                conn.execute("INSERT INTO approvals (code, ts, agent, session, channel, tool, summary, reason, status, run) "
-                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)",
-                             (code, time.time(), agent_id, session_id, channel, tool_name, summary, why, _run_id(session_id)))
+                conn.execute("INSERT INTO approvals (code, ts, agent, session, channel, tool, summary, reason, status, run, key) "
+                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                             (code, time.time(), agent_id, session_id, channel, tool_name, summary, why, _run_id(session_id), key))
         if done:
             executor._lrm_approval = f"{done['status']} {done['code']} (repeat)"
             what = "refused" if done["status"] == "denied" else "left unanswered"

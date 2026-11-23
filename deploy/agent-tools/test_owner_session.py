@@ -85,5 +85,19 @@ check("sched from group denied", lrm_owner.owner_session("scheduler_run99_t3")[0
 # (b3) an unknown scheduled task is not the owner.
 check("sched unknown task denied", lrm_owner.owner_session("scheduler_run99_nope")[0], False)
 
+# (c) a refused scheduled run is recorded against that run (evidence for lrm_task_output);
+# an allowed one is not.
+import lrm_task_runs  # noqa: E402
+lrm_task_runs.start("scheduler_run7_t3", {"id": "t3"})
+lrm_owner.owner_session("scheduler_run7_t3")
+check("refusal recorded", lrm_task_runs.was_refused("scheduler_run7_t3"), True)
+lrm_task_runs.finish("scheduler_run7_t3")
+check("refusal readable after finish", lrm_task_runs.was_refused(), True)
+_GATEWAY_OWNER["val"] = True
+lrm_task_runs.start("scheduler_run8_t2", {"id": "t2"})
+lrm_owner.owner_session("scheduler_run8_t2")
+check("allowed run not marked", lrm_task_runs.was_refused("scheduler_run8_t2"), False)
+lrm_task_runs.finish("scheduler_run8_t2")
+
 print("FAILED" if PASS["f"] else "ALL PASSED")
 sys.exit(1 if PASS["f"] else 0)

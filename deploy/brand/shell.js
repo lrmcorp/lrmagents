@@ -399,117 +399,244 @@
             return { inst, all, primary, saved };
         } catch { return null; }
     }
+    // The modal is static (closing only hides it), so every add-on box is tied to the task it was built for.
+    function lrmTaskKey() { const s = window.__lrmTask; return s ? `${s.mode || ''}|${s.task?.id || 'new'}` : ''; }
+    function lrmModalOpen() { const o = document.getElementById('task-edit-modal-overlay'); return Boolean(o && !o.classList.contains('hidden')); }
+    const lrmJidOf = (r) => String(r || '').split(':').pop();
     function lrmReceiversBox() {
         const wrap = document.getElementById('task-edit-recipient-wrap');
         let box = document.getElementById('lrm-receivers');
         const st = lrmTaskState();
-        if (!wrap || !st || !st.inst.startsWith('lrm-wa:') || wrap.classList.contains('hidden')) { box?.remove(); return; }
+        if (!wrap || !st || !lrmModalOpen() || !st.inst.startsWith('lrm-wa:') || wrap.classList.contains('hidden')) { box?.remove(); return; }
         const others = st.all.filter((r) => r.receiver !== st.primary);
-        const key = `${st.inst}|${st.primary}|${others.map((r) => r.receiver).join(',')}`;
+        const task = lrmTaskKey();
+        const key = `${task}|${st.inst}|${st.primary}|${others.map((r) => r.receiver).join(',')}`;
         if (box && box.dataset.key === key) return;
-        const ticked = new Set(box ? [...box.querySelectorAll('input:checked')].map((i) => i.value) : st.saved);
+        // Ticks carry over only while the same task stays open (e.g. its recipient list reloaded).
+        const ticked = new Set(box && box.dataset.task === task ? [...box.querySelectorAll('input:checked')].map((i) => i.value) : st.saved);
         if (!box) { box = document.createElement('div'); box.id = 'lrm-receivers'; wrap.after(box); }
-        box.dataset.key = key;
+        box.dataset.key = key; box.dataset.task = task;
         box.innerHTML = '<div class="lrm-recv-title">Also send to</div>' + (others.length
             ? others.map((r) => `<label class="lrm-recv"><input type="checkbox" value="${lrmEsc(r.receiver)}" ${ticked.has(r.receiver) ? 'checked' : ''}><span>${lrmEsc(r.name)}</span><small>${lrmEsc(r.hint || '')}</small></label>`).join('')
             : '<small class="lrm-recv-none">No one else yet: add designated contacts or tick groups on the WhatsApp page.</small>');
     }
     // Mention field: shown only when a WhatsApp group is the recipient. Multi-select of the
     // group's members (from the gateway) plus any number added by hand; saved as E.164.
-    const lrmMembersCache = {};
-    const lrmNorm = (n) => { const d = String(n ?? '').replace(/\D/g, ''); return d.length >= 6 ? '+' + d : ''; };
+    const LRM_MENTION_MAX = 10;
+    const lrmMembersCache = {}; // successful loads only, so a failed one can be retried
+    // No country is guessed: a local number (leading 0) is refused with a hint instead.
+    function lrmParseNumber(raw) {
+        const t = String(raw ?? '').trim().replace(/[\s().-]/g, '');
+        if (!t) return { error: '' };
+        if (!/^\+?\d+$/.test(t)) return { error: 'Use digits only, starting with the country code, e.g. +62812…' };
+        const d = t.replace(/^\+/, '');
+        if (d.startsWith('0')) return { error: 'Start with the country code instead of 0, e.g. +62812…' };
+        if (d.length < 8 || d.length > 15) return { error: 'A number has 8 to 15 digits with the country code, e.g. +62812…' };
+        return { value: '+' + d };
+    }
+    const lrmNorm = (n) => lrmParseNumber(n).value || '';
     function lrmSelectedGroupJid() {
         const st = lrmTaskState();
         if (!st || !st.inst.startsWith('lrm-wa:')) return '';
         const picks = [st.primary];
         const rbox = document.getElementById('lrm-receivers');
-        if (rbox) picks.push(...[...rbox.querySelectorAll('input:checked')].map((i) => i.value));
-        for (const r of picks) { const jid = String(r || '').split(':').pop(); if (jid.endsWith('@g.us')) return jid; }
+        if (rbox && rbox.dataset.task === lrmTaskKey()) picks.push(...[...rbox.querySelectorAll('input:checked')].map((i) => i.value));
+        for (const r of picks) { const jid = lrmJidOf(r); if (jid.endsWith('@g.us')) return jid; }
         return '';
     }
     async function lrmLoadMembers(jid) {
-        if (Array.isArray(lrmMembersCache[jid])) return lrmMembersCache[jid];
+        if (lrmMembersCache[jid]) return { ok: true, members: lrmMembersCache[jid] };
         try {
             const r = await fetch('/whatsapp/api/groups/members?jid=' + encodeURIComponent(jid), { credentials: 'same-origin' });
+            if (!r.ok) return { ok: false, status: r.status };
             const d = await r.json();
-            lrmMembersCache[jid] = Array.isArray(d.members) ? d.members : [];
-        } catch { lrmMembersCache[jid] = []; }
-        return lrmMembersCache[jid];
+            if (!Array.isArray(d.members)) return { ok: false, status: 0 };
+            lrmMembersCache[jid] = d.members;
+            return { ok: true, members: d.members };
+        } catch { return { ok: false, status: 0 }; }
+    }
+    function lrmMentionPicked(box) {
+        const chips = [...box.querySelectorAll('.lrm-ment-chips [data-num]')].map((c) => c.dataset.num);
+        // While members load there are no checkboxes yet: the stored picks still count.
+        if (box.dataset.state === 'loading') return [...new Set([...(box.lrmSaved || []), ...chips])];
+        return [...new Set([...box.querySelectorAll('.lrm-ment-list input:checked')].map((i) => i.value).concat(chips))];
+    }
+    function lrmMentionLimit(box) {
+        const n = lrmMentionPicked(box).length;
+        const full = n >= LRM_MENTION_MAX;
+        box.querySelector('.lrm-ment-count').textContent = `${n} of ${LRM_MENTION_MAX}`;
+        for (const cb of box.querySelectorAll('.lrm-ment-list input')) cb.disabled = full && !cb.checked;
+        box.querySelector('.lrm-ment-add input').disabled = full;
+        box.querySelector('.lrm-ment-addbtn').disabled = full;
+        box.querySelector('.lrm-ment-full').hidden = !full;
     }
     function lrmAddChip(box, v) {
         const chips = box.querySelector('.lrm-ment-chips');
         if (!v || [...chips.querySelectorAll('[data-num]')].some((c) => c.dataset.num === v)) return;
         const chip = document.createElement('span'); chip.className = 'lrm-ment-chip'; chip.dataset.num = v;
-        chip.innerHTML = `${lrmEsc(v)} <button type="button" aria-label="Remove">×</button>`;
-        chip.querySelector('button').onclick = () => chip.remove();
+        chip.innerHTML = `${lrmEsc(v)} <button type="button" aria-label="Remove ${lrmEsc(v)}">×</button>`;
+        chip.querySelector('button').onclick = () => { chip.remove(); lrmMentionLimit(box); };
         chips.appendChild(chip);
+    }
+    const LRM_MEMBERS_ERROR = {
+        401: 'Your sign-in has expired. Sign in again, then retry.',
+        404: "This group isn't open to agents yet. Tick it on the WhatsApp page, then retry.",
+    };
+    function lrmFillMembers(box, key, jid) {
+        const list = box.querySelector('.lrm-ment-list');
+        const wasError = box.dataset.state === 'error';
+        box.dataset.state = 'loading';
+        list.innerHTML = '<small class="lrm-ment-note">Loading the group\'s members…</small>';
+        lrmMentionLimit(box);
+        lrmLoadMembers(jid).then((res) => {
+            if (box.dataset.key !== key || !box.isConnected) return;
+            const chips = [...box.querySelectorAll('.lrm-ment-chips [data-num]')].map((c) => c.dataset.num);
+            if (!res.ok) {
+                const msg = LRM_MEMBERS_ERROR[res.status] || "Couldn't load the group's members. Check that WhatsApp is connected, then retry.";
+                list.innerHTML = `<div class="lrm-ment-error" role="alert"><small>${lrmEsc(msg)}</small><button type="button" class="lrm-ment-retry">Retry</button></div>`;
+                list.querySelector('.lrm-ment-retry').onclick = () => lrmFillMembers(box, key, jid);
+                // The stored numbers stay visible and editable while the list is unavailable.
+                if (!wasError) for (const v of box.lrmSaved) lrmAddChip(box, v);
+                box.dataset.state = 'error';
+                lrmMentionLimit(box);
+                return;
+            }
+            const want = new Set(wasError ? chips : [...box.lrmSaved, ...chips]);
+            const rows = res.members.map((m) => {
+                const v = lrmNorm(m.number); if (!v) return '';
+                return `<label class="lrm-recv"><input type="checkbox" value="${v}" ${want.has(v) ? 'checked' : ''}><span>${lrmEsc(m.name || v)}</span><small>${lrmEsc(v)}</small></label>`;
+            }).filter(Boolean);
+            list.innerHTML = rows.length ? rows.join('') : '<small class="lrm-ment-note">WhatsApp shared no member numbers for this group. Add them by hand below.</small>';
+            const inList = new Set(res.members.map((m) => lrmNorm(m.number)).filter(Boolean));
+            box.querySelector('.lrm-ment-chips').innerHTML = '';
+            for (const v of want) if (!inList.has(v)) lrmAddChip(box, v);
+            box.dataset.state = 'ready';
+            lrmMentionLimit(box);
+        });
     }
     function lrmMentionBox() {
         const wrap = document.getElementById('task-edit-recipient-wrap');
         let box = document.getElementById('lrm-mentions');
         const jid = lrmSelectedGroupJid();
-        if (!wrap || !jid || wrap.classList.contains('hidden')) { box?.remove(); return; }
-        if (box && box.dataset.jid === jid) return; // keep the user's edits between polls
+        if (!wrap || !jid || !lrmModalOpen() || wrap.classList.contains('hidden')) { box?.remove(); return; }
+        const key = `${lrmTaskKey()}|${jid}`;
+        if (box && box.dataset.key === key) return; // keep the user's edits between polls
         const s = window.__lrmTask;
-        const saved = (s && s.mode !== 'create' && s.task ? (s.task.action?.mentions || []) : []).map(lrmNorm).filter(Boolean);
-        const fromText = Boolean(s && s.mode !== 'create' && s.task && s.task.action?.mention_from_text);
-        if (!box) { box = document.createElement('div'); box.id = 'lrm-mentions'; }
+        const stored = s && s.mode !== 'create' && s.task ? s.task.action || {} : {};
+        const saved = [...new Set((stored.mentions || []).map(lrmNorm).filter(Boolean))];
+        box?.remove();
+        box = document.createElement('div'); box.id = 'lrm-mentions';
         (document.getElementById('lrm-receivers') || wrap).after(box);
-        box.dataset.jid = jid;
-        box.innerHTML = `<div class="lrm-recv-title">Mention in the group</div>
-            <div class="lrm-ment-list"><small class="lrm-ment-note">Loading members…</small></div>
-            <div class="lrm-ment-add"><input type="tel" inputmode="tel" placeholder="+62… add a number" aria-label="Add a number to mention"><button type="button" class="lrm-ment-addbtn">Add</button></div>
+        box.dataset.key = key; box.dataset.jid = jid; box.lrmSaved = saved;
+        box.innerHTML = `<div class="lrm-ment-head"><span class="lrm-recv-title">Mention in the group</span><small class="lrm-ment-count" aria-live="polite"></small></div>
+            <div class="lrm-ment-list"></div>
+            <div class="lrm-ment-add"><input type="tel" inputmode="tel" placeholder="+62… add a number" aria-label="Add a number to mention" aria-describedby="lrm-ment-hint"><button type="button" class="lrm-ment-addbtn">Add</button></div>
+            <small class="lrm-ment-hint" id="lrm-ment-hint" role="status" hidden></small>
             <div class="lrm-ment-chips"></div>
-            <label class="lrm-recv"><input type="checkbox" class="lrm-ment-fromtext" ${fromText ? 'checked' : ''}><span>Also tag @numbers written in the reply</span></label>`;
+            <small class="lrm-ment-full" hidden>That's the limit of ${LRM_MENTION_MAX} per message. Untick someone to add another.</small>
+            <label class="lrm-recv"><input type="checkbox" class="lrm-ment-fromtext" ${stored.mention_from_text ? 'checked' : ''}><span>Also tag @numbers written in the reply</span></label>`;
         const addInput = box.querySelector('.lrm-ment-add input');
+        const hint = box.querySelector('.lrm-ment-hint');
+        const showHint = (msg) => { hint.textContent = msg; hint.hidden = !msg; addInput.toggleAttribute('aria-invalid', Boolean(msg)); };
         const addNum = () => {
-            const v = lrmNorm(addInput.value); addInput.value = '';
-            if (!v) return;
-            const cb = [...box.querySelectorAll('.lrm-ment-list input')].find((i) => i.value === v);
-            if (cb) cb.checked = true; else lrmAddChip(box, v);
+            const { value, error } = lrmParseNumber(addInput.value);
+            if (!value) { showHint(error); return; }
+            if (lrmMentionPicked(box).length >= LRM_MENTION_MAX) return;
+            addInput.value = ''; showHint('');
+            const cb = [...box.querySelectorAll('.lrm-ment-list input')].find((i) => i.value === value);
+            if (cb) cb.checked = true; else lrmAddChip(box, value);
+            lrmMentionLimit(box);
         };
         box.querySelector('.lrm-ment-addbtn').onclick = addNum;
         addInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addNum(); } });
-        lrmLoadMembers(jid).then((members) => {
-            if (box.dataset.jid !== jid) return;
-            const list = box.querySelector('.lrm-ment-list');
-            const savedSet = new Set(saved);
-            const rows = members.map((m) => {
-                const v = lrmNorm(m.number); if (!v) return '';
-                return `<label class="lrm-recv"><input type="checkbox" value="${v}" ${savedSet.has(v) ? 'checked' : ''}><span>${lrmEsc(m.name || v)}</span><small>${lrmEsc(v)}</small></label>`;
-            }).filter(Boolean);
-            list.innerHTML = rows.length ? rows.join('') : '<small class="lrm-ment-note">No members read back (a LID-only group). Add the numbers by hand below.</small>';
-            const inList = new Set(members.map((m) => lrmNorm(m.number)).filter(Boolean));
-            for (const v of saved) if (!inList.has(v)) lrmAddChip(box, v);
-        });
+        addInput.addEventListener('input', () => showHint(''));
+        box.querySelector('.lrm-ment-list').addEventListener('change', () => lrmMentionLimit(box));
+        lrmFillMembers(box, key, jid);
     }
-    setInterval(() => { if (document.getElementById('task-edit-recipient-wrap')) { lrmReceiversBox(); lrmMentionBox(); } }, 500);
+    // Task cards: the list's own GET /api/scheduler response is kept so each card can show its mentions.
+    const lrmTaskList = new Map();
+    function lrmTaskCards() {
+        for (const card of document.querySelectorAll('#tasks-list [data-task-id]')) {
+            const nums = (lrmTaskList.get(card.dataset.taskId)?.action?.mentions || []).filter(Boolean);
+            let line = card.querySelector('.lrm-card-ment');
+            if (!nums.length) { line?.remove(); continue; }
+            const text = 'Mentions: ' + (nums.length > 3 ? `${nums.slice(0, 3).join(', ')} and ${nums.length - 3} more` : nums.join(', '));
+            if (line && line.textContent === text) continue;
+            if (!line) {
+                line = document.createElement('p'); line.className = 'lrm-card-ment';
+                const desc = card.querySelector(':scope > p');
+                if (desc) desc.after(line); else card.append(line);
+            }
+            line.textContent = text;
+        }
+    }
+    function lrmTaskTick() {
+        lrmReceiversBox(); lrmMentionBox(); lrmTaskCards();
+        // React at once to the modal opening or closing and to the list re-rendering, not only on the poll.
+        const overlay = document.getElementById('task-edit-modal-overlay');
+        if (overlay && !overlay.dataset.lrmWatch) {
+            overlay.dataset.lrmWatch = '1';
+            new MutationObserver(lrmTaskTick).observe(overlay, { attributes: true, attributeFilter: ['class'] });
+        }
+        const list = document.getElementById('tasks-list');
+        if (list && !list.dataset.lrmWatch) {
+            list.dataset.lrmWatch = '1';
+            new MutationObserver(lrmTaskCards).observe(list, { childList: true });
+        }
+    }
+    setInterval(lrmTaskTick, 500);
     const lrmFetch = window.fetch.bind(window);
+    function lrmTaskBody(body) {
+        const s = window.__lrmTask;
+        const current = lrmTaskKey();
+        const task = s && s.mode !== 'create' && s.task && (!body.task_id || s.task.id === body.task_id) ? s.task : null;
+        const stored = task?.action || {};
+        const rbox = document.getElementById('lrm-receivers');
+        if (rbox && rbox.dataset.task === current) {
+            const extra = [...rbox.querySelectorAll('input:checked')].map((i) => i.value);
+            body.action.receivers = extra.length ? [body.action.receiver, ...extra].filter(Boolean) : [];
+        } else if (Array.isArray(stored.receivers) && stored.receiver === body.action.receiver) {
+            body.action.receivers = stored.receivers; // saved before the box was built
+        }
+        const jids = [body.action.receiver, ...(body.action.receivers || [])].map(lrmJidOf);
+        const mbox = document.getElementById('lrm-mentions');
+        if (!jids.some((j) => j.endsWith('@g.us'))) {
+            body.action.mentions = []; // no group chosen: carry no tags
+            body.action.mention_from_text = false;
+        } else if (mbox && mbox.dataset.key === `${current}|${mbox.dataset.jid}` && jids.includes(mbox.dataset.jid)) {
+            body.action.mentions = lrmMentionPicked(mbox).slice(0, LRM_MENTION_MAX);
+            body.action.mention_from_text = Boolean(mbox.querySelector('.lrm-ment-fromtext')?.checked);
+        } else {
+            // No box for this task and group yet: keep what the task already had.
+            body.action.mentions = Array.isArray(stored.mentions) ? stored.mentions : [];
+            body.action.mention_from_text = Boolean(stored.mention_from_text);
+        }
+    }
     window.fetch = (input, init) => {
+        let listRequest = false;
         try {
             const url = typeof input === 'string' ? input : input?.url || '';
-            if (/\/api\/scheduler\/(create|update)$/.test(url.split('?')[0]) && init && typeof init.body === 'string') {
+            const path = url.split('?')[0].replace(/^https?:\/\/[^/]+/, '');
+            listRequest = path === '/api/scheduler' && (!init || !init.method || init.method === 'GET');
+            if (/\/api\/scheduler\/(create|update)$/.test(path) && init && typeof init.body === 'string') {
                 const body = JSON.parse(init.body);
                 if (body.action && String(body.action.instance_id || '').startsWith('lrm-wa:')) {
-                    const rbox = document.getElementById('lrm-receivers');
-                    if (rbox) {
-                        const extra = [...rbox.querySelectorAll('input:checked')].map((i) => i.value);
-                        body.action.receivers = extra.length ? [body.action.receiver, ...extra].filter(Boolean) : [];
-                    }
-                    const mbox = document.getElementById('lrm-mentions');
-                    if (mbox) {
-                        const picked = [...mbox.querySelectorAll('.lrm-ment-list input:checked')].map((i) => i.value)
-                            .concat([...mbox.querySelectorAll('.lrm-ment-chips [data-num]')].map((c) => c.dataset.num));
-                        body.action.mentions = [...new Set(picked)].slice(0, 10);
-                        body.action.mention_from_text = Boolean(mbox.querySelector('.lrm-ment-fromtext')?.checked);
-                    } else {
-                        body.action.mentions = []; // no group chosen: carry no tags
-                    }
+                    lrmTaskBody(body);
                     init = { ...init, body: JSON.stringify(body) };
                 }
             }
         } catch { /* leave the request as it was */ }
-        return lrmFetch(input, init);
+        const p = lrmFetch(input, init);
+        if (!listRequest) return p;
+        return p.then((r) => {
+            r.clone().json().then((d) => {
+                if (!d || !Array.isArray(d.tasks)) return;
+                lrmTaskList.clear();
+                for (const t of d.tasks) lrmTaskList.set(String(t.id), t);
+                lrmTaskCards();
+            }).catch(() => {});
+            return r;
+        });
     };
 
     // The private vault's 7-day clock: using the console counts as the owner being around.

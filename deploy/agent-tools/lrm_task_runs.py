@@ -14,6 +14,8 @@ from common.log import logger
 
 _runs = {}
 _lock = threading.Lock()
+# The run this thread last finished: the scheduler classifies the answer right after finish().
+_last = threading.local()
 OWNER_WORDS = ("me", "owner", "myself", "self")
 
 
@@ -35,7 +37,7 @@ def _receivers(task):
 
 def start(session_id, task, run_id=""):
     run = {"task_id": task.get("id"), "name": task.get("name") or "", "run_id": run_id or f"{task.get('id')}-{int(time.time())}",
-           "receivers": _receivers(task), "started": time.time()}
+           "receivers": _receivers(task), "started": time.time(), "session": session_id}
     with _lock:
         _runs[session_id] = run
     return run
@@ -43,7 +45,28 @@ def start(session_id, task, run_id=""):
 
 def finish(session_id):
     with _lock:
-        _runs.pop(session_id, None)
+        _last.run = _runs.pop(session_id, None)
+
+
+def note_refusal(session_id):
+    """Record that an owner-only check refused this session's scheduled run (lrm_owner)."""
+    with _lock:
+        run = _runs.get(str(session_id or ""))
+        if run is not None:
+            run["refused"] = True
+
+
+def was_refused(session_id=None):
+    """Did the run hit an owner-only refusal? Without a session id: the run this thread last finished."""
+    if session_id:
+        with _lock:
+            run = _runs.get(str(session_id))
+        if run is not None:
+            return bool(run.get("refused"))
+    run = getattr(_last, "run", None)
+    if run is None or (session_id and run.get("session") != str(session_id)):
+        return False
+    return bool(run.get("refused"))
 
 
 def current(session_id):
@@ -74,16 +97,18 @@ def _recipient_hit(run, to):
 
 
 def scheduled_duplicate(session_id, tool_name, args):
-    """During a scheduled run the scheduler delivers the final answer itself, so a whatsapp
-    send from the agent would double-send and ask the owner for a needless approval. Refuse
-    every whatsapp send during the run (not just ones we can match to a recipient); the agent
-    puts the message in its final answer instead. Returns the refusal, or None."""
+    """During a scheduled run the scheduler delivers the final answer to the task's recipients
+    itself, so a whatsapp send to one of them would double-send and ask the owner for a needless
+    approval. Only those sends are refused; a send to anyone else (e.g. Operations posting the
+    branch report to the HR group) goes through the usual gate. Returns the refusal, or None."""
     run = current(session_id)
     if not run or tool_name != "whatsapp" or str((args or {}).get("action") or "").strip() != "send":
         return None
     to = str((args or {}).get("to") or "me").strip()
     hit = _recipient_hit(run, to)
-    who = (hit["name"] or hit["chat"]) if hit else to
+    if not hit:
+        return None
+    who = hit["name"] or hit["chat"]
     logger.info(f"[TaskRuns] {run['task_id']}: whatsapp send to {who} during the run skipped")
     return (f"Not sent, and no approval was asked: this is the scheduled task '{run['name']}', and its result is "
             "delivered to the task's recipients automatically when the run ends. Put anything you want sent in your "

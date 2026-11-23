@@ -12,6 +12,8 @@ const JOBS = path.join(DATA, 'jobs');
 const MAX_RUNNING = Number(process.env.TEAMMATES_MAX_RUNNING || 2);
 const TIME_LIMIT_MS = Number(process.env.TEAMMATES_TIME_LIMIT_MIN || 60) * 60_000;
 const LOG_CAP = 2 << 20;
+// A CLI that ignores SIGTERM gets SIGKILL after this, so its job cannot stay "running" forever.
+const KILL_GRACE_MS = Number(process.env.TEAMMATES_KILL_GRACE_MS || 10_000);
 const GATEWAY = (process.env.WHATSAPP_GATEWAY_URL || 'http://whatsapp-gateway:8080').replace(/\/$/, '');
 const TOKEN = process.env.COWAGENT_API_TOKEN || '';
 // The server runs as root so its environment (the internal token) is out of the
@@ -91,8 +93,8 @@ export class Jobs {
     const job = this.jobs.get(id);
     if (!job) return null;
     if (job.status === 'queued') Object.assign(job, { status: 'stopped', finishedAt: Date.now() });
-    const proc = this.procs.get(id);
-    if (proc) { job.stopping = true; try { process.kill(-proc.pid, 'SIGTERM'); } catch { proc.kill('SIGTERM'); } }
+    const run = this.procs.get(id);
+    if (run) { job.stopping = true; run.terminate(); }
     this.save(job);
     return this.view(job);
   }
@@ -128,23 +130,17 @@ export class Jobs {
     const lastFile = path.join(lastDir, `${job.id}.txt`);
     fs.writeFileSync(logFile, `▶ ${t.name} · ${job.folder}${model ? ` · ${model}` : ''}\n▶ ${job.task}\n\n`);
 
-    const attempt = (resume) => new Promise((resolve) => {
+    const attempt = (resume) => {
       const args = runArgs(t, { prompt: job.task, model, resume, lastMessageFile: t.id === 'codex' ? lastFile : '' });
-      const proc = spawn(args[0], args.slice(1), { cwd: dir, env: childEnv(t), uid: RUN_AS.uid, gid: RUN_AS.gid, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
-      this.procs.set(job.id, proc);
-      let size = 0; let out = '';
-      const write = (chunk) => {
-        const text = strip(chunk.toString('utf8'));
-        out = (out + text).slice(-200_000);
-        if (size < LOG_CAP) { size += text.length; fs.appendFileSync(logFile, text); }
-      };
-      proc.stdout.on('data', write);
-      proc.stderr.on('data', write);
-      const timer = setTimeout(() => { job.timedOut = true; try { process.kill(-proc.pid, 'SIGTERM'); } catch { /* gone */ } }, TIME_LIMIT_MS);
-      const started = Date.now();
-      proc.on('error', (e) => { write(Buffer.from(`\n${e.message}\n`)); });
-      proc.on('close', (code) => { clearTimeout(timer); this.procs.delete(job.id); resolve({ code, out, quick: Date.now() - started < 20_000 }); });
-    });
+      let size = 0;
+      const run = runProcess(args, {
+        cwd: dir, env: childEnv(t), uid: RUN_AS.uid, gid: RUN_AS.gid, timeoutMs: TIME_LIMIT_MS,
+        onTimeout: () => { job.timedOut = true; },
+        onText: (text) => { if (size < LOG_CAP) { size += text.length; fs.appendFileSync(logFile, text); } },
+      });
+      this.procs.set(job.id, run);
+      return run.done.finally(() => this.procs.delete(job.id));
+    };
 
     // Continue the previous session in this folder; a teammate with none yet
     // fails fast, and then starts fresh.
@@ -178,6 +174,47 @@ export class Jobs {
       body: JSON.stringify({ agentId: job.notify.agentId, chat: job.notify.chat, text }), signal: AbortSignal.timeout(30_000),
     });
   }
+}
+
+// Runs one teammate CLI in its own process group. Stop or the time limit sends SIGTERM,
+// then SIGKILL to the whole group after graceMs; if the pipes still never close (a
+// grandchild outside the group holds them), the run is given up after another graceMs.
+export function runProcess(args, { cwd, env, uid, gid, timeoutMs, graceMs = KILL_GRACE_MS, onTimeout = () => {}, onText = () => {} }) {
+  const proc = spawn(args[0], args.slice(1), { cwd, env, uid, gid, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const started = Date.now();
+  let out = '';
+  let settled = false;
+  let resolveDone;
+  const timers = [];
+  const done = new Promise((resolve) => { resolveDone = resolve; });
+  const settle = (code) => {
+    if (settled) return;
+    settled = true;
+    timers.forEach(clearTimeout);
+    resolveDone({ code, out, quick: Date.now() - started < 20_000 });
+  };
+  const signal = (sig) => { try { process.kill(-proc.pid, sig); } catch { try { proc.kill(sig); } catch { /* gone */ } } };
+  let terminating = false;
+  const terminate = () => {
+    if (terminating || settled) return;
+    terminating = true;
+    signal('SIGTERM');
+    timers.push(setTimeout(() => {
+      signal('SIGKILL');
+      timers.push(setTimeout(() => { proc.stdout.destroy(); proc.stderr.destroy(); settle(null); }, graceMs));
+    }, graceMs));
+  };
+  const write = (chunk) => {
+    const text = strip(chunk.toString('utf8'));
+    out = (out + text).slice(-200_000);
+    onText(text);
+  };
+  proc.stdout.on('data', write);
+  proc.stderr.on('data', write);
+  if (timeoutMs) timers.push(setTimeout(() => { onTimeout(); terminate(); }, timeoutMs));
+  proc.on('error', (e) => { write(Buffer.from(`\n${e.message}\n`)); });
+  proc.on('close', (code) => settle(code));
+  return { proc, done, terminate };
 }
 
 // Plain-language reasons for the usual failures.

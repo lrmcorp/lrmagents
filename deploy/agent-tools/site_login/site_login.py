@@ -39,13 +39,20 @@ class SiteLogin(BaseTool):
         if action != "sign_in":
             return ToolResult.fail("action must be 'list' or 'sign_in'.")
         url = str(args.get("url") or "").strip()
-        from agent.tools.browser.browser_tool import BrowserTool
-        service = BrowserTool._shared_service
-        if service is None:
-            BrowserTool()._get_service()
-            service = BrowserTool._shared_service
+        from agent import lrm_browser_tabs
+
+        def sign_in(tool, _args):
+            service = tool._get_service()
+            return service._submit(lambda: lrm_logins.sign_in(service._page, url or None))
         try:
-            ok, message = service._submit(lambda: lrm_logins.sign_in(service._page, url or None))
+            # Through the browser's tab lock, so a scheduled run signs in on its own tab, not the owner's page.
+            ok, message = lrm_browser_tabs.run(self, sign_in, args)
         except Exception as e:
             return ToolResult.fail(f"Sign-in failed: {type(e).__name__}")
         return ToolResult.success(message) if ok else ToolResult.fail(message)
+
+    def _get_service(self):
+        from agent.tools.browser.browser_tool import BrowserTool
+        if BrowserTool._shared_service is None:
+            BrowserTool()._get_service()
+        return BrowserTool._shared_service

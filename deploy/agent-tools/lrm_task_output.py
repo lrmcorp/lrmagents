@@ -50,26 +50,49 @@ _FAILURE = re.compile(
     r")")
 
 
-def _is_failure_report(text):
+# The refusal LRMagent itself returns (lrm_owner.REFUSAL), quoted verbatim by a run.
+_REFUSAL_TEXT = "so only the owner can use it: from the LRMagent console"
+
+
+def _run_refused(session_id=None):
+    """Did this scheduled run actually hit an owner-only refusal (recorded by lrm_owner)?"""
+    try:
+        try:
+            from agent import lrm_task_runs
+        except ImportError:
+            import lrm_task_runs  # standalone tests
+        return lrm_task_runs.was_refused(session_id)
+    except Exception:
+        return False
+
+
+def _is_failure_report(text, refused=False):
     """True when the deliverable is itself a system access/verification failure, not a
-    report. Guarded so an incidental mention deep inside a real, long report does not
-    trip it: only a short message or a failure stated up front counts."""
-    return bool(_FAILURE.search(text) and (len(text) < 700 or _FAILURE.search(text[:250])))
+    report. The wording alone is not enough ("cuti ditolak pemilik toko" is a real report):
+    the run must have been refused by an owner-only check, or quote the refusal verbatim.
+    Guarded so an incidental mention deep inside a real, long report does not trip it."""
+    if _REFUSAL_TEXT in text:
+        return True
+    return bool(refused and _FAILURE.search(text) and (len(text) < 700 or _FAILURE.search(text[:250])))
+
+
+_MARKED = re.compile(re.escape(FINAL_OPEN) + r"(.*?)(?:" + re.escape(FINAL_CLOSE) + r"|(?=" + re.escape(FINAL_OPEN)
+                     + r")|\Z)", re.IGNORECASE | re.DOTALL)
 
 
 def _between(text):
-    """The text the run wrapped in the final-answer marker, or None if unmarked."""
-    open_at = text.rfind(FINAL_OPEN)
-    if open_at == -1:
+    """The last non-empty block the run wrapped in the final-answer marker (any case),
+    "" when every marked block is empty, or None if unmarked."""
+    blocks = [m.group(1).strip() for m in _MARKED.finditer(text)]
+    if not blocks:
         return None
-    rest = text[open_at + len(FINAL_OPEN):]
-    close_at = rest.find(FINAL_CLOSE)
-    return (rest if close_at == -1 else rest[:close_at]).strip()
+    return next((b for b in reversed(blocks) if b), "")
 
 
-def classify(raw):
+def classify(raw, session_id=None):
     """("final", payload) to send, ("silent", "") to send nothing on purpose, or
-    ("failed", reason) when the run has no usable final answer."""
+    ("failed", reason) when the run has no usable final answer. session_id is the
+    scheduled run's; without it, the run this thread just finished is used."""
     text = (raw or "").strip()
     if not text:
         return ("failed", "the run produced no output")
@@ -83,7 +106,7 @@ def classify(raw):
         if hits >= 2 or (hits == 1 and len(text) < 400):
             return ("failed", "the run returned its thinking, not a final answer")
         candidate = text
-    if _is_failure_report(candidate):
+    if _is_failure_report(candidate, _run_refused(session_id)):
         return ("failed", "the agent could not reach the data it needs (access denied or unverifiable)")
     return ("final", candidate)
 

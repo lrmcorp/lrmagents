@@ -2,7 +2,8 @@
 # Nightly LRMagent backup: agent workspaces (memory, knowledge vault, skills),
 # settings, and WhatsApp sessions, one tarball per volume per night.
 # Installed in cron by the deploy workflow. Restore steps: README "Backups".
-set -euo pipefail
+# No -e: one failing volume must not stop the others; failures are collected instead.
+set -uo pipefail
 
 DEST="${BACKUP_DIR:-$HOME/backups/lrmagent}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-7}"
@@ -10,8 +11,9 @@ STAMP="$(date -u +%Y%m%d-%H%M)"
 VOLUMES=(cowagent_workspace cowagent_data cowagent_whatsapp cowagent_teammates_work cowagent_teammates_data)
 
 umask 077
-mkdir -p "$DEST"
+mkdir -p "$DEST" || exit 1
 chmod 700 "$DEST"
+failed=()
 
 for volume in "${VOLUMES[@]}"; do
   if ! sudo -n docker volume inspect "$volume" >/dev/null 2>&1; then
@@ -20,10 +22,21 @@ for volume in "${VOLUMES[@]}"; do
   fi
   out="$DEST/$volume-$STAMP.tar.gz"
   # Read-only mount; the archive streams out so the helper never writes to the host as root.
-  sudo -n docker run --rm -v "$volume":/v:ro alpine:3.20 tar -C /v -czf - . > "$out.part"
-  mv "$out.part" "$out"
-  echo "$(date -u +%FT%TZ) saved $out ($(du -h "$out" | cut -f1))"
+  if sudo -n docker run --rm -v "$volume":/v:ro alpine:3.20 tar -C /v -czf - . > "$out.part" && mv "$out.part" "$out"; then
+    echo "$(date -u +%FT%TZ) saved $out ($(du -h "$out" | cut -f1))"
+  else
+    echo "$(date -u +%FT%TZ) FAILED $volume"
+    rm -f "$out.part"
+    failed+=("$volume")
+  fi
 done
+
+# Read by healthcheck.sh: a tarball newer than 26 h is not enough when a volume failed.
+if (( ${#failed[@]} )); then
+  echo "FAIL $(date -u +%FT%TZ) ${failed[*]}" > "$DEST/status"
+else
+  echo "OK $(date -u +%FT%TZ)" > "$DEST/status"
+fi
 
 find "$DEST" -name '*.tar.gz' -mtime +"$KEEP_DAYS" -delete
 find "$DEST" -name '*.part' -mmin +120 -delete
@@ -34,23 +47,38 @@ find "$DEST" -name '*.part' -mmin +120 -delete
 PASS_FILE="$HOME/.lrmagent-backup-pass"
 REPO_FILE="$HOME/.lrmagent-offsite-repo"
 KEY="$HOME/.ssh/lrmagent_vault"
+offsite_fail() {
+  echo "$(date -u +%FT%TZ) off-site copy failed: $1"
+  echo "FAIL $(date -u +%FT%TZ) $1" > "$DEST/offsite-status"
+  failed+=(offsite)
+}
 if [[ -s "$PASS_FILE" && -s "$REPO_FILE" && -f "$KEY" ]]; then
   repo="$(cat "$REPO_FILE")"
   work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
   bundle="$work/lrmagent-backup-$STAMP.tar.gz.enc"
-  ( cd "$DEST" && tar -cf - $(ls -t ./*-"$STAMP".tar.gz) ) \
-    | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$PASS_FILE" -out "$bundle"
-  size=$(stat -c %s "$bundle")
-  if (( size > 95 * 1024 * 1024 )); then
-    echo "$(date -u +%FT%TZ) off-site copy skipped: $(du -h "$bundle" | cut -f1) is over GitHub's file limit"
-    echo "FAIL $(date -u +%FT%TZ) off-site backup too large for GitHub" > "$DEST/offsite-status"
-  else
-    (
+  tonight=( "$DEST"/*-"$STAMP".tar.gz )
+  if [[ ! -e "${tonight[0]}" ]]; then
+    offsite_fail "no archive from tonight to encrypt"
+  elif ! ( cd "$DEST" && tar -cf - "${tonight[@]##*/}" ) \
+    | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$PASS_FILE" -out "$bundle" \
+    || [[ ! -s "$bundle" ]]; then
+    offsite_fail "could not encrypt the backup"
+  elif (( $(stat -c %s "$bundle") > 95 * 1024 * 1024 )); then
+    offsite_fail "off-site backup ($(du -h "$bundle" | cut -f1)) is over GitHub's file limit"
+  elif (
       cd "$work" && git init -q -b backups . && git add "$(basename "$bundle")" \
         && git -c user.name="LRMagent backup" -c user.email=backup@lrmagent.invalid commit -qm "Encrypted backup $STAMP" \
         && GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/vault-sync/known_hosts" \
            git push -qf "${OFFSITE_REMOTE_URL:-git@github.com:$repo.git}" backups:backups
-    ) && { echo "$(date -u +%FT%TZ) off-site copy pushed to $repo (branch backups)"; echo "OK $(date -u +%FT%TZ)" > "$DEST/offsite-status"; } \
-      || { echo "$(date -u +%FT%TZ) off-site copy failed"; echo "FAIL $(date -u +%FT%TZ) could not push the encrypted backup to $repo" > "$DEST/offsite-status"; }
+    ); then
+    echo "$(date -u +%FT%TZ) off-site copy pushed to $repo (branch backups)"
+    echo "OK $(date -u +%FT%TZ)" > "$DEST/offsite-status"
+  else
+    offsite_fail "could not push the encrypted backup to $repo"
   fi
+fi
+
+if (( ${#failed[@]} )); then
+  echo "$(date -u +%FT%TZ) backup finished with failures: ${failed[*]}"
+  exit 1
 fi

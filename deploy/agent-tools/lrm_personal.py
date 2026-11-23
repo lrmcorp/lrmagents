@@ -8,6 +8,9 @@
 - It can ask the other agents for reports (ask_agent tool), and is reached by voice on
   the console's Personal page (orb), as well as in normal chat.
 """
+import fnmatch
+import glob
+import itertools
 import os
 import re
 from pathlib import Path
@@ -111,6 +114,92 @@ def agent_of(executor):
 
 
 _PATH_KEYS = ("path", "file_path", "file", "directory", "dir", "target", "image", "audio")
+_WALK_TOOLS = ("search_files",)  # file tools that read a whole tree: an ancestor folder reaches her files
+_GLOB = re.compile(r"[*?\[{]")
+_WALKERS = {"rg", "ag", "ack", "find", "tree", "tar", "zip", "rsync", "du", "rgrep", "locate", "fd", "fdfind", "7z"}
+_WALK_WITH_FLAG = {"grep", "egrep", "fgrep", "zgrep", "ls", "cp", "scp", "chmod", "chown", "rm", "mv"}
+_RECURSIVE_FLAG = re.compile(r"^-(-recursive|-dereference-recursive|[A-Za-z]*[rRa][A-Za-z]*)$")
+
+
+def _inside(path, root):
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _braces(word, limit=64):
+    """Simple shell brace expansion ({a,b}), so 'agents/{personal,x}' is checked like the shell sees it."""
+    out, todo = [], [word]
+    while todo and len(out) < limit:
+        w = todo.pop()
+        m = re.search(r"\{([^{}]*,[^{}]*)\}", w)
+        if not m:
+            out.append(w)
+            continue
+        todo += [w[:m.start()] + part + w[m.end():] for part in m.group(1).split(",")]
+    return out
+
+
+def resolve(path, cwd):
+    """A tool's path argument as the file tools resolve it: ~ expanded, relative to the working dir."""
+    path = path[7:] if path.startswith("file://") else path
+    path = os.path.expanduser(path)
+    return os.path.realpath(path if os.path.isabs(path) else os.path.join(cwd or os.getcwd(), path))
+
+
+def bash_reaches(command, cwd, protected):
+    """True when a shell command could read inside any ``protected`` folder (real paths): by naming it,
+    by a glob or a cd that lands there, or by a recursive walk (grep -r, find, tar, ...) over a folder
+    above it. Best effort and on the side of refusing; a determined script can still get round it."""
+    command = str(command or "")
+    protected = [os.path.realpath(p) for p in protected if p]
+    if not protected:
+        return False
+    if any(p in command for p in protected):
+        return True
+    words = [w for w in re.split(r"[\s;&|()<>`'\"=]+", command) if w]
+    names = {os.path.basename(p) for p in protected}
+    parents = {os.path.basename(os.path.dirname(p)) for p in protected}
+    walker = any(os.path.basename(w) in _WALKERS for w in words) or (
+        any(os.path.basename(w) in _WALK_WITH_FLAG for w in words) and any(_RECURSIVE_FLAG.match(w) for w in words))
+    bases, explicit_dir = [os.path.realpath(cwd or os.getcwd())], False
+    for i, word in enumerate(words):
+        if i and words[i - 1] in ("cd", "pushd") and not word.startswith("-"):
+            bases.append(resolve(os.path.expandvars(word), bases[-1]))
+    for word in words:
+        if word.startswith("-") or "://" in word:
+            continue
+        for variant in _braces(os.path.expandvars(word)):
+            segments = [s for s in variant.split("/") if s]
+            for i, seg in enumerate(segments):
+                if not _GLOB.search(seg):
+                    continue
+                # 'pers*' / 'person?l' could be her folder; 'agents/*' covers every agent's folder.
+                if re.search(r"[A-Za-z0-9]", seg) and any(fnmatch.fnmatchcase(n, seg) for n in names):
+                    return True
+                if i and segments[i - 1] in parents:
+                    return True
+            for base in bases:
+                full = os.path.normpath(os.path.join(base, os.path.expanduser(variant)))
+                hits = itertools.islice(glob.iglob(full), 2000) if _GLOB.search(variant) else [full]
+                for hit in hits:
+                    real = os.path.realpath(hit)
+                    if any(_inside(real, p) for p in protected):
+                        return True
+                    if walker and os.path.isdir(real):
+                        explicit_dir = True
+                        if any(_inside(p, real) for p in protected):
+                            return True
+    # grep -r / find / rg with no folder named walk the current one
+    return walker and not explicit_dir and any(_inside(p, bases[-1]) for p in protected)
+
+
+def _cwd(executor):
+    try:
+        return executor.agent.effective_cwd()
+    except Exception:
+        try:
+            return registry().get(agent_of(executor), require_enabled=False).workspace
+        except Exception:
+            return os.getcwd()
 
 
 def refusal(executor, tool_name, arguments):
@@ -118,25 +207,32 @@ def refusal(executor, tool_name, arguments):
     ws = workspace()
     if ws is None or agent_of(executor) == ID:
         return None
-    root = os.path.realpath(ws)
+    root = os.path.realpath(os.path.expanduser(str(ws)))
+    cwd = _cwd(executor)
+    arguments = arguments or {}
     values = []
-    for key, value in (arguments or {}).items():
-        if isinstance(value, str) and (key in _PATH_KEYS or key == "command"):
+    for key, value in arguments.items():
+        if isinstance(value, str) and key in _PATH_KEYS:
             values.append(value)
         elif isinstance(value, list) and key in ("paths", "files", "images"):
             values += [v for v in value if isinstance(v, str)]
+    if tool_name in _WALK_TOOLS and not any(isinstance(arguments.get(k), str) and arguments.get(k) for k in _PATH_KEYS):
+        values.append(".")  # search_files defaults to the workspace root
+    blocked = tool_name == "bash" and bash_reaches(arguments.get("command"), cwd, [root, str(ws)])
+    walked = False
     for raw in values:
-        if raw.startswith(("http://", "https://")):
+        if blocked or raw.startswith(("http://", "https://")):
             continue
-        if tool_name == "bash" or len(raw) > 400:
-            if root in raw or re.search(r"agents/personal(/|\b)", raw):
-                break
-            continue
-        path = raw[7:] if raw.startswith("file://") else raw
-        if os.path.isabs(path) and os.path.realpath(path).startswith(root + os.sep) or os.path.realpath(path) == root:
-            break
-    else:
+        full = resolve(raw, cwd)
+        if _inside(full, root):
+            blocked = True
+        elif tool_name in _WALK_TOOLS and _inside(root, full):
+            blocked = walked = True
+    if not blocked:
         return None
+    if walked:
+        return (f"That folder contains {NAME}'s private space (the owner's personal assistant), so it can't be searched "
+                "as a whole. Search a folder inside your own workspace instead (for example memory/ or knowledge/).")
     return (f"That is {NAME}'s private space (the owner's personal assistant). Other agents can't open it. "
             f"If the owner wants something from there, they can ask {NAME}.")
 

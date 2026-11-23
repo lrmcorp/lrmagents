@@ -279,6 +279,20 @@ div:has(> #cfg-password-save),
 #lrm-mentions .lrm-ment-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 #lrm-mentions .lrm-ment-chip { display: inline-flex; align-items: center; gap: 6px; background: color-mix(in srgb, var(--lrm-muted) 22%, transparent); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
 #lrm-mentions .lrm-ment-chip button { border: 0; background: transparent; cursor: pointer; font-size: 15px; line-height: 1; color: inherit; padding: 0 2px; min-height: 0; }
+#lrm-mentions .lrm-ment-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+#lrm-mentions .lrm-ment-count { font-size: 12px; color: var(--lrm-muted); font-variant-numeric: tabular-nums; }
+#lrm-mentions .lrm-ment-hint, #lrm-mentions .lrm-ment-error small { font-size: 12px; color: var(--lrm-warn); }
+#lrm-mentions .lrm-ment-full { font-size: 12px; color: var(--lrm-muted); }
+#lrm-mentions .lrm-ment-error { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 4px 0; }
+#lrm-mentions .lrm-ment-retry { min-height: 36px; padding: 0 12px; border: 1px solid var(--lrm-line); border-radius: 8px; background: var(--lrm-surface); color: var(--lrm-text); font: inherit; font-size: 13px; cursor: pointer; }
+@media (pointer: coarse) { #lrm-mentions .lrm-ment-retry { min-height: 44px; } }
+#lrm-mentions .lrm-ment-add input[aria-invalid] { border-color: var(--lrm-warn); }
+#lrm-mentions .lrm-recv input:disabled + span, #lrm-mentions .lrm-recv input:disabled ~ small { opacity: .55; }
+#lrm-mentions button:disabled, #lrm-mentions input:disabled { cursor: not-allowed; opacity: .55; }
+/* Task card: who the task tags in its WhatsApp group. */
+.lrm-card-ment { margin: -4px 0 8px; font-size: 12px; color: var(--lrm-muted); overflow-wrap: anywhere; }
+:root { --lrm-warn: #b91c1c; }
+.dark { --lrm-warn: #f87171; }
 
 /* Agents page grouped by the Team page: a heading per group, Level 2 under its Level 1. */
 .lrm-agent-section { display: flex; align-items: baseline; gap: 8px; margin: 14px 4px 4px; font-size: 12.5px; font-weight: 650; color: rgb(var(--cw-slate-700)); }

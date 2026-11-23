@@ -25,24 +25,18 @@ def owner_session(session_id):
     """(allowed, whatsapp target {agentId, chat} or None)."""
     session_id = str(session_id or "")
     if session_id.startswith("scheduler_"):
-        # A scheduled run (its own session "scheduler_<run id>_<task id>"): the owner's only
-        # when the task was set up by the owner (console, Tasks page, their own WhatsApp chat),
-        # never because a contact or a group member got an agent to schedule it.
-        try:
-            from agent.tools.scheduler.integration import get_task_store
-            store = get_task_store()
-            # Resolve the task from whichever underscore field of the session is its id, so the
-            # owner check does not depend on where the task id sits (run id vs task id ordering).
-            task = next((t for t in (store.get_task(f) for f in session_id[len("scheduler_"):].split("_") if f) if t), None)
-        except Exception as e:
-            logger.warning(f"[owner] scheduled task not found for {session_id[-12:]}: {e}")
-            return False, None
-        if not task:
-            return False, None
-        origin = str((task.get("action") or {}).get("origin_session_id") or "")
-        if not origin:
-            return True, None  # made on the console's Tasks page (signed-in owner)
-        return owner_session(origin)
+        allowed, target = _scheduled_owner(session_id)
+        if not allowed:
+            # Evidence for lrm_task_output: this run really was refused, so a "report failed" answer is one.
+            try:
+                try:
+                    from agent import lrm_task_runs
+                except ImportError:
+                    import lrm_task_runs  # standalone tests
+                lrm_task_runs.note_refusal(session_id)
+            except Exception as e:
+                logger.debug(f"[owner] refusal not recorded: {e}")
+        return allowed, target
     if not session_id.startswith("openai:"):
         return True, None
     if session_id.startswith(OWNER_PREFIXES):
@@ -61,3 +55,24 @@ def owner_session(session_id):
         logger.warning(f"[owner] check failed: {e}")
         owner = False
     return owner, ({"agentId": agent_id, "chat": chat} if owner else None)
+
+
+def _scheduled_owner(session_id):
+    # A scheduled run (its own session "scheduler_<run id>_<task id>"): the owner's only
+    # when the task was set up by the owner (console, Tasks page, their own WhatsApp chat),
+    # never because a contact or a group member got an agent to schedule it.
+    try:
+        from agent.tools.scheduler.integration import get_task_store
+        store = get_task_store()
+        # Resolve the task from whichever underscore field of the session is its id, so the
+        # owner check does not depend on where the task id sits (run id vs task id ordering).
+        task = next((t for t in (store.get_task(f) for f in session_id[len("scheduler_"):].split("_") if f) if t), None)
+    except Exception as e:
+        logger.warning(f"[owner] scheduled task not found for {session_id[-12:]}: {e}")
+        return False, None
+    if not task:
+        return False, None
+    origin = str((task.get("action") or {}).get("origin_session_id") or "")
+    if not origin:
+        return True, None  # made on the console's Tasks page (signed-in owner)
+    return owner_session(origin)

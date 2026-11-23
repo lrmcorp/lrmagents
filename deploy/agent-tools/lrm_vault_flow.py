@@ -18,6 +18,7 @@ endpoint (/api/lrm/vault-updates) is channel/web/api/lrm_vault_updates.py.
 """
 import datetime
 import difflib
+import hashlib
 import json
 import os
 import re
@@ -40,7 +41,6 @@ SMALL_LINES = 12
 
 # Secrets never go into the shared vault
 _SECRET_PATTERNS = (
-    (r"(?i)\b(password|passwd|pwd|passcode|kata ?sandi|sandi|pin|otp|cvv|cvc|secret|api[ _-]?key|token)\b\s*[:=]\s*\S{3,}", "a password, PIN or key"),
     (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "a private key"),
     (r"\b(sk-[A-Za-z0-9_-]{16,}|sk-or-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}|xox[abpr]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,})\b", "an API key or token"),
     (r"(?i)\b(seed|recovery|mnemonic) (phrase|words)\b", "a wallet recovery phrase"),
@@ -53,15 +53,53 @@ def _luhn(number):
     return total % 10 == 0
 
 
+# A label only counts when a secret-looking value follows it (see _secret_value).
+_LABEL = re.compile(r"(?i)\b(password|passwd|pwd|passcode|kata ?sandi|sandi|secret|pin|otp|cvv|cvc|api[ _-]?key|token)\b"
+                    r"\s*[:=]\s*[`'\"]?([^\s`'\"]+)[`'\"]?([^\n]*)")
+_PW_LABELS = ("password", "passwd", "pwd", "passcode", "sandi", "secret")
+_CARD_WORDS = re.compile(r"(?i)\b(kartu|card|kredit|credit|debit|visa|master ?card|amex|jcb|cc)\b")
+_CARD_PREFIX = re.compile(r"^(4|5[1-5]|2[2-7]|3[47]|35|6011|65)")
+
+
+def _secret_value(label, value, rest):
+    """Is what follows a password/PIN/token label a secret, not ordinary words or an amount?"""
+    label = label.lower()
+    more_words = bool(re.match(r"[ \t]+[^\W\d_]", rest))  # "lokasi gudang", "500 kWh"
+    if re.fullmatch(r"\d+([.,]\d+)*[A-Za-z]{0,4}", value) and (more_words or re.search(r"[A-Za-z]", value)):
+        return False  # a number with a unit
+    letters, digits = bool(re.search(r"[A-Za-z]", value)), bool(re.search(r"\d", value))
+    mixed = letters and (digits or bool(re.search(r"[^\w]", value)))
+    if label in ("pin", "otp", "cvv", "cvc"):
+        return (value.isdigit() and 3 <= len(value) <= 8) or (mixed and len(value) >= 4 and not more_words)
+    if label.endswith(_PW_LABELS):
+        return len(value) >= 3 and (mixed or not more_words)
+    return len(value) >= 8 and (mixed or len(value) >= 16) and not more_words  # token / api key
+
+
+def _card_number(raw, before):
+    """Is this Luhn-valid digit run a card number? Phone-shaped numbers (62…, +62…, 08…) and
+    other long ids need card context: 4-4-4-4 grouping or a card word just before."""
+    digits = re.sub(r"\D", "", raw)
+    if not (13 <= len(digits) <= 19 and _luhn(digits)):
+        return False
+    grouped = bool(re.fullmatch(r"\d{4}([ -])\d{4}\1\d{4}\1\d{4}(\1\d{1,4})?|\d{4}([ -])\d{6}\3\d{5}", raw.strip()))
+    if grouped or _CARD_WORDS.search(before[-40:]):
+        return True
+    phone = before.rstrip().endswith("+") or digits.startswith(("62", "08"))
+    return not phone and len(digits) in (15, 16) and bool(_CARD_PREFIX.match(digits))
+
+
 def secret_in(text):
     """What kind of secret the text holds, or None."""
     text = str(text or "")
     for pattern, kind in _SECRET_PATTERNS:
         if re.search(pattern, text):
             return kind
+    for m in _LABEL.finditer(text):
+        if _secret_value(m.group(1), m.group(2), m.group(3)):
+            return "a password, PIN or key"
     for m in re.finditer(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)", text):
-        digits = re.sub(r"\D", "", m.group(0))
-        if 13 <= len(digits) <= 19 and _luhn(digits):
+        if _card_number(m.group(0), text[:m.start()]):
             return "a card number"
     if re.search(r"(?i)\b(nik|ktp|no\.? ?ktp|nomor induk)\b\D{0,12}\d{16}\b", text):
         return "an ID card number (NIK)"
@@ -156,6 +194,7 @@ def diff(old, new):
 def _view(p):
     p = dict(p)
     p.pop("previous", None)  # the text before an automatic correction: only kept for Undo
+    p.pop("written_sha", None)
     p["exists"] = current_text(p["path"]) is not None
     p["diff"] = diff(current_text(p["path"]), p["content"]) if p["exists"] else ""
     p["agent_name"] = agent_name(p["agent"])
@@ -245,7 +284,8 @@ def review(item_id, by_agent, decision, content=None, note=""):
                 item["previous"] = old
                 item["review_note"] = str(note or "")[:1000]
                 item["history"].append(f"approved by {agent_name(by_agent)}" + (f": {note}" if note else ""))
-                _apply(item, approved_by="auto")
+                # What Undo may replace: if the note no longer holds exactly this, Undo is refused.
+                item["written_sha"] = _sha(_apply(item, approved_by="auto"))
                 item["status"] = "applied"
                 item["auto"] = True
                 item["history"].append("saved on its own (a small correction); in the daily digest")
@@ -294,6 +334,12 @@ def revert(item_id):
             raise ValueError("only a correction saved on its own can be undone")
         vault = _vault()
         section, rel, full = vault.resolve(item["path"])
+        now = full.read_text(encoding="utf-8") if full.exists() else None
+        later = any(i is not item and i["path"] == item["path"] and i["status"] == "applied"
+                    and i.get("updated", 0) > item.get("updated", 0) for i in items)
+        if later or (item.get("written_sha") and (now is None or _sha(now) != item["written_sha"])):
+            raise ValueError("this correction can't be undone: the note has changed since it was saved (a later update "
+                             "or edit), and undoing it would throw that change away. Edit the note instead.")
         from common.atomic_write import write_text_atomic
         write_text_atomic(full, item["previous"])
         try:
@@ -348,6 +394,11 @@ def _apply(item, approved_by="owner"):
     except Exception as e:
         logger.warning(f"[VaultFlow] index refresh after {rel}: {e}")
     logger.info(f"[VaultFlow] applied {item['path']}")
+    return text
+
+
+def _sha(text):
+    return hashlib.sha256(str(text).encode("utf-8")).hexdigest()
 
 
 def pending(status=("review", "owner")):
@@ -490,7 +541,139 @@ def _notify_owner(item):
 # Only the flow writes knowledge/
 
 _WRITE_TOOLS = ("write", "edit")
-_SHELL_WRITE = re.compile(r"(>|\btee\b|\bmv\b|\bcp\b|\brm\b|\bsed\s+-i|\btruncate\b|\bmkdir\b|\btouch\b|\bln\b|\brsync\b|\bgit\b)")
+# Shell commands: reading knowledge/ is fine; only a write whose target is inside it is refused.
+_WS = "/WS"  # the agent's working directory, where knowledge/ is relative to
+_SEPARATORS = {";", "&&", "||", "|", "&", "|&", "(", ")", "{", "}"}
+_REDIRECTS = {">", ">>", ">|", "&>", "&>>", "<>"}
+_ANY_PATH = {"rm", "rmdir", "unlink", "shred", "truncate", "mkdir", "touch", "chmod", "chown", "mv"}
+_DEST_PATH = {"cp", "ln", "rsync", "install"}
+_SHELLS = {"sh", "bash", "zsh", "dash"}
+_GIT_READ = {"status", "log", "diff", "show", "grep", "blame", "ls-files", "ls-tree", "rev-parse", "cat-file",
+             "shortlog", "describe", "help", "--version"}
+_CODE_WRITE = re.compile(
+    r"""(,\s*(mode\s*=\s*)?|\.open\(\s*)['"](?=[rbt]*[wax+])[rbtwax+]{1,3}['"]|\.write_(text|bytes)\s*\(|"""
+    r"""\b(remove|unlink|rename|replace|rmdir|makedirs|mkdir|truncate|rmtree|copy2?|copyfile|move|"""
+    r"""writeFileSync|writeFile|appendFileSync|appendFile|unlinkSync|renameSync|rmSync|mkdirSync|copyFileSync|"""
+    r"""file_put_contents|system|popen)\s*\(|subprocess|File\.write|open\s*\(?[^)]*['"]\s*\+?>""")
+
+
+def _interpreter(word):
+    return bool(re.fullmatch(r"(python[\d.]*|node|nodejs|perl|ruby|php|deno|bun)", word))
+
+
+def _heredocs(cmd):
+    """(command lines, {line index: heredoc body}) with heredoc bodies taken out."""
+    lines, bodies, out, i = cmd.split("\n"), {}, [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        m = re.search(r"<<-?\s*['\"]?(\w+)['\"]?", line)
+        i += 1
+        if m:
+            body = []
+            while i < len(lines) and lines[i].strip() != m.group(1):
+                body.append(lines[i])
+                i += 1
+            i += 1
+            bodies[len(out) - 1] = "\n".join(body)
+    return out, bodies
+
+
+def shell_writes_knowledge(cmd, roots, cwd=_WS):
+    """True when a bash command writes, moves or deletes something inside knowledge/."""
+    import shlex
+    roots = [r.rstrip("/") for r in roots]
+
+    def inside(path, here):
+        if not path or path.startswith("-") or path.startswith("/dev/"):
+            return False
+        full = os.path.normpath(path if path.startswith("/") else os.path.join(here, path))
+        return any(full == r or full.startswith(r + "/") for r in [_WS + "/knowledge", *roots])
+
+    lines, bodies = _heredocs(str(cmd or ""))
+    for n, line in enumerate(lines):
+        try:
+            lex = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lex.whitespace_split = True
+            tokens = list(lex)
+        except ValueError:
+            # unparseable (open quote): refuse a write-looking command that names the vault
+            return bool(re.search(r"(>|\btee\b|\bmv\b|\bcp\b|\brm\b|\bsed\s+-i|\bgit\b)", line))
+        segments, seg = [], []
+        for t in tokens:
+            if t in _SEPARATORS:
+                segments.append(seg)
+                seg = []
+            else:
+                seg.append(t)
+        segments.append(seg)
+        for seg in segments:
+            words = []
+            i = 0
+            while i < len(seg):
+                t = seg[i]
+                if t in _REDIRECTS or re.fullmatch(r"\d?>>?", t):
+                    target = seg[i + 1] if i + 1 < len(seg) else ""
+                    if inside(target, cwd):
+                        return True
+                    i += 2
+                    continue
+                if t in ("<", "<<", "<<<", "<<-", ">&", "<&") or re.fullmatch(r"\d?[<>]&", t):
+                    i += 2
+                    continue
+                if re.fullmatch(r"\d", t) and i + 1 < len(seg) and seg[i + 1] in _REDIRECTS | {">&"}:
+                    i += 1  # the fd of "2>"
+                    continue
+                words.append(t)
+                i += 1
+            while words and (re.fullmatch(r"\w+=.*", words[0]) or words[0] in ("sudo", "env", "command", "nohup", "time", "xargs")):
+                words = words[1:]
+            if not words:
+                continue
+            name, args = os.path.basename(words[0]), words[1:]
+            paths = [a for a in args if not a.startswith("-")]
+            if name in ("cd", "pushd"):
+                target = paths[0] if paths else "/HOME"
+                cwd = os.path.normpath(target if target.startswith("/") else os.path.join(cwd, target))
+            elif name in _ANY_PATH and any(inside(a, cwd) for a in paths):
+                return True
+            elif name in _DEST_PATH and paths and inside(paths[-1], cwd):
+                return True
+            elif name == "tee" and any(inside(a, cwd) for a in paths):
+                return True
+            elif name == "sed" and any(a.startswith("--in-place") or re.fullmatch(r"-[a-zA-Z]*i.*", a) for a in args) \
+                    and any(inside(a, cwd) for a in paths[1:]):
+                return True
+            elif name == "dd" and any(a.startswith("of=") and inside(a[3:], cwd) for a in args):
+                return True
+            elif name == "find" and any(inside(a, cwd) for a in paths + ["."] * (not paths)) and (
+                    "-delete" in args or any(a in ("-exec", "-execdir", "-ok") and j + 1 < len(args)
+                                             and os.path.basename(args[j + 1]) in _ANY_PATH | _DEST_PATH | {"sed", "tee"}
+                                             for j, a in enumerate(args))):
+                return True
+            elif name == "git":
+                here, rest = cwd, list(args)
+                while rest and rest[0].startswith("-"):
+                    opt = rest.pop(0)
+                    if opt == "-C" and rest:
+                        d = rest.pop(0)
+                        here = os.path.normpath(d if d.startswith("/") else os.path.join(here, d))
+                    elif opt in ("-c", "--git-dir", "--work-tree") and rest:
+                        rest.pop(0)
+                sub = rest[0] if rest else ""
+                if sub and sub not in _GIT_READ and (inside(here, here) or any(inside(a, here) for a in rest[1:])):
+                    return True
+            elif name in _SHELLS:
+                code = args[args.index("-c") + 1] if "-c" in args and args.index("-c") + 1 < len(args) else bodies.get(n)
+                if code and shell_writes_knowledge(code, roots, cwd):
+                    return True
+            elif _interpreter(name):
+                flag = next((f for f in ("-c", "-e", "-r", "--eval") if f in args), None)
+                code = args[args.index(flag) + 1] if flag and args.index(flag) + 1 < len(args) else bodies.get(n, "")
+                names_vault = "knowledge" in code or any(r in code for r in roots) or inside(".", cwd)
+                if names_vault and _CODE_WRITE.search(code):
+                    return True
+    return False
 
 
 def knowledge_roots():
@@ -525,6 +708,6 @@ def refusal(executor, tool_name, arguments):
             return msg
     if tool_name == "bash":
         cmd = str(args.get("command") or "")
-        if ("knowledge/" in cmd or any(r in cmd for r in roots)) and _SHELL_WRITE.search(cmd):
+        if ("knowledge" in cmd or any(r in cmd for r in roots)) and shell_writes_knowledge(cmd, roots):
             return msg
     return None

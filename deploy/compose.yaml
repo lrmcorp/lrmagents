@@ -109,6 +109,19 @@ services:
         target: /home/agent/cow/knowledge
         read_only: true
         bind: { create_host_path: false }
+      # A chat must not plant scheduled tasks (scheduler/tasks.json) or skills that the agent
+      # later runs with full access. deploy/sandbox-mounts.sh creates these folders and adds
+      # agents/<id>/knowledge and agents/<id>/skills in deploy/compose.sandbox.yaml.
+      - type: bind
+        source: /var/lib/docker/volumes/cowagent_workspace/_data/scheduler
+        target: /home/agent/cow/scheduler
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: /var/lib/docker/volumes/cowagent_workspace/_data/skills
+        target: /home/agent/cow/skills
+        read_only: true
+        bind: { create_host_path: false }
     mem_limit: 1g
     pids_limit: 256
     cap_drop: [ALL]
