@@ -122,15 +122,18 @@ def approval_key(tool, args):
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
+_RECIPIENTS = ("to", "cc", "bcc", "attendees", "recipients")
+
+
 def summarize(tool, args):
     args = args or {}
     if tool == "bash":
         command = str(args.get("command", ""))
         return redact(command, keep=_risky_part(command))
-    if tool == "google":
+    if any(args.get(k) for k in _RECIPIENTS):
         # Recipients and subject always show in full: a long body must not push cc/bcc out of view.
-        head = [f"{k}: {args[k]}" for k in ("action", "to", "cc", "bcc", "attendees", "subject", "title") if args.get(k)]
-        rest = {k: v for k, v in args.items() if k not in ("action", "to", "cc", "bcc", "attendees", "subject", "title")}
+        head = [f"{k}: {args[k]}" for k in ("action",) + _RECIPIENTS + ("subject", "title") if args.get(k)]
+        rest = {k: v for k, v in args.items() if k not in ("action",) + _RECIPIENTS + ("subject", "title")}
         text = " · ".join(_SECRET.sub("[secret]", str(h)) for h in head)
         return text + (" · " + redact(json.dumps(rest, ensure_ascii=False, default=str), 300) if rest else "")
     if tool in ("write", "edit", "read", "ls", "search_files"):
@@ -476,6 +479,17 @@ def gate(executor, tool_name, arguments, tool_call_id):
 _last_prune = [0.0]
 
 
+def _hide_notes_folder(executor, arguments, result):
+    # Runs before the model reads the listing: a contact's ls of memory/ must not show chats/.
+    try:
+        from agent.lrm_memory import hide_listing
+        cwd = executor.agent.effective_cwd()
+        path = os.path.expanduser(str((arguments or {}).get("path") or ".").strip())
+        hide_listing(getattr(getattr(executor, "model", None), "session_id", ""), os.path.join(cwd, path), result)
+    except Exception as e:
+        logger.debug(f"[Activity] listing not checked: {e}")
+
+
 def record(executor, tool_name, arguments, result):
     """Log one finished tool call. Never raises."""
     try:
@@ -485,6 +499,8 @@ def record(executor, tool_name, arguments, result):
         status = str((result or {}).get("status", "") or "")
         if tool_name == "browser" and status == "success":
             remember_refs(executor, (result or {}).get("result"))
+        if tool_name == "ls" and status == "success":
+            _hide_notes_folder(executor, arguments, result)
         with _lock, _connect() as conn:
             conn.execute("INSERT INTO activity (ts, agent, session, channel, tool, summary, status, duration, approval, run) "
                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

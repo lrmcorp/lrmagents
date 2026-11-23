@@ -82,29 +82,46 @@ def _private_roots():
     return [r for r in roots if r and r != "/"]
 
 
+_NOTES_REFUSAL = ("That folder holds the owner's private chat notes, so it can't be searched or listed as a whole from "
+                  "this chat. Use a folder that doesn't contain memory/chats (for example knowledge/).")
+
+
 def private_path_refusal(executor, tool_name, arguments):
     """A refusal when a WhatsApp/API chat's file tool points at LRMagent's own settings, else None."""
-    if tool_name not in FILE_TOOLS or not sandboxed(executor):
+    if tool_name not in FILE_TOOLS + ("bash",) or not sandboxed(executor):
         return None
+    from agent import lrm_memory
+    session = getattr(getattr(executor, "model", None), "session_id", "")
     workspace = ""
     try:
         workspace = os.path.realpath(executor.agent.effective_cwd())
     except Exception:
         pass
+    arguments = arguments or {}
+    if tool_name == "bash":
+        # The sandbox mounts the workspace, chat notes included: a contact's command may not reach them.
+        from agent.lrm_personal import bash_reaches
+        notes = lrm_memory.note_dirs() + ([os.path.join(workspace, "memory", lrm_memory.FOLDER)] if workspace else [])
+        if bash_reaches(arguments.get("command"), workspace, notes) and lrm_memory.is_contact(session):
+            return "Chat notes are private to the owner, so commands from this chat can't read, list or search them."
+        return None
     values = []
-    for key, value in (arguments or {}).items():
+    for key, value in arguments.items():
         if isinstance(value, str) and key in ("path", "file_path", "file", "directory", "dir", "target", "image", "audio", "url"):
             values.append(value)
         elif isinstance(value, list) and key in ("paths", "files", "images"):
             values += [v for v in value if isinstance(v, str)]
+    if tool_name == "search_files":  # no path searches the whole workspace
+        searched = os.path.realpath(os.path.join(workspace or "/", os.path.expanduser(str(arguments.get("path") or "."))))
+        if lrm_memory.covers_notes(searched) and lrm_memory.is_contact(session):
+            return _NOTES_REFUSAL
     roots = _private_roots()
     for raw in values:
         if raw.startswith(("http://", "https://")):
             continue
         path = raw[7:] if raw.startswith("file://") else raw
         full = os.path.realpath(os.path.join(workspace or "/", os.path.expanduser(path)))
-        from agent.lrm_memory import hidden_from
-        if hidden_from(getattr(getattr(executor, "model", None), "session_id", ""), full):
+        if lrm_memory.hidden_from(session, full):
             return "Chat notes are private to the owner, so they can't be opened from this chat."
         inside_private = any(full == r or full.startswith(r + os.sep) for r in roots)
         in_workspace = bool(workspace) and (full == workspace or full.startswith(workspace + os.sep))

@@ -216,8 +216,9 @@ def refusal(executor, tool_name, arguments):
             values.append(value)
         elif isinstance(value, list) and key in ("paths", "files", "images"):
             values += [v for v in value if isinstance(v, str)]
-    if tool_name in _WALK_TOOLS and not any(isinstance(arguments.get(k), str) and arguments.get(k) for k in _PATH_KEYS):
-        values.append(".")  # search_files defaults to the workspace root
+    if tool_name in _WALK_TOOLS:
+        # search_files' "target" is content/files, not a path; an empty path means the workspace root.
+        values = [v for k, v in arguments.items() if k == "path" and isinstance(v, str) and v] or ["."]
     blocked = tool_name == "bash" and bash_reaches(arguments.get("command"), cwd, [root, str(ws)])
     walked = False
     for raw in values:

@@ -33,7 +33,9 @@ PASS_EVERY = 10 * 60
 MAX_PER_PASS = 12
 MAX_CHARS = 40_000
 FOLDER = "chats"
-SKIP_PREFIXES = ("openai:conversation:lrm-brief:", "openai:conversation:lrm-report:", "openai:conversation:lrm-review:", "lrm-memory:")
+# Scheduled runs replay a task's prompt; the chat that set the task up is summarised itself.
+SKIP_PREFIXES = ("openai:conversation:lrm-brief:", "openai:conversation:lrm-report:", "openai:conversation:lrm-review:", "lrm-memory:",
+                 "scheduler_")
 WHATSAPP = "openai:conversation:whatsapp:"
 
 PROMPT = """You keep the owner's memory for LRMagent (Liando Reyfort Management). Read the conversation below and
@@ -119,6 +121,7 @@ def _conversation(store, session_id):
         rows = db.execute("SELECT role, content, created_at FROM messages WHERE agent_id = ? AND session_id = ? ORDER BY seq",
                           (store._agent_id, session_id)).fetchall()
     lines, users, first = [], 0, None
+    speaker = "Contact" if is_contact(session_id) else "Owner"
     for role, content, created in rows:
         if role not in ("user", "assistant") or _message_is_scheduled_marker(content):
             continue
@@ -129,7 +132,7 @@ def _conversation(store, session_id):
         if role == "user":
             users += len(text)
         text = text if len(text) <= 3000 else text[:3000] + " […]"
-        lines.append(f"{'Owner/user' if role == 'user' else 'Assistant'}: {text}")
+        lines.append(f"{speaker if role == 'user' else 'Assistant'}: {text}")
     body = "\n\n".join(lines)
     if len(body) > MAX_CHARS:
         body = "[…earlier part left out…]\n\n" + body[-MAX_CHARS:]
@@ -269,19 +272,65 @@ def render(data, *, session_id, channel, where, contact, agent_id, started, upda
 
 
 def _hidden_rel(rel):
-    rel = rel.replace("\\", "/").lstrip("./")
-    return rel.startswith(f"memory/{FOLDER}/") or rel.startswith(f"{FOLDER}/")
+    rel = rel.replace("\\", "/").lstrip("./").rstrip("/")
+    return rel in (FOLDER, f"memory/{FOLDER}") or rel.startswith(f"memory/{FOLDER}/") or rel.startswith(f"{FOLDER}/")
 
 
-def hidden_from(session_id, path):
-    """True when ``path`` is a chat note and ``session_id`` is not the owner's."""
+def _is_note_path(path):
     path = str(path or "").replace("\\", "/")
-    if f"/memory/{FOLDER}/" not in f"/{path.lstrip('/')}" and not _hidden_rel(path):
-        return False
-    if not str(session_id or "").startswith("openai:"):
+    return f"/memory/{FOLDER}/" in f"/{path.strip('/')}/" or _hidden_rel(path)
+
+
+def is_contact(session_id):
+    """True for a chat that is not the owner's: a WhatsApp contact or group, an API caller,
+    or a scheduled run of a task one of them set up."""
+    session_id = str(session_id or "")
+    if not session_id.startswith(("openai:", "scheduler_")):
         return False
     from agent.lrm_owner import owner_session
     return not owner_session(session_id)[0]
+
+
+def hidden_from(session_id, path):
+    """True when ``path`` is a chat note (or their folder) and ``session_id`` is not the owner's."""
+    return _is_note_path(path) and is_contact(session_id)
+
+
+def note_dirs():
+    """Every agent's chat-notes folder (real paths)."""
+    out = set()
+    try:
+        from agent.registry import get_agent_registry
+        for profile in get_agent_registry().list(include_disabled=True):
+            out.add(os.path.realpath(os.path.join(os.path.expanduser(str(profile.workspace)), "memory", FOLDER)))
+    except Exception as e:
+        logger.debug(f"[ChatMemory] agent folders unknown: {e}")
+    return sorted(out)
+
+
+def covers_notes(full):
+    """True when a recursive read or search of folder ``full`` (a real path) would reach chat notes."""
+    full = os.path.realpath(full)
+    if _is_note_path(full) or os.path.basename(full) == "memory":
+        return True
+    return any(d == full or d.startswith(full.rstrip(os.sep) + os.sep) for d in note_dirs())
+
+
+def hide_listing(session_id, listed, result):
+    """Drops the chat-notes folder from a listing of memory/ made for a chat that is not the owner's."""
+    out = (result or {}).get("result")
+    listed = os.path.realpath(listed)
+    if not isinstance(out, dict) or not isinstance(out.get("output"), str):
+        return
+    if os.path.basename(listed) != "memory" and os.path.join(listed, FOLDER) not in note_dirs():
+        return
+    lines = out["output"].split("\n")
+    kept = [line for line in lines if line.strip() not in (FOLDER, FOLDER + "/")]
+    if len(kept) == len(lines) or not is_contact(session_id):
+        return
+    out["output"] = "\n".join(kept).strip("\n") or "(empty directory)"
+    if isinstance(out.get("entry_count"), int):
+        out["entry_count"] -= len(lines) - len(kept)
 
 
 # The loop
