@@ -63,7 +63,8 @@ const tick = (browser: any, n: number) => browser.locator(`#lrm-mentions .lrm-me
 test('Tasks: a closed edit leaves no mentions behind for the next task', async ({ app, browser }) => {
   const saved = await mockTasks(browser, [
     task('e2e-a', 'Sales report', GROUP_A, { mentions: [num(1)] }),
-    task('e2e-b', 'Finance report', GROUP_B),
+    // Same group as A, so only the task, not the group, tells the two forms apart.
+    task('e2e-b', 'Sales follow-up', GROUP_A),
   ], async () => ({ status: 200, json: members(3) }));
   await openTasks(app, browser);
   // The card names who the task tags.
@@ -75,7 +76,7 @@ test('Tasks: a closed edit leaves no mentions behind for the next task', async (
   await expect(mentionBox(browser, '.lrm-ment-count')).toHaveText('2 of 10');
   await browser.locator('#task-edit-modal-cancel').click();
 
-  await editTask(browser, 'e2e-b', GROUP_B);
+  await editTask(browser, 'e2e-b', GROUP_A);
   await expect(mentionBox(browser)).toHaveAttribute('data-state', 'ready');
   await expect(mentionBox(browser, '.lrm-ment-count')).toHaveText('0 of 10');
   await expect(tick(browser, 2)).not.toBeChecked();
@@ -122,8 +123,15 @@ test('Tasks: an expired sign-in while loading members says so, and Retry loads t
   // The stored number stays visible while the list is unavailable.
   await expect(mentionBox(browser, '.lrm-ment-chips')).toContainText(num(1));
 
-  // The failure was not cached: Retry asks the gateway again.
+  // The console's own sign-in screen also opens on the 401; signing in there keeps the form.
   status = 200;
+  const password = browser.locator('#login-overlay input[type=password]');
+  if (await password.count()) {
+    await password.fill(process.env.E2E_PASSWORD ?? 'testpassword123');
+    await password.press('Enter');
+    await expect(browser.locator('#login-overlay')).toBeHidden();
+  }
+  // The failure was not cached: Retry asks the gateway again.
   await mentionBox(browser, '.lrm-ment-retry').click();
   await expect(tick(browser, 3)).toBeVisible();
   await expect(tick(browser, 1)).toBeChecked();
