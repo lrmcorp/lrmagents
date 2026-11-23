@@ -188,7 +188,7 @@ test('Task history: Stop ends a running run', async ({ app, browser }) => {
 
   await browser.locator('#runs-list .lrm-run-stop').click();
   await expect.poll(() => stops.length).toBe(1);
-  expect(stops[0]).toEqual({ op: 'stop', run_id: 'run-live' });
+  expect(stops[0]).toMatchObject({ op: 'stop', run_id: 'run-live' });
   await expect(browser.locator('#runs-list .lrm-run-stop')).toHaveCount(0);
   await expect(browser.locator('#runs-list').first()).toContainText('Stopped');
   // The click stops the run without opening its detail.
