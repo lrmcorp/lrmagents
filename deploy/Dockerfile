@@ -72,7 +72,7 @@ RUN set -eux; \
     python -m compileall -q /app/agent /app/channel /app/bridge /app/models > /tmp/compile.log || { cat /tmp/compile.log; exit 1; }; \
     static=/app/channel/web/static; \
     mkdir -p "$static/brand"; \
-    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/topology.js /tmp/brand/personal.html /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html /tmp/brand/team.html "$static/brand/"; \
+    cp /tmp/brand/img/*.png /tmp/brand/fonts/* /tmp/brand/brand.css /tmp/brand/usage.html /tmp/brand/vault.html /tmp/brand/vault.js /tmp/brand/topology.js /tmp/brand/personal.html /tmp/brand/sora.webmanifest /tmp/brand/shell.js /tmp/brand/activity.html /tmp/brand/connections.html /tmp/brand/browser.html /tmp/brand/team.html "$static/brand/"; \
     cp -r /tmp/brand/vendor "$static/brand/vendor"; \
     python /tmp/brand/fetch_mediapipe.py "$static/brand/vendor/mediapipe"; \
     cp /tmp/brand/img/logo.jpg "$static/logo.jpg"; \

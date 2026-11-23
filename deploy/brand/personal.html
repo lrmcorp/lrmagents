@@ -6,6 +6,13 @@
 <meta name="theme-color" content="#06070a">
 <title>Personal · LRMagent</title>
 <link rel="icon" href="/assets/favicon.ico">
+<!-- Add to Home Screen on the iPhone opens Sora full screen, like an app. -->
+<link rel="manifest" href="/assets/brand/sora.webmanifest">
+<link rel="apple-touch-icon" sizes="180x180" href="/assets/brand/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sora">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="stylesheet" href="/assets/vendor/fonts/inter/inter.css">
 <link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
 <style>
@@ -230,6 +237,8 @@ window.SoraGesture = (() => {
     handsFree: false, busy: false, queue: [], agent: null, detector: null, camOn: false, lastSeen: [] };
   // Safari says only "the string did not match the expected pattern" when a reply is not JSON.
   async function readJson(r) {
+    // Opened from the Home Screen there is no console around the page: go sign in there.
+    if (r.status === 401 && window.top === window) { location.assign('/'); }
     const text = await r.text();
     try { return JSON.parse(text); } catch {
       const plain = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 160);
