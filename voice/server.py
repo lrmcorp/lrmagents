@@ -157,30 +157,64 @@ def synthesize(text, lang=None, voice=None, speed=1.0):
 GOOGLE_KEY = os.environ.get("GOOGLE_TTS_API_KEY", "").strip()
 GOOGLE_VOICE = os.environ.get("GOOGLE_TTS_VOICE", "Callirrhoe").strip() or "Callirrhoe"
 GOOGLE_RATE = float(os.environ.get("GOOGLE_TTS_RATE", "1.1") or 1.0)
-GOOGLE_LIMIT = int(os.environ.get("GOOGLE_TTS_MONTHLY_CHARS", "950000") or 0)
+# Kept well under Google's free monthly quota: a monthly cap, a daily cap so one busy day cannot use up
+# the month, and long texts left to Kokoro. Past any of them Kokoro speaks, so it stays free.
+GOOGLE_LIMIT = int(os.environ.get("GOOGLE_TTS_MONTHLY_CHARS", "500000") or 0)
+GOOGLE_DAILY = int(os.environ.get("GOOGLE_TTS_DAILY_CHARS", "25000") or 0)
+GOOGLE_MAX_TEXT = int(os.environ.get("GOOGLE_TTS_MAX_TEXT", "600") or 0)
 GOOGLE_LOCALE = {"id": "id-ID", "en": "en-US", "zh": "cmn-CN"}
 GOOGLE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize"
 _USAGE = os.path.join(MODELS, "google_tts_usage.json")
+_CACHE = os.path.join(MODELS, "tts-cache")
 _usage_lock = threading.Lock()
 
 
-def google_usage():
-    """Characters sent to Google this calendar month."""
+def _read_usage():
     try:
         with open(_USAGE) as f:
             d = json.load(f)
     except (OSError, ValueError):
-        return 0
-    return int(d.get("chars", 0)) if d.get("month") == time.strftime("%Y-%m") else 0
+        d = {}
+    month, day = time.strftime("%Y-%m"), time.strftime("%Y-%m-%d")
+    return {"month": month, "chars": int(d.get("chars", 0)) if d.get("month") == month else 0,
+            "day": day, "day_chars": int(d.get("day_chars", 0)) if d.get("day") == day else 0}
+
+
+def google_usage():
+    """Characters sent to Google this calendar month."""
+    return _read_usage()["chars"]
+
+
+def google_today():
+    return _read_usage()["day_chars"]
 
 
 def _add_usage(n):
     with _usage_lock:
-        used = google_usage() + n
+        d = _read_usage()
+        d["chars"] += n
+        d["day_chars"] += n
         tmp = _USAGE + ".tmp"
         with open(tmp, "w") as f:
-            json.dump({"month": time.strftime("%Y-%m"), "chars": used}, f)
+            json.dump(d, f)
         os.replace(tmp, _USAGE)
+
+
+def _cache_path(name, rate, text):
+    return os.path.join(_CACHE, hashlib.sha256(f"{name}|{rate}|{text}".encode()).hexdigest() + ".wav")
+
+
+def _cache_put(path, audio):
+    try:
+        os.makedirs(_CACHE, exist_ok=True)
+        with open(path + ".tmp", "wb") as f:
+            f.write(audio)
+        os.replace(path + ".tmp", path)
+        files = sorted((os.path.join(_CACHE, n) for n in os.listdir(_CACHE) if n.endswith(".wav")), key=os.path.getmtime)
+        for old in files[:-300]:
+            os.remove(old)
+    except OSError:
+        pass
 
 
 def google_request(text, lang, voice=None, rate=None):
@@ -202,10 +236,19 @@ def synthesize_google(text, lang=None, voice=None, rate=None, post=None):
         raise ValueError("nothing to say")
     if not GOOGLE_KEY:
         raise RuntimeError("no Google key")
-    if GOOGLE_LIMIT and google_usage() + len(text) > GOOGLE_LIMIT:
-        raise RuntimeError("this month's Google quota is nearly used up")
     lang = lang if lang in GOOGLE_LOCALE else detect_lang(text)
     body = google_request(text, lang, voice, rate)
+    # The same sentence again (a greeting, "Sekarang jam …") is served from disk and costs nothing.
+    cached = _cache_path(body["voice"]["name"], body["audioConfig"].get("speakingRate", 1.0), text)
+    if os.path.exists(cached):
+        with open(cached, "rb") as f:
+            return f.read(), lang, body["voice"]["name"]
+    if GOOGLE_MAX_TEXT and len(text) > GOOGLE_MAX_TEXT:
+        raise RuntimeError("long text: spoken by Kokoro to save the free quota")
+    if GOOGLE_LIMIT and google_usage() + len(text) > GOOGLE_LIMIT:
+        raise RuntimeError("this month's Google allowance is used up")
+    if GOOGLE_DAILY and google_today() + len(text) > GOOGLE_DAILY:
+        raise RuntimeError("today's Google allowance is used up")
     post = post or _google_post
     try:
         audio = post(body)
@@ -216,6 +259,8 @@ def synthesize_google(text, lang=None, voice=None, rate=None, post=None):
         body["audioConfig"].pop("speakingRate")
         audio = post(body)
     _add_usage(len(text))
+    if len(text) <= 200:
+        _cache_put(cached, audio)
     return audio, lang, body["voice"]["name"]
 
 
@@ -302,7 +347,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             return self._send(200, {"ok": True, "tts_loaded": _kokoro is not None, "stt_loaded": _whisper is not None, "whisper": WHISPER_MODEL,
-                                    "google": bool(GOOGLE_KEY), "google_voice": GOOGLE_VOICE, "google_chars": google_usage(), "google_limit": GOOGLE_LIMIT})
+                                    "google": bool(GOOGLE_KEY), "google_voice": GOOGLE_VOICE, "google_chars": google_usage(), "google_limit": GOOGLE_LIMIT,
+                                    "google_today": google_today(), "google_daily": GOOGLE_DAILY})
         if not self._authorised():
             return self._send(403, {"error": "internal endpoint"})
         if self.path == "/voices":
@@ -322,16 +368,17 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/tts":
                 req = json.loads(self._body(64 << 10) or b"{}")
                 fmt = req.get("format") or "wav"
+                # Google only when asked for (Sora's own page); WhatsApp voice notes and the rest stay on Kokoro.
                 engine = str(req.get("engine") or "").lower()
                 data = None
-                if engine != "kokoro" and GOOGLE_KEY:
+                if engine in ("google", "google-only") and GOOGLE_KEY:
                     try:
                         wav, lang, voice = synthesize_google(str(req.get("text") or ""), req.get("lang"), req.get("gvoice"), req.get("rate"))
                         data, ctype = wav_as(wav, fmt)
                     except ValueError:
                         raise
                     except Exception as e:  # noqa: BLE001 - Kokoro answers instead
-                        if engine == "google":
+                        if engine == "google-only":
                             raise
                         print(f"[voice] Google TTS unavailable, using Kokoro: {type(e).__name__}: {str(e)[:120]}", flush=True)
                 if data is None:

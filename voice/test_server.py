@@ -23,6 +23,8 @@ class Tests(unittest.TestCase):
         import urllib.error
         tmp = tempfile.mkdtemp()
         server._USAGE = f"{tmp}/usage.json"
+        server._CACHE = f"{tmp}/cache"
+        server.GOOGLE_DAILY, server.GOOGLE_MAX_TEXT = 0, 0
         server.GOOGLE_KEY, server.GOOGLE_LIMIT = "k", 1000
         body = server.google_request("Halo", "id", "Kore", 1.1)
         self.assertEqual(body["voice"], {"languageCode": "id-ID", "name": "id-ID-Chirp3-HD-Kore"})
@@ -41,6 +43,20 @@ class Tests(unittest.TestCase):
         # Near the monthly limit: refused, so the caller speaks with Kokoro instead.
         with self.assertRaises(RuntimeError):
             server.synthesize_google("x" * 990, post=lambda b: b"RIFF")
+        # The same short sentence again comes from the cache and costs nothing.
+        server.GOOGLE_LIMIT = 0
+        before = server.google_usage()
+        calls = []
+        server.synthesize_google("Laporan hari ini sudah siap untuk dibacakan", post=lambda b: calls.append(b) or b"NEW")
+        self.assertEqual((calls, server.google_usage()), ([], before))
+        # Long texts and a used-up day are left to Kokoro.
+        server.GOOGLE_MAX_TEXT = 600
+        with self.assertRaises(RuntimeError):
+            server.synthesize_google("kata " * 200, post=lambda b: b"RIFF")
+        server.GOOGLE_DAILY = server.google_today() + 5
+        with self.assertRaises(RuntimeError):
+            server.synthesize_google("Kalimat baru yang cukup panjang", post=lambda b: b"RIFF")
+        server.GOOGLE_DAILY = 0
         server.GOOGLE_KEY = ""
         with self.assertRaises(RuntimeError):
             server.synthesize_google("Halo", post=lambda b: b"RIFF")

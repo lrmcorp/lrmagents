@@ -11,7 +11,7 @@ print("health:", {k: health.get(k) for k in ("google", "google_voice", "google_c
 text = ("Oke, quick update ya. Hari ini tiga cabang aman, tapi PIK perlu di-follow up: ada dua customer "
         "yang belum dibalas dari pagi. Summary-nya udah aku siapin, mau aku bacain sekarang atau habis meeting?")
 for voice in ("Sulafat", "Pulcherrima", "Callirrhoe", "Laomedeia"):
-    body = json.dumps({"text": text, "lang": "id", "engine": "google", "gvoice": voice, "format": "ogg"}).encode()
+    body = json.dumps({"text": text, "lang": "id", "engine": "google-only", "gvoice": voice, "format": "ogg"}).encode()
     req = urllib.request.Request("http://voice:8095/tts", data=body, method="POST",
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     started = time.time()

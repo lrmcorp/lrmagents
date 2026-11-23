@@ -222,7 +222,7 @@ class LrmVoiceHandler:
             req = json.loads(web.data() or b"{}")
             if op == "tts":
                 body, headers = _voice("/tts", data=json.dumps({"text": str(req.get("text") or "")[:4000], "lang": req.get("lang"),
-                                                                "voice": req.get("voice"), "format": "wav"}).encode(),
+                                                                "voice": req.get("voice"), "format": "wav", "engine": "google"}).encode(),
                                        headers={"Content-Type": "application/json"}, timeout=300)
                 web.header("Content-Type", "audio/wav")
                 web.header("X-Lang", headers.get("X-Lang") or "")
