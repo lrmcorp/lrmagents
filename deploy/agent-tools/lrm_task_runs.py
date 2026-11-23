@@ -74,6 +74,10 @@ def current(session_id):
         return _runs.get(str(session_id or ""))
 
 
+def _word_in(part, whole):
+    return re.search(r"(?<!\w)" + re.escape(part) + r"(?!\w)", whole) is not None
+
+
 def _recipient_hit(run, to):
     """The run recipient a 'to' names, or None. Matches the owner, a phone (last 9 digits),
     a group jid/name, or a designated contact by name."""
@@ -90,8 +94,8 @@ def _recipient_hit(run, to):
             group = name.removeprefix("group:").strip()
             if to == r["chat"] or (wanted and group and (wanted == group or (len(wanted) >= 3 and wanted in group))):
                 return r
-        elif name and len(low) >= 3 and (low == name or low in name or name in low):
-            # a designated contact named in the send (no digits), e.g. "Hansel"
+        elif name and len(low) >= 3 and len(name) >= 3 and (low == name or _word_in(low, name) or _word_in(name, low)):
+            # a designated contact named in the send (no digits), e.g. "Hansel"; whole words only, so "Al" ≠ "Halim"
             return r
     return None
 

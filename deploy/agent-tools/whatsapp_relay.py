@@ -70,6 +70,7 @@ class WhatsAppRelay:
         self.action = {}            # the task's action, set for a single-recipient task (see fanout)
         self.last_result = {}       # the gateway's reply to the last send
         self.delivery_note = ""     # appended to the task's History preview
+        self.refused = False        # the last post() was a final 400/403 refusal
 
     def post(self, text, mentions=None):
         """(ok, error) for one message, without raising."""
@@ -283,7 +284,8 @@ class FanOut:
         if transient and delivered:
             # Raising would make the scheduler re-run the whole agent task (it does not just
             # re-deliver), so the others would get a second, different report: say so instead.
-            self.delivery_note += "\nNot retried: a recipient was unreachable (offline?); send it to them again if needed."
+            missed = ", ".join(n for n, ok, _, _ in self.results if not ok)
+            self.delivery_note += f"\nNot delivered to {missed}, and not retried; send it to them again if needed."
             logger.warning(f"[WhatsAppRelay] fan-out partly failed, not retried: {self.delivery_note.strip()}")
         logger.info(f"[WhatsAppRelay] fan-out {self.delivery_note.strip()}")
         # Nobody got it: retry only when a failure may pass (offline), not when every one was refused.

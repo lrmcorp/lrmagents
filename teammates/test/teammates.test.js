@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { explain, runProcess } from '../src/jobs.js';
 import { TEAMMATES, byId, childEnv, codexModels, pickModel, runArgs, safeFolder } from '../src/teammates.js';
 
@@ -103,4 +105,17 @@ test('task log modal: keeps polling with backoff after a failed request', () => 
   assert.ok(pollDelay(1) > pollDelay(0));
   assert.equal(pollDelay(20), 30000);
   assert.match(html, /timer = setTimeout\(tick, pollDelay\(failures\)\)/);
+});
+
+test('runProcess: the SIGKILL reaches the whole process group, not just the CLI', async () => {
+  const pidFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tm-')), 'pid');
+  const child = `process.on('SIGTERM', () => {}); require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000)`;
+  const run = runProcess(['sh', '-c', `node -e "${child.replace(/"/g, '\\"')}"; sleep 30`], { env: process.env, timeoutMs: 500, graceMs: 200 });
+  await run.done;
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+  await new Promise((r) => setTimeout(r, 100));
+  // Gone, or a zombie waiting for an init that does not reap (as in some containers).
+  let state = 'gone';
+  try { state = fs.readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1][0]; } catch { /* gone */ }
+  assert.ok(state === 'gone' || state === 'Z', `grandchild still ${state}`);
 });

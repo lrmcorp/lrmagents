@@ -80,7 +80,24 @@ ANSWER.clear()
 ANSWER["222@s.whatsapp.net"] = "offline"
 fan = wr.FanOut(None, {"receiver": P + "628111@s.whatsapp.net", "receivers": [P + "628222@s.whatsapp.net"]})
 fan.send(reply)
-check("partial transient noted", "Not retried" in fan.delivery_note, True)
+check("partial transient noted", "Not delivered to 628222@s.whatsapp.net, and not retried" in fan.delivery_note, True)
+check("partial still lists the delivered one", "628111@s.whatsapp.net ✓" in fan.delivery_note, True)
+# every recipient refused: final, so no raise (a retry cannot help), and History says so.
+ANSWER.clear()
+ANSWER["111@s.whatsapp.net"] = ANSWER["222@s.whatsapp.net"] = "refused"
+fan = wr.FanOut(None, {"receiver": P + "628111@s.whatsapp.net", "receivers": [P + "628222@s.whatsapp.net"]})
+fan.send(reply)
+check("all refused, no raise", fan.delivery_note.count("✗ (not a designated contact)"), 2)
+# a single recipient offline: raises, so the scheduler keeps the task for the next tick.
+ANSWER.clear()
+ANSWER["111@s.whatsapp.net"] = "offline"
+try:
+    wr.relay_for(P + "628111@s.whatsapp.net").send(reply)
+    check("single offline raises", False, True)
+except Exception:
+    check("single offline raises", True, True)
+ANSWER.clear()
+ANSWER["222@s.whatsapp.net"] = "offline"
 # nobody reached and offline: still raises so the run is retried.
 ANSWER["111@s.whatsapp.net"] = "offline"
 fan = wr.FanOut(None, {"receiver": P + "628111@s.whatsapp.net", "receivers": [P + "628222@s.whatsapp.net"]})

@@ -57,7 +57,8 @@ def _luhn(number):
 _LABEL = re.compile(r"(?i)\b(password|passwd|pwd|passcode|kata ?sandi|sandi|secret|pin|otp|cvv|cvc|api[ _-]?key|token)\b"
                     r"\s*[:=]\s*[`'\"]?([^\s`'\"]+)[`'\"]?([^\n]*)")
 _PW_LABELS = ("password", "passwd", "pwd", "passcode", "sandi", "secret")
-_CARD_WORDS = re.compile(r"(?i)\b(kartu|card|kredit|credit|debit|visa|master ?card|amex|jcb|cc)\b")
+_CARD_WORDS = re.compile(r"(?i)\b(kartu|card|kredit|credit|debit|visa|master ?card|amex|jcb)\b")
+_CC = re.compile(r"(?i)\bcc\b")  # also WhatsApp's "cc Pak Budi", so not enough for a phone number
 _CARD_PREFIX = re.compile(r"^(4|5[1-5]|2[2-7]|3[47]|35|6011|65)")
 
 
@@ -83,9 +84,11 @@ def _card_number(raw, before):
     if not (13 <= len(digits) <= 19 and _luhn(digits)):
         return False
     grouped = bool(re.fullmatch(r"\d{4}([ -])\d{4}\1\d{4}\1\d{4}(\1\d{1,4})?|\d{4}([ -])\d{6}\3\d{5}", raw.strip()))
-    if grouped or _CARD_WORDS.search(before[-40:]):
-        return True
     phone = before.rstrip().endswith("+") or digits.startswith(("62", "08"))
+    # A phone needs the card word right before it ("no kartu: 62…"), not anywhere in the sentence.
+    near = before[-20:] if phone else before[-40:]
+    if grouped or _CARD_WORDS.search(near) or (not phone and _CC.search(near)):
+        return True
     return not phone and len(digits) in (15, 16) and bool(_CARD_PREFIX.match(digits))
 
 

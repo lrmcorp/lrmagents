@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# The deploy reads the repo and talks to the VPS over SSH; it needs nothing else from GitHub.
+permissions:
+  contents: read
+
 concurrency:
   group: cowagent-vps
   cancel-in-progress: false
@@ -15,8 +19,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '22'
       - name: WhatsApp gateway tests
@@ -32,17 +36,13 @@ jobs:
         run: |
           for f in deploy/*.sh; do bash -n "$f"; done
           python3 -m py_compile deploy/brand/apply.py deploy/agent-tools/*.py deploy/agent-tools/*/*.py
-          python3 deploy/agent-tools/test_lrm_task_output.py
-          python3 deploy/agent-tools/test_owner_session.py
-          python3 deploy/agent-tools/test_lrm_voice.py
+          for t in deploy/agent-tools/test_*.py; do python3 "$t" || exit 1; done
           # A lazy runtime import of an agent.lrm_* module is invisible to compileall, so a
           # module referenced but not COPYed into /app/agent/ only fails when a scheduled run
           # executes (as lrm_task_output did). This check fails the build instead.
           python3 deploy/check_agent_copies.py
-          node --check deploy/brand/vault.js
-          node --check deploy/brand/topology.js
+          for f in deploy/brand/*.js deploy/brand/vendor/*.js; do node --check "$f" || exit 1; done
           python3 -m py_compile voice/server.py
-          node --check deploy/brand/vendor/lrm-editor.js
           for f in .github/workflows/*.yml; do python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$f"; done
           # every run: block of every workflow must be valid bash (a stray quote fails the deploy late otherwise)
           python3 -c 'import glob, subprocess, sys, yaml
@@ -64,7 +64,7 @@ jobs:
         run: docker compose -f deploy/compose.yaml build
       # The console and the gateway pages in a real browser, desktop and phone sizes: no page errors,
       # no sideways scrolling. No AI model involved.
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
       - name: End-to-end tests
@@ -100,10 +100,10 @@ jobs:
     timeout-minutes: 30  # the restart waits up to 15 minutes for running reports (deploy/wait-idle.sh)
     env:
       VPS: ubuntu@43.152.240.47
-      # Keep in sync with the AGENT_DOMAIN variable in lrmcorp/ln; first host is the public URL.
+      # Keep in sync with the AGENT_DOMAIN variable of the edge proxy's repo; first host is the public URL.
       AGENT_DOMAIN: ${{ vars.AGENT_DOMAIN || 'agent.hasseedev.com' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Prepare pinned SSH identity
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -119,7 +119,7 @@ jobs:
         run: |
           printf '%s\n' "$GITHUB_SHA" > .deploy-revision
           $SSH "$VPS" 'mkdir -p ~/cowagent'
-          rsync -az --delete -e "$SSH" --exclude='.git/' --exclude='.env*' ./ "$VPS":~/cowagent/
+          rsync -az --delete -e "$SSH" --exclude='.git/' --exclude='.env*' --exclude='deploy/compose.sandbox.yaml' ./ "$VPS":~/cowagent/
       # Secrets travel over stdin, never on a command line. Blank values are omitted so keys saved in the web console survive.
       - name: Write server environment
         env:
@@ -205,14 +205,17 @@ jobs:
             && { test -s .env.sandbox || printf "SANDBOX_TOKEN=%s\n" "$(openssl rand -hex 32)" > .env.sandbox; }'
           # The DeepSeek teammate uses the same DeepSeek key as the agents.
           if [[ -n "$DEEPSEEK_API_KEY" ]]; then printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY" | $SSH "$VPS" 'umask 077 && cat >> ~/cowagent/.env.teammates'; fi
+      # The control dir is mounted into the console: writable only by its agent group (gid 999).
+      # sandbox-mounts.sh creates the sandbox's read-only bind folders and writes compose.sandbox.yaml.
       - name: Start and verify LRMagent
         run: |
           $SSH "$VPS" "cd ~/cowagent && test \"\$(cat .deploy-revision)\" = '$GITHUB_SHA' \
             && (sudo -n docker network inspect lnint-edge >/dev/null 2>&1 || sudo -n docker network create lnint-edge) \
-            && mkdir -p ~/vault-sync/control && chmod 777 ~/vault-sync/control \
+            && mkdir -p ~/vault-sync/control && chmod 700 ~/vault-sync && sudo -n chgrp 999 ~/vault-sync/control && chmod 1770 ~/vault-sync/control \
             && sudo -n docker compose -f deploy/compose.yaml build --pull \
             && bash deploy/wait-idle.sh \
-            && sudo -n docker compose -f deploy/compose.yaml up -d --remove-orphans \
+            && bash deploy/sandbox-mounts.sh \
+            && sudo -n docker compose -f deploy/compose.yaml -f deploy/compose.sandbox.yaml up -d --remove-orphans \
             && curl -fsS --retry 30 --retry-delay 2 --retry-all-errors --max-time 5 http://127.0.0.1:9899/ >/dev/null \
             && sudo -n docker compose -f deploy/compose.yaml exec -T whatsapp-gateway node -e \"(async()=>{for(let i=0;i<15;i++){try{console.log(await (await fetch('http://127.0.0.1:8080/whatsapp/health')).text());return}catch{await new Promise(r=>setTimeout(r,2000))}}process.exit(1)})()\""
       # 02:17 Jakarta time. Idempotent: the tagged line is replaced on every deploy.
@@ -222,7 +225,7 @@ jobs:
             && line="17 19 * * * bash \$HOME/cowagent/deploy/backup.sh >> \$HOME/backups/lrmagent-backup.log 2>&1 # lrmagent-backup" \
             && { crontab -l 2>/dev/null | grep -v "# lrmagent-backup"; echo "$line"; } | crontab - \
             && crontab -l | grep -c "# lrmagent-backup" \
-            && { ls ~/backups/lrmagent/*.tar.gz >/dev/null 2>&1 || bash ~/cowagent/deploy/backup.sh; }'
+            && { ls ~/backups/lrmagent/*.tar.gz >/dev/null 2>&1 || bash ~/cowagent/deploy/backup.sh || echo "::warning::first backup had failures; see ~/backups/lrmagent-backup.log"; }'
       # Hourly two-way sync of the knowledge vault with a private repo (README "Second brain").
       # The repo is set either by the LRMAGENT_VAULT_REPO variable (which wins) or from the
       # console's Vault → Git panel, through vault-control.sh (every minute). The VPS makes
@@ -236,7 +239,7 @@ jobs:
             [[ "$VAULT_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "::error::LRMAGENT_VAULT_REPO must look like owner/repo"; exit 1; }
           fi
           pub="$($SSH "$VPS" "command -v git >/dev/null || sudo -n apt-get install -y -q git >/dev/null; \
-            mkdir -p ~/vault-sync/control ~/.ssh && chmod 700 ~/.ssh && chmod 777 ~/vault-sync/control \
+            mkdir -p ~/vault-sync/control ~/.ssh && chmod 700 ~/.ssh ~/vault-sync && sudo -n chgrp 999 ~/vault-sync/control && chmod 1770 ~/vault-sync/control \
             && { test -f ~/.ssh/lrmagent_vault || ssh-keygen -q -t ed25519 -N '' -C lrmagent-vault@vps -f ~/.ssh/lrmagent_vault; } \
             && cp ~/cowagent/deploy/github_known_hosts ~/vault-sync/known_hosts \
             && if [ -n '$VAULT_REPO' ]; then \
@@ -258,14 +261,15 @@ jobs:
           # Off-site backups: encrypted with this passphrase, pushed to the same private repo.
           if [[ -n "$BACKUP_PASSPHRASE" ]]; then
             printf '%s\n' "$BACKUP_PASSPHRASE" | $SSH "$VPS" "umask 077 && cat > ~/.lrmagent-backup-pass && printf '%s\n' '$VAULT_REPO' > ~/.lrmagent-offsite-repo"
-            echo "Off-site backups: nightly, encrypted, to $VAULT_REPO (branch backups)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Off-site backups: nightly, encrypted, to the vault repo (branch backups)." >> "$GITHUB_STEP_SUMMARY"
           else
             $SSH "$VPS" 'rm -f ~/.lrmagent-backup-pass ~/.lrmagent-offsite-repo'
             echo "Off-site backups: off (add the LRMAGENT_BACKUP_PASSPHRASE secret to turn them on)." >> "$GITHUB_STEP_SUMMARY"
           fi
           {
-            echo "### Vault sync: $VAULT_REPO (hourly)"
-            echo "Add this as a **deploy key with write access** in $VAULT_REPO → Settings → Deploy keys:"
+            # The repo is public, so the summary does not name the private vault repo.
+            echo "### Vault sync (hourly)"
+            echo "Add this as a **deploy key with write access** in the vault repo → Settings → Deploy keys:"
             echo '```'; echo "$pub"; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Verify public console

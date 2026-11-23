@@ -74,7 +74,7 @@ if [[ -s "$PASS_FILE" && -s "$REPO_FILE" && -f "$KEY" ]]; then
     echo "$(date -u +%FT%TZ) off-site copy pushed to $repo (branch backups)"
     echo "OK $(date -u +%FT%TZ)" > "$DEST/offsite-status"
   else
-    offsite_fail "could not push the encrypted backup to $repo"
+    offsite_fail "could not push the encrypted backup to the vault repo"
   fi
 fi
 

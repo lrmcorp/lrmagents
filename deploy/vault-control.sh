@@ -17,6 +17,8 @@ mkdir -p "$CONTROL" "$HOME/.ssh"
 chmod 700 "$HOME/.ssh" "$BASE"
 # Writable for the container's agent user (gid 999, set by the deploy) and nobody else;
 # the sticky bit stops the container from deleting or replacing state.json.
+[[ "$(stat -c %g "$CONTROL")" == 999 ]] || sudo -n chgrp 999 "$CONTROL" 2>/dev/null
+# Without the group (no sudo) the panel still needs write access; the sticky bit stays.
 if [[ "$(stat -c %g "$CONTROL")" == 999 ]]; then chmod 1770 "$CONTROL"; else chmod 1777 "$CONTROL"; fi
 
 repo_ok() { [[ "$1" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; }

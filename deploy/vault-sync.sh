@@ -22,6 +22,8 @@ set -Eeuo pipefail
 # LRMAGENT_VAULT_REPO variable (~/vault-sync/repo-name). None set: nothing to do.
 REPO="${1:-$(cat "$HOME/vault-sync/repo-name" 2>/dev/null || true)}"
 [[ -n "$REPO" ]] || exit 0
+# repo-name is host-only, but the name still lands in a git URL: refuse anything odd.
+[[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "$(date -u +%FT%TZ) invalid repo name; skipping"; exit 1; }
 URL="${VAULT_REMOTE_URL:-git@github.com:$REPO.git}"
 VOLUME="${VAULT_VOLUME:-cowagent_workspace}"
 BASE="$HOME/vault-sync"

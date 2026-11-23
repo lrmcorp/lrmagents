@@ -26,8 +26,11 @@ jobs:
     steps:
       - name: Keep the schedule enabled
         run: |
-          [[ "$(date -u +%H%M)" < 0015 ]] || exit 0
-          for wf in health.yml updates.yml; do gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/enable"; done
+          # Scheduled runs often start late, so any run in hour 00 UTC counts (a repeat is harmless).
+          [[ "$(date -u +%H)" == 00 ]] || exit 0
+          for wf in health.yml updates.yml; do
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/enable" || echo "::warning::could not re-enable $wf"
+          done
 
   check:
     if: ${{ vars.VPS_DEPLOY_ENABLED == 'true' }}

@@ -30,7 +30,7 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
 1. **DNS (Cloudflare, `hasseedev.com`):** add an `A` record with name `agent` and value `43.152.240.47`, proxy status **DNS only** so Caddy can get its certificate. Do not add an `AAAA` record.
 2. **`ln` repo:** deploy the `ln` change that serves `agent.hasseedev.com` to `deploy/Caddyfile.domain` and joins Caddy to `lnint-edge`.
 3. **This repo → Settings → Secrets and variables → Actions:**
-   - Secret `VPS_SSH_KEY`: the same Tencent private key used by `lrmcorp/ln`.
+   - Secret `VPS_SSH_KEY`: the same Tencent private key the edge proxy's (Caddy) deploy uses.
    - Secret `COWAGENT_WEB_PASSWORD`: the web console password, 12 or more characters, including at least one letter (an all-digit value is parsed as a number). It is required because the agent can run shell commands inside its container.
    - Optional secrets for model keys: `CLAUDE_API_KEY`, `OPEN_AI_API_KEY`, `DEEPSEEK_API_KEY`, `GEMINI_API_KEY`. You can also set keys later in the web console.
    - Optional variable `COWAGENT_MODEL`, for example `claude-sonnet-4-5`.
@@ -40,7 +40,7 @@ It opens in light mode. Viewers can switch to the matching dark mode, which uses
 ## Move the console to lrmcorporation.id
 
 1. At the DNS provider for `lrmcorporation.id`, add `A` records for `@` and `www`, both pointing to `43.152.240.47`. Remove any `AAAA` records for those names.
-2. In **both** `lrmcorp/ln` and `lrmcorp/lrmagents`, add the repository variable `AGENT_DOMAIN=lrmcorporation.id,www.lrmcorporation.id`.
+2. In **both** the edge proxy's repository and this one, add the repository variable `AGENT_DOMAIN=lrmcorporation.id,www.lrmcorporation.id`.
 3. Re-run the `ln` deploy workflow, which makes Caddy request certificates for the new hosts. Then re-run this repository's workflow, which updates the console's public URL and checks HTTPS.
 
 `agent.hasseedev.com` stops being served after the switch. Delete the variable to go back to it.
@@ -181,8 +181,8 @@ When an AI model call fails, the chat says what happened and what to do instead 
 
 The vault can be synced with a **private** GitHub repo, so you can read and edit it in Obsidian on desktop or phone (for example with the Obsidian Git plugin).
 
-1. Create an empty **private** repository, for example `lrmcorp/lrmagent-vault`. This repo (`lrmagents`) is public, so it must not hold the vault.
-2. In this repo, add the Actions variable `LRMAGENT_VAULT_REPO=lrmcorp/lrmagent-vault` and run the deploy.
+1. Create an empty **private** repository, for example `<owner>/<vault-repo>`. This repo (`lrmagents`) is public, so it must not hold the vault.
+2. In this repo, add the Actions variable `LRMAGENT_VAULT_REPO=<owner>/<vault-repo>` and run the deploy.
 3. The deploy summary shows a public key generated on the VPS. Add it under the vault repo's Settings → Deploy keys, **with write access**. The private key never leaves the VPS.
 
 Only the synced folders below are written from the server; `.obsidian/`, notes at the top level and any other folders are left as Obsidian keeps them. A folder created in Obsidian for an existing agent (`agents/<id>/knowledge/`) is created on the server too.
@@ -214,13 +214,13 @@ Take the numbers from your providers' price pages; there is no built-in price li
   ```bash
   cd ~/cowagent && sudo docker compose -f deploy/compose.yaml stop
   sudo docker run --rm -v cowagent_workspace:/v -v ~/backups/lrmagent:/b:ro alpine:3.20 sh -c 'rm -rf /v/* && tar -C /v -xzf /b/cowagent_workspace-YYYYMMDD-HHMM.tar.gz'
-  sudo docker compose -f deploy/compose.yaml up -d
+  sudo docker compose -f deploy/compose.yaml -f deploy/compose.sandbox.yaml up -d
   ```
 
   **Off-site copy:** with the vault repo set up, add the secret `LRMAGENT_BACKUP_PASSPHRASE`. Each night's archives are then encrypted (AES-256) and pushed to the vault repo's `backups` branch, keeping only the latest night. Keep the passphrase somewhere safe; without it the copy can't be opened. To restore from it:
 
   ```bash
-  git clone -b backups git@github.com:lrmcorp/lrmagent-vault.git restore && cd restore
+  git clone -b backups git@github.com:<owner>/<vault-repo>.git restore && cd restore
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in lrmagent-backup-*.tar.gz.enc | tar -x
   ```
 
