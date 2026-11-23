@@ -169,12 +169,69 @@ def _speak(text, lang=None):
     return body
 
 
+# "laporan harian", "ringkasan operasional hari ini", "daily report": the saved brief, read at once.
+_BRIEF_ASK = re.compile(r"^(?:\W*(?:hai|halo|hey|ok|tolong|coba|minta|bacakan|bacain|play|read|sora)\W+)*"
+                        r"(?:(?:laporan|ringkasan|rekap)(?:\W+(?:operasional|harian|hari ini|terakhir|terbaru|cabang|semua cabang))*"
+                        r"|(?:the\W+)?(?:latest\W+|daily\W+|today'?s\W+)*(?:report|brief|summary))"
+                        r"(?:\W+(?:sora|dong|ya|please))*\W*$", re.I)
+# Past this, the iPhone hears a short note and the full answer goes to the owner's WhatsApp (Shortcuts give up near 60 s).
+WAIT = float(os.environ.get("LRMAGENT_SHORTCUT_WAIT", "25") or 25)
+LATE = "Ini perlu waktu lebih lama. Jawabannya saya kirim lewat WhatsApp begitu siap."
+
+
+def _brief_speech():
+    brief = latest_brief()
+    if not brief["at"]:
+        return brief["text"]
+    return f"Ringkasan {brief['at']}. {brief['text']}"[:BRIEF_AUDIO_MAX]
+
+
+def _whatsapp_owner(agent_id, text):
+    from agent import lrm_activity
+    lrm_activity._notify_owner(agent_id, text)
+
+
+def _answer_within(text, lang, wait):
+    """The spoken answer, or LATE when the model needs longer; then it is sent on WhatsApp when ready."""
+    box, lock, done = {}, threading.Lock(), threading.Event()
+
+    def work():
+        try:
+            box["result"] = _voice_api().chat(text, None, lang, spoken_only=True)
+        except Exception as e:  # noqa: BLE001 - reported to the caller or on WhatsApp
+            box["error"] = e
+        with lock:
+            done.set()
+            late = box.get("late")
+        if late:
+            result = box.get("result") or {}
+            agent = (result.get("agent") or {}).get("id") or "personal"
+            reply = result.get("text") or f"Sora could not answer: {box.get('error')}"
+            _whatsapp_owner(agent, f"🎙 From your iPhone: {text}\n\n{reply}")
+            logger.info(f"[Shortcut] late answer sent on WhatsApp ({len(reply)} chars)")
+
+    threading.Thread(target=work, daemon=True).start()
+    done.wait(wait)
+    with lock:
+        if not done.is_set():
+            box["late"] = True
+            return LATE
+    if "error" in box:
+        raise box["error"]
+    return box["result"]["text"]
+
+
 def _ask_audio(text, lang):
     started = time.time()
-    answer = _voice_api().chat(text, None, lang, spoken_only=True)["text"][:TTS_MAX] or "Maaf, saya tidak punya jawaban."
+    if _BRIEF_ASK.match(text):
+        answer, how = _brief_speech(), "brief"
+    else:
+        answer = _answer_within(text, lang, WAIT)
+        how = "model (late, WhatsApp)" if answer is LATE else "model"
+        answer = answer[:TTS_MAX] or "Maaf, saya tidak punya jawaban."
     thought = time.time() - started
     audio = _speak(answer, lang)
-    logger.info(f"[Shortcut] ask_audio: model {thought:.1f}s, voice {time.time() - started - thought:.1f}s, "
+    logger.info(f"[Shortcut] ask_audio: {how} {thought:.1f}s, voice {time.time() - started - thought:.1f}s, "
                 f"{len(text)} chars in, {len(answer)} out, {len(audio) // 1024} KB")
     return audio
 

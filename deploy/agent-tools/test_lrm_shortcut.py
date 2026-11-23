@@ -5,6 +5,7 @@ hand to Sora's chat and the voice service. The in-container modules are stubbed 
 request state, the voice handler module, the conversation store) so this runs anywhere.
 """
 import json
+import time
 import os
 import sys
 import types
@@ -182,6 +183,29 @@ check("ask_audio audio", (status, audio, _HEADERS.get("Content-Type")), (200, b"
 check("ask_audio calls", CALLS, [("chat", "jam berapa?", None, "id", True),
                                  ("voice", "/tts", {"text": "Jam tiga sore.", "format": "mp3", "engine": "google", "lang": "id"},
                                   {"Content-Type": "application/json"})])
+# A report request reads the saved brief without the model.
+CALLS.clear()
+_STORE["store"] = _Store(rows)
+for ask in ("laporan harian", "Tolong bacakan ringkasan operasional hari ini", "Laporan", "daily report please"):
+    CALLS.clear()
+    call("POST", "ask_audio", body={"text": ask})
+    check(f"brief ask: {ask}", ([c[0] for c in CALLS], CALLS[-1][2]["text"].startswith("Ringkasan ")), (["voice"], True))
+CALLS.clear()
+call("POST", "ask_audio", body={"text": "buatkan laporan stok cabang Bekasi minggu ini"})
+check("other report asks go to the model", CALLS[0][0], "chat")
+
+# A slow model: the iPhone hears the note at once, the answer follows on WhatsApp.
+import threading as _t
+SENT, gate = [], _t.Event()
+api._whatsapp_owner = lambda agent, text: SENT.append((agent, text)) or gate.set()
+_voice.chat = lambda text, image=None, lang=None, spoken_only=False: time.sleep(0.3) or {"text": "Ada dua meeting.", "agent": {"id": "personal"}}
+api.WAIT = 0.05
+CALLS.clear()
+status, _ = call("POST", "ask_audio", body={"text": "ada meeting apa besok?"})
+check("slow answer: note spoken", (status, CALLS[-1][2]["text"]), (200, api.LATE))
+check("slow answer: sent on WhatsApp", (gate.wait(3), SENT), (True, [("personal", "🎙 From your iPhone: ada meeting apa besok?\n\nAda dua meeting.")]))
+api.WAIT = 25
+
 check("ask_audio without text", call("POST", "ask_audio", body={"text": ""})[0], 400)
 check("GET ask_audio -> 405", call("GET", "ask_audio")[0], 405)
 
