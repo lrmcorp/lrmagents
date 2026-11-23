@@ -221,7 +221,7 @@ jobs:
           # The voice service's own file, so the Google key is not shared with the gateway or teammates.
           { printf 'GOOGLE_TTS_API_KEY=%s\n' "$GOOGLE_TTS_API_KEY"; [[ -n "$GOOGLE_TTS_VOICE" ]] && printf 'GOOGLE_TTS_VOICE=%s\n' "$GOOGLE_TTS_VOICE"; true; } \
             | $SSH "$VPS" 'umask 077 && cat > ~/cowagent/.env.voice'
-          [[ -n "$GOOGLE_TTS_API_KEY" ]] && echo "Sora's voice: Google Chirp 3 HD (${GOOGLE_TTS_VOICE:-Aoede}), Kokoro as fallback" >> "$GITHUB_STEP_SUMMARY" || true
+          [[ -n "$GOOGLE_TTS_API_KEY" ]] && echo "Sora's voice: Google Chirp 3 HD (${GOOGLE_TTS_VOICE:-Sulafat}), Kokoro as fallback" >> "$GITHUB_STEP_SUMMARY" || true
           # The DeepSeek teammate uses the same DeepSeek key as the agents.
           if [[ -n "$DEEPSEEK_API_KEY" ]]; then printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY" | $SSH "$VPS" 'umask 077 && cat >> ~/cowagent/.env.teammates'; fi
       # The control dir is mounted into the console: writable only by its agent group (gid 999).

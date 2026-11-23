@@ -8,9 +8,9 @@ import base64, json, os, time, urllib.request
 token = os.environ.get("EXTERNAL_API_TOKEN", "")
 health = json.loads(urllib.request.urlopen("http://voice:8095/health", timeout=10).read())
 print("health:", {k: health.get(k) for k in ("google", "google_voice", "google_chars", "google_limit")})
-text = ("Halo, saya Sora. Laporan sore ini sudah siap: tiga cabang aman, satu cabang perlu perhatian "
-        "karena ada dua pelanggan yang belum dibalas. Mau saya bacakan sekarang?")
-for voice in ("Aoede", "Kore", "Leda", "Zephyr", "Despina", "Sulafat"):
+text = ("Oke, quick update ya. Hari ini tiga cabang aman, tapi PIK perlu di-follow up: ada dua customer "
+        "yang belum dibalas dari pagi. Summary-nya udah aku siapin, mau aku bacain sekarang atau habis meeting?")
+for voice in ("Sulafat", "Pulcherrima", "Callirrhoe", "Laomedeia"):
     body = json.dumps({"text": text, "lang": "id", "engine": "google", "gvoice": voice, "format": "ogg"}).encode()
     req = urllib.request.Request("http://voice:8095/tts", data=body, method="POST",
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})

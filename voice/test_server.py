@@ -30,7 +30,7 @@ class Tests(unittest.TestCase):
         self.assertNotIn("speakingRate", server.google_request("Hi", "en", rate=1.0)["audioConfig"])
         sent = []
         wav, lang, name = server.synthesize_google("Laporan hari ini sudah siap untuk dibacakan", post=lambda b: sent.append(b) or b"RIFF")
-        self.assertEqual((wav, lang, name), (b"RIFF", "id", "id-ID-Chirp3-HD-Aoede"))
+        self.assertEqual((wav, lang, name), (b"RIFF", "id", "id-ID-Chirp3-HD-Sulafat"))
         self.assertEqual(server.google_usage(), len("Laporan hari ini sudah siap untuk dibacakan"))
 
         def no_rate(b):
