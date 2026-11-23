@@ -111,6 +111,25 @@ for lang, text in (("en", "Yes, I can hear you loud and clear. What can I do for
     except Exception as e:
         print(f"{lang} failed: {e} {getattr(e, 'read', lambda: b'')()[:200]!r}")
 PY
+echo "== voice model speed (direct DeepSeek call, with and without thinking)"
+dc exec -T cowagent sh -c 'cd /app && PYTHONPATH=/app python - <<PY 2>&1 | grep -v "^\[" | tail -8
+import json, time, urllib.request
+from config import load_config, conf
+load_config()
+key, base = conf().get("deepseek_api_key"), (conf().get("deepseek_api_base") or "https://api.deepseek.com/v1").rstrip("/")
+for model in ("deepseek-flash", "deepseek-chat"):
+    for extra in ({}, {"thinking": {"type": "disabled"}}):
+        body = {"model": model, "max_tokens": 200, "messages": [{"role": "system", "content": "You are Sora. Answer in one short spoken sentence."},
+                                                               {"role": "user", "content": "Halo, bagaimana kabarmu?"}], **extra}
+        t = time.time()
+        try:
+            r = json.load(urllib.request.urlopen(urllib.request.Request(base + "/chat/completions", data=json.dumps(body).encode(),
+                headers={"Authorization": "Bearer " + str(key), "Content-Type": "application/json"}), timeout=60))
+            m = r["choices"][0]["message"]
+            print(model, extra or "default", f"{time.time()-t:.1f}s", "reasoning", len(m.get("reasoning_content") or ""), "answer", repr(m.get("content"))[:80], "served", r.get("model"))
+        except Exception as e:
+            print(model, extra or "default", "failed", e, getattr(e, "read", lambda: b"")()[:160])
+PY' </dev/null
 echo "== iPhone Shortcut timings"; dc logs --no-color --since 24h cowagent 2>&1 | grep -E '\[Shortcut\]|\[Voice\]' | cut -c1-260 | tail -20
 echo "== voice log (Google fallbacks)"; dc logs --no-color --tail 300 voice 2>&1 | grep -iE "google|kokoro|error" | tail -15
 echo "== scheduled tasks"

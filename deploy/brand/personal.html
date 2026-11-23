@@ -294,10 +294,9 @@
     S.busy = true; setState('thinking', 'understanding');
     try {
       const live = await liveStop();
-      // The browser hears one language at a time, so Bahasa mixed with English (or Mandarin)
-      // comes out garbled: those go to faster-whisper on the server, which follows mixed
-      // speech. A confident English result is used at once.
-      if (live && live.lang === 'en' && (live.conf === 0 || live.conf >= 0.6)) { await ask(live.text, { lang: 'en' }); return; }
+      // The browser's own transcript is used at once (Whisper on the server takes about 6 s);
+      // only an unsure or empty one goes to the server.
+      if (live && (live.conf === 0 || live.conf >= 0.6)) { await ask(live.text, { lang: live.lang }); return; }
       if (live?.text) $('#you').textContent = `“${live.text}…”`;
       const lang = $('#lang').value;
       const r = await fetch('/api/lrm/voice?op=stt', { method: 'POST', body: blob, headers: lang ? { 'X-Lang': lang } : {}, credentials: 'same-origin' });
@@ -400,7 +399,7 @@
   }
   function play(wav, token) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/wav' }));
+      const url = URL.createObjectURL(new Blob([wav], { type: 'audio/mpeg' }));
       const done = () => { URL.revokeObjectURL(url); player.onended = player.onerror = null; S.out = 0; resolve(); };
       player.onended = done; player.onerror = () => done();
       token.stop = () => { player.pause(); done(); };

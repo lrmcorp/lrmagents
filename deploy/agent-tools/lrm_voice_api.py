@@ -205,6 +205,8 @@ def chat(text, image=None, lang=None, spoken_only=False):
     if cap > 0:
         body["max_tokens"] = cap
 
+    began = time.time()
+
     def ask(payload):
         request = urllib.request.Request(f"http://127.0.0.1:{port}/v1/chat/completions", method="POST", data=json.dumps(payload).encode(),
                                          headers={"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"})
@@ -224,6 +226,7 @@ def chat(text, image=None, lang=None, spoken_only=False):
         except ValueError:
             why = None
         raise RuntimeError(why or f"the assistant answered {e.code}")
+    logger.info(f"[Voice] spoken turn answered in {time.time() - began:.1f}s ({len(answer)} chars)")
     spoken, panels = split_hud(answer)
     return {"text": spoken, "hud": panels, "agent": {"id": profile.id, "name": profile.name}}
 
@@ -257,9 +260,9 @@ class LrmVoiceHandler:
             req = json.loads(web.data() or b"{}")
             if op == "tts":
                 body, headers = _voice("/tts", data=json.dumps({"text": str(req.get("text") or "")[:4000], "lang": req.get("lang"),
-                                                                "voice": req.get("voice"), "format": "wav", "engine": "google"}).encode(),
+                                                                "voice": req.get("voice"), "format": "mp3", "engine": "google"}).encode(),
                                        headers={"Content-Type": "application/json"}, timeout=300)
-                web.header("Content-Type", "audio/wav")
+                web.header("Content-Type", headers.get("Content-Type") or "audio/mpeg")
                 web.header("X-Lang", headers.get("X-Lang") or "")
                 return body
             if op == "chat":
