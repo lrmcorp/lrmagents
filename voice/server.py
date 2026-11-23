@@ -155,7 +155,7 @@ def synthesize(text, lang=None, voice=None, speed=1.0):
 # Google Cloud Chirp 3 HD: natural voices with a free monthly character quota. Kokoro stays the
 # fallback when there is no key, Google fails, or this month's quota is nearly used up.
 GOOGLE_KEY = os.environ.get("GOOGLE_TTS_API_KEY", "").strip()
-GOOGLE_VOICE = os.environ.get("GOOGLE_TTS_VOICE", "Sulafat").strip() or "Sulafat"
+GOOGLE_VOICE = os.environ.get("GOOGLE_TTS_VOICE", "Callirrhoe").strip() or "Callirrhoe"
 GOOGLE_RATE = float(os.environ.get("GOOGLE_TTS_RATE", "1.1") or 1.0)
 GOOGLE_LIMIT = int(os.environ.get("GOOGLE_TTS_MONTHLY_CHARS", "950000") or 0)
 GOOGLE_LOCALE = {"id": "id-ID", "en": "en-US", "zh": "cmn-CN"}
