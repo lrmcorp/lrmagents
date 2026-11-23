@@ -136,7 +136,7 @@ def reflex(text, lang=None):
     return {"text": said, "hud": []}
 
 
-def chat(text, image=None, lang=None):
+def chat(text, image=None, lang=None, spoken_only=False):
     from agent import lrm_personal
     from config import conf
     lrm_personal.ensure_agent()
@@ -147,8 +147,13 @@ def chat(text, image=None, lang=None):
     quick = reflex(text, lang) if image is None else None
     if quick is not None:
         return {"text": quick["text"], "hud": quick["hud"], "agent": {"id": profile.id, "name": profile.name}}
-    parts = ["[Voice conversation on the Personal page: answer at once in one to three short spoken sentences, like a person "
-             "talking; use tools only when the question needs them; put details in a ```hud block.]"]
+    if spoken_only:
+        # The iPhone only plays the voice, so a hud block would be tokens nobody sees.
+        parts = ["[Voice call from the owner's iPhone: answer at once in one to three short spoken sentences, like a person "
+                 "talking; no lists, markdown or hud block; use tools only when the question needs them.]"]
+    else:
+        parts = ["[Voice conversation on the Personal page: answer at once in one to three short spoken sentences, like a person "
+                 "talking; use tools only when the question needs them; put details in a ```hud block.]"]
     if lang:
         parts.append(f"[The owner spoke {({'id': 'Bahasa Indonesia', 'zh': 'Mandarin', 'en': 'English'}).get(lang, lang)}.]")
     if image:

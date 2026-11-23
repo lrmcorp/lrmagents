@@ -34,12 +34,12 @@ _api = _mod("channel.web.api")
 _voice = _mod("channel.web.api.lrm_voice")
 _api.lrm_voice = _voice
 CALLS = []
-_voice.chat = lambda text, image=None, lang=None: CALLS.append(("chat", text, image, lang)) or {"text": "Siap.", "hud": [], "agent": {}}
+_voice.chat = lambda text, image=None, lang=None, spoken_only=False: CALLS.append(("chat", text, image, lang, spoken_only)) or {"text": "Siap.", "hud": [], "agent": {}}
 
 
 def _fake_voice(path, data=None, headers=None, timeout=180):
     CALLS.append(("voice", path, json.loads(data), headers))
-    return b"RIFFwav", {}
+    return b"ID3mp3", {"Content-Type": "audio/mpeg"}
 
 
 _voice._voice = _fake_voice
@@ -152,7 +152,7 @@ check("clean not-delivered note", api.clean_brief("Isi\n\nNot delivered: the Wha
 # Ask: the same chat the Personal page uses, owner's text and language.
 CALLS.clear()
 check("ask answer", call("POST", "ask", body={"text": " Halo Sora ", "lang": "id"}), (200, {"text": "Siap."}))
-check("ask payload", CALLS, [("chat", "Halo Sora", None, "id")])
+check("ask payload", CALLS, [("chat", "Halo Sora", None, "id", True)])
 check("ask without text", call("POST", "ask", body={"text": "  "})[0], 400)
 check("ask too long", call("POST", "ask", body={"text": "a" * 2001})[0], 413)
 check("ask not JSON", call("POST", "ask", body=None)[0], 400)
@@ -163,16 +163,27 @@ check("ask failure is JSON", call("POST", "ask", body={"text": "hi"}),
 # TTS: Google engine through the voice service, WAV back.
 CALLS.clear()
 status, audio = call("POST", "tts", body={"text": "Selamat pagi"})
-check("tts audio", (status, audio, _HEADERS.get("Content-Type")), (200, b"RIFFwav", "audio/wav"))
-check("tts payload", CALLS, [("voice", "/tts", {"text": "Selamat pagi", "format": "wav", "engine": "google"},
+check("tts audio", (status, audio, _HEADERS.get("Content-Type")), (200, b"ID3mp3", "audio/mpeg"))
+check("tts payload", CALLS, [("voice", "/tts", {"text": "Selamat pagi", "format": "mp3", "engine": "google"},
                               {"Content-Type": "application/json"})])
 check("tts too long", call("POST", "tts", body={"text": "a" * 1501})[0], 413)
 
 CALLS.clear()
 _STORE["store"] = _Store(rows)
 status, audio = call("POST", "brief_audio")
-check("brief_audio", (status, audio), (200, b"RIFFwav"))
+check("brief_audio", (status, audio), (200, b"ID3mp3"))
 check("brief_audio reads the brief", CALLS[0][2]["text"].startswith("LAPORAN Ringkasan"), True)
+
+# ask_audio: one request asks Sora and returns her voice, in the language the owner spoke.
+_voice.chat = lambda text, image=None, lang=None, spoken_only=False: CALLS.append(("chat", text, image, lang, spoken_only)) or {"text": "Jam tiga sore.", "hud": [], "agent": {}}
+CALLS.clear()
+status, audio = call("POST", "ask_audio", body={"text": "jam berapa?", "lang": "id"})
+check("ask_audio audio", (status, audio, _HEADERS.get("Content-Type")), (200, b"ID3mp3", "audio/mpeg"))
+check("ask_audio calls", CALLS, [("chat", "jam berapa?", None, "id", True),
+                                 ("voice", "/tts", {"text": "Jam tiga sore.", "format": "mp3", "engine": "google", "lang": "id"},
+                                  {"Content-Type": "application/json"})])
+check("ask_audio without text", call("POST", "ask_audio", body={"text": ""})[0], 400)
+check("GET ask_audio -> 405", call("GET", "ask_audio")[0], 405)
 
 check("unknown op", call("POST", "nope")[0], 404)
 check("GET ask -> 405", call("GET", "ask")[0], 405)

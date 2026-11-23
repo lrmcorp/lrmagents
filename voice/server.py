@@ -2,7 +2,7 @@
 
 POST /stt   body: audio (any format ffmpeg/PyAV reads: webm, ogg, m4a, wav)
             -> {"text", "language", "duration"}          (faster-whisper, multilingual)
-POST /tts   {"text", "lang"?: "en"|"zh"|"id", "voice"?, "speed"?, "format"?: "wav"|"ogg"}
+POST /tts   {"text", "lang"?: "en"|"zh"|"id", "voice"?, "speed"?, "format"?: "wav"|"ogg"|"mp3"}
             -> audio                                        (Kokoro 82M, int8)
 GET  /health, /voices
 Every call but /health needs "Authorization: Bearer <COWAGENT_API_TOKEN>".
@@ -280,14 +280,17 @@ def encode(samples, rate, fmt):
 
 
 def wav_as(wav, fmt):
-    """WAV bytes as the requested format: wav as is, or ogg/opus for WhatsApp."""
-    if fmt != "ogg":
+    """WAV bytes as the requested format: wav as is, ogg/opus for WhatsApp, mp3 for the iPhone (a tenth of the WAV size)."""
+    codecs = {"ogg": (["-c:a", "libopus", "-b:a", "32k", "-f", "ogg"], "audio/ogg; codecs=opus"),
+              "mp3": (["-c:a", "libmp3lame", "-b:a", "48k", "-f", "mp3"], "audio/mpeg")}
+    if fmt not in codecs:
         return wav, "audio/wav"
-    proc = subprocess.run(["ffmpeg", "-v", "error", "-f", "wav", "-i", "pipe:0", "-c:a", "libopus", "-b:a", "32k", "-ac", "1", "-f", "ogg", "pipe:1"],
+    args, ctype = codecs[fmt]
+    proc = subprocess.run(["ffmpeg", "-v", "error", "-f", "wav", "-i", "pipe:0", "-ac", "1", *args, "pipe:1"],
                           input=wav, capture_output=True, timeout=120)
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr.decode()[:200])
-    return proc.stdout, "audio/ogg; codecs=opus"
+    return proc.stdout, ctype
 
 
 def decode(data):
