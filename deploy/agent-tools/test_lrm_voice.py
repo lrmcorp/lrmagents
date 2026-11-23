@@ -85,6 +85,8 @@ sp, pn = _voice_src.split_hud('All good today.\n```hud\n[{"type":"stat","title":
                               '{"type":"bogus","x":1},{"type":"list","title":"Next","items":["A","B"]}]\n```')
 check("hud spoken clean", sp == "All good today.")
 check("hud panels filtered", [p["type"] for p in pn] == ["stat", "list"])
+check("hud link panel kept", [p["type"] for p in _voice_src.split_hud(
+    'See.\n```hud\n[{"type":"link","title":"Docs","url":"https://example.com"}]\n```')[1]] == ["link"])
 check("hud none", _voice_src.split_hud("Just talking, no panels.") == ("Just talking, no panels.", []))
 check("hud cut by max_tokens not spoken", _voice_src.split_hud('All good.\n```hud\n[{"type":"stat","ti') == ("All good.", []))
 check("closed hud kept, cut one dropped", _voice_src.split_hud(

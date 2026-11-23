@@ -63,7 +63,7 @@ def split_hud(text):
     spoken = spoken.strip()
     clean = []
     for p in panels[:12]:
-        if isinstance(p, dict) and p.get("type") in ("stat", "chart", "list", "image", "text"):
+        if isinstance(p, dict) and p.get("type") in ("stat", "chart", "list", "image", "text", "link"):
             clean.append(p)
     return spoken, clean
 

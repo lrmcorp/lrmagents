@@ -19,7 +19,7 @@
   .name { position: absolute; font: 700 clamp(26px, 6vmin, 54px)/1 Inter, system-ui, sans-serif; letter-spacing: .06em; font-style: italic; pointer-events: none;
     text-shadow: 0 0 18px rgba(255,45,85,.75), 0 0 2px #fff; }
   .state { position: absolute; top: calc(50% + min(8vmin, 70px)); font: 12px var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
-  .subs { position: absolute; left: 50%; transform: translateX(-50%); bottom: 112px; width: min(760px, calc(100% - 32px)); text-align: center; pointer-events: none; }
+  .subs { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--bar-top, 80px) + 30px); width: min(760px, calc(100% - 32px)); text-align: center; pointer-events: none; }
   .subs .you { color: var(--muted); font-size: 14px; min-height: 21px; }
   .subs .it { font-size: clamp(16px, 2.4vmin, 20px); min-height: 30px; text-shadow: 0 1px 12px rgba(0,0,0,.8); }
   .bar { position: fixed; left: 16px; right: 16px; bottom: max(18px, env(safe-area-inset-bottom)); margin: 0 auto; width: fit-content; max-width: calc(100% - 32px);
@@ -32,9 +32,9 @@
   .bar .talk.on { background: #fff; color: #111; }
   .bar select { background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; font: inherit; font-size: 12.5px; }
   .bar select option { color: #111; }
-  .typed { position: fixed; left: 50%; transform: translateX(-50%); bottom: 86px; width: min(560px, calc(100% - 32px)); display: none; }
+  .typed { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bar-top, 80px) + 10px); width: min(560px, calc(100% - 32px)); display: none; }
   .typed.open { display: flex; gap: 8px; }
-  body.typing .subs { bottom: 150px; }
+  body.typing .subs { bottom: calc(var(--bar-top, 80px) + 76px); }
   .typed input { flex: 1; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; color: var(--fg); padding: 11px 14px; font: inherit; outline: none; }
   .hud { position: fixed; inset: 0; pointer-events: none; }
   .card { position: absolute; width: min(300px, 40vw); background: var(--panel); border: 1px solid rgba(255,255,255,.22); border-radius: 4px; padding: 12px 14px; pointer-events: auto;
@@ -49,20 +49,72 @@
   .card img { width: 100%; border-radius: 2px; display: block; max-height: 220px; object-fit: cover; }
   .card p { margin: 0; font-size: 13.5px; white-space: pre-wrap; }
   .card svg { width: 100%; height: 120px; display: block; }
+  .card .host { display: flex; gap: 6px; align-items: center; margin-top: 6px; color: #ffb3c2; font: 12px var(--mono); overflow-wrap: anywhere; }
+  /* the whole panel is one button: tap, click, Enter or a hand pinch opens it in the viewer */
+  .card .open { position: absolute; inset: 0; width: 100%; border: 0; background: transparent; cursor: zoom-in; border-radius: 4px; }
+  .card:hover, .card.g-hover { border-color: rgba(255,255,255,.6); }
+  .card.g-hover { box-shadow: 0 0 0 2px var(--accent), 0 12px 40px rgba(0,0,0,.45); }
   @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
   .cam { position: fixed; top: 16px; right: 16px; width: min(360px, 44vw); aspect-ratio: 4/3; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: none; background: #000; }
   .cam.on { display: block; }
   .cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
   .cam .look { position: absolute; left: 8px; bottom: 8px; border: 0; background: var(--accent); color: #fff; border-radius: 10px; padding: 7px 11px; cursor: pointer; font-size: 12.5px; }
+  /* Gestures without Camera: a small preview so the owner can see their hand is in frame */
+  .cam.mini { width: 128px; pointer-events: none; z-index: 45; }
+  .cam.mini .look, .cam.mini .seen, .cam.mini canvas { display: none; }
+  body.viewing .cam.mini { top: auto; bottom: calc(96px + env(safe-area-inset-bottom)); }
   .cam .seen { position: absolute; right: 8px; bottom: 8px; font: 11px var(--mono); color: #fff; background: rgba(0,0,0,.55); padding: 4px 7px; border-radius: 6px; max-width: 60%; }
   .top { position: fixed; top: 16px; left: 16px; display: flex; gap: 8px; align-items: center; font: 12px var(--mono); color: var(--muted); }
   .top a { color: var(--muted); text-decoration: none; border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; }
-  .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #2a0d14; border: 1px solid #6b1f30; color: #ffd0da; padding: 9px 14px; border-radius: 10px; font-size: 13px; display: none; max-width: min(560px, calc(100% - 32px)); max-height: 60vh; overflow: auto; white-space: pre-line; cursor: pointer; z-index: 30; }
+  .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: #2a0d14; border: 1px solid #6b1f30; color: #ffd0da; padding: 9px 14px; border-radius: 10px; font-size: 13px; display: none; max-width: min(560px, calc(100% - 32px)); max-height: 60vh; overflow: auto; white-space: pre-line; cursor: pointer; z-index: 60; }
   @media (max-width: 760px) { .toast { top: 56px; } }
+
+  /* Panel viewer: one panel full screen; pinch, wheel or drag to zoom and move */
+  .viewer { position: fixed; inset: 0; z-index: 40; display: grid; grid-template-rows: auto 1fr auto; background: var(--bg); animation: vin .2s ease-out both; }
+  .viewer[hidden] { display: none; }
+  @keyframes vin { from { opacity: 0; } to { opacity: 1; } }
+  .vhead { display: flex; align-items: center; gap: 12px; padding: max(12px, env(safe-area-inset-top)) 16px 8px; }
+  .vhead h2 { flex: 1; min-width: 0; margin: 0; font: 600 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vbtn { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px;
+    background: rgba(255,255,255,.04); color: var(--fg); font: inherit; font-size: 14px; cursor: pointer; text-decoration: none; }
+  .vbtn:hover { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.35); }
+  .vbtn:active { background: rgba(255,255,255,.2); }
+  .vbtn.go { background: #d10f3d; border-color: #d10f3d; color: #fff; font-weight: 600; }
+  .vbtn.go:hover { background: #e11d48; }
+  .vbtn.g-hover { box-shadow: 0 0 0 2px var(--accent); }
+  .vbtn[hidden] { display: none; }
+  .vstage { position: relative; overflow: hidden; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+  .vstage.drag { cursor: grabbing; }
+  .vcontent { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  .vcontent.doc { width: min(760px, calc(100vw - 32px)); padding: 4px 0 24px; }
+  .vcontent.doc .val { font: 600 clamp(44px, 12vw, 88px)/1.05 Inter, system-ui, sans-serif; }
+  .vcontent.doc .sub { color: var(--muted); font-size: 16px; margin-top: 8px; }
+  .vcontent.doc ul { margin: 0; padding-left: 22px; font-size: 18px; line-height: 1.6; }
+  .vcontent.doc p { margin: 0; font-size: 18px; line-height: 1.6; white-space: pre-wrap; }
+  .vcontent.doc svg { width: 100%; height: min(46vh, 360px); display: block; }
+  .vcontent.doc table { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: 15px; }
+  .vcontent.doc td { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .vcontent.doc td + td { text-align: right; font-variant-numeric: tabular-nums; }
+  .vcontent.doc .host { color: #ffb3c2; font: 14px var(--mono); margin-top: 12px; overflow-wrap: anywhere; }
+  .vcontent img { display: block; max-width: none; -webkit-user-drag: none; }
+  .vfoot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px max(14px, env(safe-area-inset-bottom)); }
+  .vfoot .hint { flex: 1 1 220px; margin: 0; color: var(--muted); font-size: 12.5px; }
+  .vfoot .zoom { display: flex; gap: 8px; }
+  .hint .touch { display: none; }
+  @media (pointer: coarse) { .hint .touch { display: inline; } .hint .mouse { display: none; } }
+  @media (max-width: 640px) { .vfoot .hint { order: 3; flex-basis: 100%; } .vfoot .go { flex: 1; } }
+
+  /* Hand cursor: follows the index fingertip; fills on a pinch; the ring fills while an open palm closes the viewer */
+  .gcursor { position: fixed; left: 0; top: 0; width: 36px; height: 36px; margin: -18px 0 0 -18px; z-index: 50; pointer-events: none; display: none; }
+  .gcursor.on { display: block; }
+  .gcursor svg { width: 100%; height: 100%; overflow: visible; }
+  .gcursor .ring { fill: rgba(6,7,10,.35); stroke: #fff; stroke-width: 2.5; }
+  .gcursor .dot { fill: var(--accent); }
+  .gcursor.pinch .ring { fill: rgba(255,45,85,.55); stroke: var(--accent); }
+  .gcursor .prog { fill: none; stroke: var(--accent); stroke-width: 4; stroke-dasharray: 113.1; stroke-dashoffset: 113.1; transform: rotate(-90deg); transform-origin: 18px 18px; }
   @media (max-width: 760px) {
     .card { width: calc(50% - 22px); padding: 9px 10px; } .card .val { font-size: 22px; }
-    .subs { bottom: 150px; } .cam { width: 42vw; }
-    .typed { bottom: 140px; } body.typing .subs { bottom: 200px; }
+    .cam { width: 42vw; }
   }
 
   /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
@@ -84,12 +136,91 @@
   <button class="talk" id="talk" title="Hold to talk, or tap to start and stop (Space)"><i class="fa-solid fa-microphone" aria-hidden="true"></i><span id="talk-l">Talk</span></button>
   <button id="handsfree" title="Hands-free: it listens and answers when you stop talking" aria-pressed="false"><i class="fa-solid fa-wave-square"></i><span class="l">Hands-free</span></button>
   <button id="camera" title="Camera: let it see" aria-pressed="false"><i class="fa-solid fa-camera"></i><span class="l">Camera</span></button>
+  <button id="gestures" title="Hand gestures through the camera: point, pinch to open a panel" aria-pressed="false"><i class="fa-solid fa-hand" aria-hidden="true"></i><span class="l">Gestures</span></button>
   <button id="keyboard" title="Type a message" aria-label="Type a message" aria-pressed="false"><i class="fa-regular fa-keyboard" aria-hidden="true"></i></button>
   <button id="mute" title="Spoken answers on/off" aria-label="Spoken answers" aria-pressed="false"><i class="fa-solid fa-volume-high"></i></button>
   <select id="voice" title="Sora's voice"><option value="device">Fast voice</option><option value="server">Sora voice</option></select>
   <select id="lang" title="Language you speak"><option value="">Auto</option><option value="en">English</option><option value="id">Bahasa Indonesia</option><option value="zh">中文</option></select>
 </div>
 <div class="toast" id="toast"></div>
+<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-labelledby="viewer-title" hidden>
+  <div class="vhead"><h2 id="viewer-title"></h2><button class="vbtn" id="viewer-close" type="button" aria-label="Close" title="Close (Esc)"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></div>
+  <div class="vstage" id="vstage"><div class="vcontent" id="vcontent"></div></div>
+  <div class="vfoot">
+    <a class="vbtn go" id="viewer-link" target="_blank" rel="noopener noreferrer" hidden><i class="fa-solid fa-up-right-from-square" aria-hidden="true"></i><span>Open in browser</span></a>
+    <p class="hint"><span class="mouse">Scroll or pinch to zoom, drag to move, double-click to reset.</span><span class="touch">Pinch to zoom, drag to move, double-tap to reset, swipe down to close.</span></p>
+    <div class="zoom">
+      <button class="vbtn" id="viewer-out" type="button" aria-label="Zoom out" title="Zoom out (-)"><i class="fa-solid fa-minus" aria-hidden="true"></i></button>
+      <button class="vbtn" id="viewer-fit" type="button" title="Reset zoom (0)">Fit</button>
+      <button class="vbtn" id="viewer-in" type="button" aria-label="Zoom in" title="Zoom in (+)"><i class="fa-solid fa-plus" aria-hidden="true"></i></button>
+    </div>
+  </div>
+</div>
+<div class="gcursor" id="gcursor" aria-hidden="true"><svg viewBox="0 0 36 36"><circle class="ring" cx="18" cy="18" r="11"/><circle class="dot" cx="18" cy="18" r="3"/><circle class="prog" cx="18" cy="18" r="18"/></svg></div>
+<script id="sora-gesture">
+// Hand gestures as a pure function of MediaPipe hand landmarks (21 points per hand, x/y 0..1 in
+// the camera frame), so every decision can be checked without a camera (e2e/support/check-gestures.mjs).
+// Coordinates out are 0..1 of the screen, mirrored like the preview.
+window.SoraGesture = (() => {
+  const PINCH_ON = 0.3; const PINCH_OFF = 0.42; // hysteresis: a pinch does not flicker at the threshold
+  const PALM_MS = 1000; const LOST_MS = 250; const SMOOTH = 0.35; const ZOOM_MAX_STEP = 0.12;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const ratio = (h) => dist(h[4], h[8]) / Math.max(0.01, dist(h[0], h[9]));
+  const pinched = (h, was) => ratio(h) < (was ? PINCH_OFF : PINCH_ON);
+  function fingersUp(h) {
+    let n = 0;
+    for (const [tip, pip] of [[8, 6], [12, 10], [16, 14], [20, 18]]) if (dist(h[tip], h[0]) > dist(h[pip], h[0]) * 1.12) n++;
+    return n;
+  }
+  const openPalm = (h) => fingersUp(h) === 4 && ratio(h) > 0.6;
+  // the middle 80% of the frame covers the whole screen, so the edges are reachable
+  const screen = (p) => ({ x: clamp(((1 - p.x) - 0.1) / 0.8, 0, 1), y: clamp((p.y - 0.1) / 0.8, 0, 1) });
+  const initial = () => ({ cursor: null, pinch: false, two: 0, palmSince: null, palmDone: false, seenAt: null });
+
+  // Actions: cursor {x, y, pinch}, press {x, y} (pinch starts), pan {dx, dy}, release, zoom {factor, x, y},
+  // palm {progress}, close, lost. ctx.viewerOpen: the open palm only closes a viewer.
+  function step(prev, hands, now, ctx = {}) {
+    const s = { ...prev }; const out = [];
+    if (!hands || !hands.length) {
+      if (prev.seenAt != null && now - prev.seenAt < LOST_MS) return { state: prev, actions: [] }; // a dropped frame
+      return { state: initial(), actions: prev.cursor ? [{ type: 'lost' }] : [] };
+    }
+    s.seenAt = now;
+    const was = s.pinch || s.two > 0;
+    if (hands.length >= 2 && pinched(hands[0], was) && pinched(hands[1], was)) {
+      const a = screen(hands[0][8]); const b = screen(hands[1][8]);
+      const d = Math.max(0.01, Math.hypot(a.x - b.x, a.y - b.y)); const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      if (s.pinch && !s.two) out.push({ type: 'release' });
+      if (s.two) out.push({ type: 'zoom', factor: clamp(d / s.two, 1 - ZOOM_MAX_STEP, 1 + ZOOM_MAX_STEP), x: mid.x, y: mid.y });
+      Object.assign(s, { two: d, pinch: true, cursor: mid, palmSince: null });
+      out.push({ type: 'cursor', x: mid.x, y: mid.y, pinch: true });
+      return { state: s, actions: out };
+    }
+    const h = hands[0]; const t = screen(h[8]);
+    const fromTwo = s.two > 0; s.two = 0;
+    s.cursor = s.cursor && !fromTwo ? { x: s.cursor.x + (t.x - s.cursor.x) * SMOOTH, y: s.cursor.y + (t.y - s.cursor.y) * SMOOTH } : t;
+    const p = pinched(h, s.pinch);
+    out.push({ type: 'cursor', x: s.cursor.x, y: s.cursor.y, pinch: p });
+    // after a two-hand zoom the hand still pinching is not a new press, and does not jump
+    if (p && !s.pinch) out.push({ type: 'press', x: s.cursor.x, y: s.cursor.y });
+    else if (p && !fromTwo && prev.cursor) out.push({ type: 'pan', dx: s.cursor.x - prev.cursor.x, dy: s.cursor.y - prev.cursor.y });
+    else if (!p && s.pinch) out.push({ type: 'release' });
+    s.pinch = p;
+    if (!p && ctx.viewerOpen && openPalm(h) && !s.palmDone) {
+      if (s.palmSince == null) s.palmSince = now;
+      const progress = clamp((now - s.palmSince) / PALM_MS, 0, 1);
+      out.push({ type: 'palm', progress });
+      if (progress >= 1) { out.push({ type: 'close' }); s.palmDone = true; s.palmSince = null; }
+    } else {
+      s.palmSince = null;
+      if (!openPalm(h)) s.palmDone = false; // the palm must drop before it can close again
+    }
+    return { state: s, actions: out };
+  }
+  return { step, initial, fingersUp, ratio, screen, PALM_MS };
+})();
+</script>
 <script>
 (() => {
   const $ = (s) => document.querySelector(s);
@@ -112,6 +243,11 @@
   const cv = $('#orb'); const g = cv.getContext('2d'); let t0 = performance.now();
   function size() { const d = Math.min(devicePixelRatio || 1, 2); const r = cv.getBoundingClientRect(); cv.width = r.width * d; cv.height = r.height * d; g.setTransform(d, 0, 0, d, 0, 0); }
   addEventListener('resize', () => { size(); if (S.panels) showHud(S.panels); }); size();
+  // The control bar wraps to more rows on a phone: the typed field and subtitles sit just above it.
+  const bar = $('.bar');
+  const barTop = () => document.documentElement.style.setProperty('--bar-top', `${Math.round(innerHeight - bar.getBoundingClientRect().top)}px`);
+  if (window.ResizeObserver) new ResizeObserver(barTop).observe(bar);
+  addEventListener('resize', barTop); barTop();
   const STILL = matchMedia('(prefers-reduced-motion: reduce)').matches;
   function draw(now) {
     requestAnimationFrame(draw);
@@ -432,13 +568,29 @@
       <line x1="0" y1="52.5" x2="100" y2="52.5" stroke="rgba(255,255,255,.4)" stroke-width=".4"/></svg>
       <div class="sub" style="display:flex;justify-content:space-between">${labels.slice(0, 8).map((l) => `<span>${esc(l)}</span>`).join('')}</div>`;
   }
+  // Only https pages open from a panel (a link from the model's research, never javascript: or http:).
+  function httpsUrl(u) { try { const x = new URL(String(u || '')); return x.protocol === 'https:' ? x.href : ''; } catch { return ''; } }
+  const hostOf = (u) => { try { return new URL(u).host; } catch { return ''; } };
   function card(p) {
     const title = p.title ? `<h4>${esc(p.title)}</h4>` : '';
     if (p.type === 'stat') return `${title}<div class="val">${esc(p.value)}</div>${p.sub ? `<div class="sub">${esc(p.sub)}</div>` : ''}`;
     if (p.type === 'chart') return `${title}${chart(p.labels || [], p.values || [])}`;
     if (p.type === 'list') return `${title}<ul>${(p.items || []).slice(0, 8).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
     if (p.type === 'image' && /^https?:\/\//.test(p.url || '')) return `${title}<img src="${esc(p.url)}" alt="${esc(p.title || '')}" referrerpolicy="no-referrer" loading="lazy">`;
+    if (p.type === 'link') { const u = httpsUrl(p.url); return `${title}${p.body ? `<p>${esc(p.body)}</p>` : ''}${u ? `<div class="host"><i class="fa-solid fa-link" aria-hidden="true"></i>${esc(hostOf(u))}</div>` : ''}`; }
     return `${title}<p>${esc(p.body || p.text || '')}</p>`;
+  }
+  // The same panel, full size for the viewer: every list item, the whole picture, the chart's numbers.
+  function fullCard(p) {
+    if (p.type === 'image' && /^https?:\/\//.test(p.url || '')) return `<img src="${esc(p.url)}" alt="${esc(p.title || 'Picture')}" referrerpolicy="no-referrer" draggable="false">`;
+    if (p.type === 'list') return `<ul>${(p.items || []).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
+    if (p.type === 'chart') {
+      const labels = p.labels || []; const values = p.values || [];
+      return `${chart(labels, values)}<table>${values.map((v, i) => `<tr><td>${esc(labels[i] ?? '')}</td><td>${esc(v)}</td></tr>`).join('')}</table>`;
+    }
+    if (p.type === 'link') { const u = httpsUrl(p.url); return `${p.body ? `<p>${esc(p.body)}</p>` : ''}${u ? `<div class="host">${esc(u)}</div>` : ''}`; }
+    if (p.type === 'stat') return card({ ...p, title: '' });
+    return `<p>${esc(p.body || p.text || '')}</p>`;
   }
   function showHud(panels) {
     S.panels = panels;
@@ -446,36 +598,252 @@
     if (!panels.length) return;
     const W = innerWidth; const H = innerHeight; const small = W < 760;
     // around the orb; the camera view takes the top right when it is on
-    const camBottom = S.camOn ? $('#cam').getBoundingClientRect().bottom + 14 : 0;
+    const camBottom = S.camOn || S.gestOn ? $('#cam').getBoundingClientRect().bottom + 14 : 0;
     const right = (y) => Math.max(y, camBottom);
     const spots = small
-      ? [[12, 64], [W / 2 + 6, S.camOn ? camBottom : 64], [12, 210], [W / 2 + 6, Math.max(210, camBottom + 150)]]
+      ? [[12, 64], [W / 2 + 6, Math.max(64, camBottom)], [12, 210], [W / 2 + 6, Math.max(210, camBottom + 150)]]
       : [[W * 0.04, H * 0.1], [W * 0.04, H * 0.4], [W * 0.73, right(H * 0.12)], [W * 0.73, right(H * 0.12) + H * 0.3], [W * 0.04, H * 0.68], [W * 0.73, Math.min(H * 0.74, right(H * 0.12) + H * 0.58)]];
     panels.slice(0, spots.length).forEach((p, i) => {
       const el = document.createElement('div'); el.className = 'card'; el.style.left = `${spots[i][0]}px`; el.style.top = `${spots[i][1]}px`; el.style.animationDelay = `${i * 0.08}s`;
-      el.innerHTML = card(p); hud.appendChild(el);
+      el.innerHTML = `${card(p)}<button class="open" type="button" aria-label="Open panel${p.title ? `: ${esc(p.title)}` : ''}"></button>`;
+      el.querySelector('.open').onclick = () => openViewer(p);
+      hud.appendChild(el);
     });
   }
 
+  // Panel viewer
+  const V = { panel: null, x: 0, y: 0, s: 1, fitS: 1, back: null, pointers: new Map(), pull: 0 };
+  const stage = $('#vstage'); const content = $('#vcontent'); const viewer = $('#viewer');
+  const viewing = () => !viewer.hidden;
+  function openViewer(p) {
+    V.panel = p; V.back = document.activeElement;
+    $('#viewer-title').textContent = p.title || ({ stat: 'Number', chart: 'Chart', list: 'List', image: 'Picture', link: 'Link' }[p.type] || 'Note');
+    const isImage = p.type === 'image';
+    content.className = `vcontent${isImage ? '' : ' doc'}`;
+    content.innerHTML = fullCard(p);
+    const url = httpsUrl(p.url); const link = $('#viewer-link');
+    link.hidden = !url; if (url) { link.href = url; link.title = url; } else link.removeAttribute('href');
+    viewer.hidden = false; document.body.classList.add('viewing');
+    const img = content.querySelector('img');
+    if (img && !img.complete) img.addEventListener('load', fit, { once: true });
+    fit();
+    $('#viewer-close').focus();
+  }
+  function closeViewer() {
+    if (!viewing()) return;
+    viewer.hidden = true; document.body.classList.remove('viewing'); content.innerHTML = ''; V.panel = null; V.pointers.clear();
+    const back = V.back; V.back = null;
+    if (back?.isConnected) back.focus();
+  }
+  function size2() { const r = stage.getBoundingClientRect(); return { w: r.width, h: r.height }; }
+  function render() { content.style.transform = `translate(${V.x}px, ${V.y + V.pull}px) scale(${V.s})`; content.style.opacity = V.pull ? String(Math.max(0.3, 1 - V.pull / 300)) : ''; }
+  // Keep the content on screen: centred while it fits, edge to edge once it is bigger.
+  function clampView() {
+    const { w, h } = size2(); const cw = content.offsetWidth * V.s; const ch = content.offsetHeight * V.s;
+    V.x = cw <= w ? (w - cw) / 2 : Math.min(0, Math.max(w - cw, V.x));
+    V.y = ch <= h ? (h - ch) / 2 : Math.min(0, Math.max(h - ch, V.y));
+  }
+  function fit() {
+    if (!viewing()) return;
+    const { w, h } = size2(); const cw = content.offsetWidth || 1; const ch = content.offsetHeight || 1;
+    // a picture fits the screen (never blown up past its own size); text keeps its reading size
+    V.fitS = V.panel?.type === 'image' ? Math.min(1, (w - 16) / cw, (h - 16) / ch) : Math.min(1, w / cw);
+    V.s = V.fitS; V.x = 0; V.y = 0; V.pull = 0; clampView(); render();
+  }
+  function zoomAt(px, py, f) {
+    const ns = Math.max(V.fitS * 0.5, Math.min(Math.max(V.fitS * 8, 4), V.s * f));
+    V.x = px - (px - V.x) * (ns / V.s); V.y = py - (py - V.y) * (ns / V.s); V.s = ns; clampView(); render();
+  }
+  const zoomCentre = (f) => { const { w, h } = size2(); zoomAt(w / 2, h / 2, f); };
+  function panBy(dx, dy) { V.x += dx; V.y += dy; clampView(); render(); }
+  const local = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  let lastTap = null; let pinchD = 0; let pinchMid = null; let moved = 0;
+  stage.addEventListener('pointerdown', (e) => {
+    stage.setPointerCapture(e.pointerId); V.pointers.set(e.pointerId, { ...local(e), type: e.pointerType });
+    stage.classList.add('drag'); moved = 0;
+    if (V.pointers.size === 2) { const [a, b] = [...V.pointers.values()]; pinchD = Math.hypot(a.x - b.x, a.y - b.y); pinchMid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; V.pull = 0; render(); }
+  });
+  stage.addEventListener('pointermove', (e) => {
+    const was = V.pointers.get(e.pointerId); if (!was) return;
+    const now = { ...local(e), type: was.type }; V.pointers.set(e.pointerId, now);
+    if (V.pointers.size >= 2) {
+      const [a, b] = [...V.pointers.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y); const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      if (pinchD) zoomAt(mid.x, mid.y, d / pinchD);
+      if (pinchMid) panBy(mid.x - pinchMid.x, mid.y - pinchMid.y);
+      pinchD = d; pinchMid = mid; moved += 10; return;
+    }
+    const dx = now.x - was.x; const dy = now.y - was.y; moved += Math.abs(dx) + Math.abs(dy);
+    // phones: dragging down at the top edge pulls the viewer away; far enough closes it
+    const atTop = content.offsetHeight * V.s <= size2().h || V.y >= 0;
+    if (was.type === 'touch' && (V.pull > 0 || (dy > 0 && dy > Math.abs(dx) && atTop))) { V.pull = Math.max(0, V.pull + dy); render(); return; }
+    panBy(dx, dy);
+  });
+  function pointerEnd(e) {
+    const was = V.pointers.get(e.pointerId); if (!was) return;
+    V.pointers.delete(e.pointerId);
+    if (V.pointers.size < 2) { pinchD = 0; pinchMid = null; }
+    if (V.pointers.size) return;
+    stage.classList.remove('drag');
+    if (V.pull > 110) { closeViewer(); return; }
+    if (V.pull) { V.pull = 0; render(); }
+    if (was.type === 'touch' && moved < 12 && e.type === 'pointerup') {
+      const t = performance.now();
+      if (lastTap && t - lastTap.t < 320 && Math.hypot(was.x - lastTap.x, was.y - lastTap.y) < 40) { lastTap = null; fit(); } else lastTap = { t, x: was.x, y: was.y };
+    }
+  }
+  stage.addEventListener('pointerup', pointerEnd);
+  stage.addEventListener('pointercancel', pointerEnd);
+  stage.addEventListener('dblclick', fit);
+  // Trackpad pinch arrives as a wheel event with ctrlKey; a mouse wheel zooms; a two-finger trackpad scroll moves.
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const { x, y } = local(e); const unit = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+    const dy = e.deltaY * unit; const dx = e.deltaX * unit;
+    const trackpadScroll = !e.ctrlKey && (dx !== 0 || (Math.abs(dy) < 40 && !Number.isInteger(dy)));
+    if (trackpadScroll) panBy(-dx, -dy);
+    else zoomAt(x, y, Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)));
+  }, { passive: false });
+  $('#viewer-close').onclick = closeViewer;
+  $('#viewer-fit').onclick = fit;
+  $('#viewer-in').onclick = () => zoomCentre(1.4);
+  $('#viewer-out').onclick = () => zoomCentre(1 / 1.4);
+  function viewerKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeViewer(); return; }
+    if (e.key === 'Tab') {
+      // keep focus inside the dialog
+      const f = [...viewer.querySelectorAll('button, a[href]')].filter((el) => !el.hidden && el.offsetParent);
+      if (!f.length) return;
+      const i = f.indexOf(document.activeElement);
+      if (i < 0 || (e.shiftKey && i === 0) || (!e.shiftKey && i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
+      return;
+    }
+    const keys = { '+': () => zoomCentre(1.25), '=': () => zoomCentre(1.25), '-': () => zoomCentre(0.8), 0: fit,
+      ArrowLeft: () => panBy(60, 0), ArrowRight: () => panBy(-60, 0), ArrowUp: () => panBy(0, 60), ArrowDown: () => panBy(0, -60) };
+    if (keys[e.key]) { e.preventDefault(); keys[e.key](); }
+  }
+  addEventListener('resize', () => { if (viewing()) fit(); });
+
   // Camera: live object boxes, and "what do you see"
+  // Camera and Gestures share one stream and one <video>; it stops when both are off.
+  function camView() {
+    const box = $('#cam'); const shown = S.camOn || S.gestOn;
+    box.classList.toggle('on', shown); box.classList.toggle('mini', !S.camOn && S.gestOn);
+    showHud(S.panels || []);
+  }
+  async function camStream() {
+    const video = $('#video');
+    if (video.srcObject) return video.srcObject;
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: store.get('lrm_p_facing', 'user'), width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    await video.play();
+    return video.srcObject;
+  }
+  function camRelease() {
+    if (S.camOn || S.gestOn) return;
+    const video = $('#video'); video.srcObject?.getTracks().forEach((t) => t.stop()); video.srcObject = null;
+  }
   async function camera(on) {
-    const box = $('#cam'); const video = $('#video');
     $('#camera').setAttribute('aria-pressed', String(on));
-    if (!on) { S.camOn = false; box.classList.remove('on'); showHud(S.panels || []); video.srcObject?.getTracks().forEach((t) => t.stop()); video.srcObject = null; return; }
+    if (!on) { S.camOn = false; camView(); camRelease(); return; }
     try {
-      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { facingMode: store.get('lrm_p_facing', 'user'), width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-      await video.play(); S.camOn = true; box.classList.add('on'); showHud(S.panels || []); detect();
+      await camStream(); S.camOn = true; camView(); detect();
     } catch (e) { $('#camera').setAttribute('aria-pressed', 'false'); toast(e?.name === 'NotAllowedError' ? 'Camera permission was refused.' : `No camera: ${e.message || e}`); }
+  }
+  const MP = '/assets/brand/vendor/mediapipe';
+  async function loadVision() {
+    if (!window.Vision) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = `${MP}/vision_bundle.js`; s.onload = res; s.onerror = () => rej(new Error('could not load the vision models')); document.head.appendChild(s); });
+    S.visionFiles = S.visionFiles || await window.Vision.FilesetResolver.forVisionTasks(`${MP}/wasm`);
+    return S.visionFiles;
   }
   async function loadDetector() {
     if (S.detector || S.detectorFailed) return S.detector;
     try {
-      if (!window.Vision) await new Promise((res, rej) => { const s = document.createElement('script'); s.src = '/assets/brand/vendor/mediapipe/vision_bundle.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-      const files = await window.Vision.FilesetResolver.forVisionTasks('/assets/brand/vendor/mediapipe/wasm');
-      const make = (delegate) => window.Vision.ObjectDetector.createFromOptions(files, { baseOptions: { modelAssetPath: '/assets/brand/vendor/mediapipe/efficientdet_lite0.tflite', delegate }, runningMode: 'VIDEO', scoreThreshold: 0.45, maxResults: 6 });
+      const files = await loadVision();
+      const make = (delegate) => window.Vision.ObjectDetector.createFromOptions(files, { baseOptions: { modelAssetPath: `${MP}/efficientdet_lite0.tflite`, delegate }, runningMode: 'VIDEO', scoreThreshold: 0.45, maxResults: 6 });
       try { S.detector = await make('GPU'); } catch { S.detector = await make('CPU'); }
     } catch { S.detectorFailed = true; }
     return S.detector;
+  }
+
+  // Hand gestures: the index fingertip moves a cursor; SoraGesture decides what a pinch or a palm means.
+  async function gestures(on) {
+    const btn = $('#gestures'); btn.setAttribute('aria-pressed', String(on)); S.gestWant = on;
+    if (!on) { S.gestOn = false; cancelAnimationFrame(S.gestLoop); handCursor(null); camView(); camRelease(); return; }
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('this browser has no camera access here');
+      btn.setAttribute('aria-busy', 'true');
+      await camStream();
+      if (!S.gestWant) { camRelease(); return; } // switched off while the camera started
+      S.gestOn = true; camView();
+      if (!S.hands) {
+        toast('Loading hand tracking (the first time takes a few seconds)…');
+        const files = await loadVision();
+        const make = (delegate) => window.Vision.HandLandmarker.createFromOptions(files, {
+          baseOptions: { modelAssetPath: `${MP}/hand_landmarker.task`, delegate }, runningMode: 'VIDEO', numHands: 2,
+          minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.5 });
+        try { S.hands = await make('GPU'); } catch { S.hands = await make('CPU'); }
+      }
+      if (!S.gestWant) return; // switched off while the model loaded
+      toast('Gestures on. Point with your index finger to move the dot. Pinch a panel to open it. In the viewer: pinch and move to pan, pinch with both hands to zoom, hold an open palm for a second to close.');
+      S.gest = window.SoraGesture.initial(); trackHands();
+    } catch (e) {
+      S.gestOn = false; btn.setAttribute('aria-pressed', 'false'); camView(); camRelease();
+      toast(`Gestures are off: ${e?.name === 'NotAllowedError' ? 'camera permission was refused. Allow the camera for this site in the browser.' : e?.name === 'NotFoundError' ? 'no camera found.' : (e?.message || e)}`);
+    } finally { btn.removeAttribute('aria-busy'); }
+  }
+  function handCursor(c, palm = 0) {
+    const el = $('#gcursor');
+    el.classList.toggle('on', !!c);
+    document.querySelectorAll('.g-hover').forEach((n) => n.classList.remove('g-hover'));
+    if (!c) return;
+    el.classList.toggle('pinch', !!c.pinch);
+    el.style.transform = `translate(${c.px}px, ${c.py}px)`;
+    el.querySelector('.prog').style.strokeDashoffset = String(113.1 * (1 - palm));
+    const under = targetAt(c.px, c.py); if (under) under.classList.add('g-hover');
+  }
+  // What a pinch at this point would press: a viewer button, or a panel.
+  function targetAt(px, py) {
+    const el = document.elementFromPoint(px, py);
+    if (!el) return null;
+    if (viewing()) return el.closest('#viewer .vbtn');
+    return el.closest('.card');
+  }
+  function gestPress(px, py) {
+    const t = targetAt(px, py);
+    S.gestPan = false;
+    if (!t) { S.gestPan = viewing(); return; }
+    if (t.id === 'viewer-link') {
+      // a pinch is not a click to the browser, so the new tab may be blocked: then say so
+      const w = window.open(t.href, '_blank');
+      if (w) w.opener = null; else toast('The browser blocked the new tab. Tap "Open in browser" instead.');
+      return;
+    }
+    if (t.matches('.card')) { t.querySelector('.open')?.click(); return; }
+    t.click();
+  }
+  function trackHands() {
+    const video = $('#video'); let last = -1;
+    cancelAnimationFrame(S.gestLoop);
+    (function loop() {
+      if (!S.gestOn) return;
+      S.gestLoop = requestAnimationFrame(loop);
+      if (!S.hands || video.readyState < 2 || video.currentTime === last) return;
+      last = video.currentTime;
+      let res; try { res = S.hands.detectForVideo(video, performance.now()); } catch { return; }
+      const { state, actions } = window.SoraGesture.step(S.gest, res?.landmarks || [], performance.now(), { viewerOpen: viewing() });
+      S.gest = state;
+      const W = innerWidth; const H = innerHeight; let cur = null; let palm = 0;
+      for (const a of actions) {
+        if (a.type === 'cursor') cur = { px: a.x * W, py: a.y * H, pinch: a.pinch };
+        else if (a.type === 'press') gestPress(a.x * W, a.y * H);
+        else if (a.type === 'pan' && S.gestPan && viewing()) panBy(a.dx * W * 1.5, a.dy * H * 1.5);
+        else if (a.type === 'release') S.gestPan = false;
+        else if (a.type === 'zoom' && viewing()) { const r = stage.getBoundingClientRect(); zoomAt(a.x * W - r.left, a.y * H - r.top, a.factor); }
+        else if (a.type === 'palm') palm = a.progress;
+        else if (a.type === 'close') closeViewer();
+        else if (a.type === 'lost') S.gestPan = false;
+      }
+      if (cur || actions.some((a) => a.type === 'lost')) handCursor(cur, palm);
+    })();
   }
   async function detect() {
     const det = await loadDetector(); const video = $('#video'); const c = $('#boxes'); const ctx = c.getContext('2d'); let last = -1;
@@ -522,6 +890,7 @@
   cv.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); cv.click(); } });
   cv.addEventListener('click', () => { unlock(); if (S.state === 'speaking') { stopSpeaking(); S.conversation = true; setState('idle'); startRec(); } else if (S.rec) stopRec(); else { S.conversation = true; S.turns = 0; startRec(); } });
   addEventListener('keydown', (e) => {
+    if (viewing()) { viewerKey(e); return; }
     if (e.target.closest('input, select, textarea')) return;
     if (e.code === 'Space' && !e.repeat) { e.preventDefault(); unlock(); if (S.rec) stopRec(); else { S.conversation = true; S.turns = 0; startRec(); } }
     if (e.key === 'Escape') { S.conversation = false; stopSpeaking(); stopRec(); setState('idle'); }
@@ -533,6 +902,7 @@
     else setState('idle');
   };
   $('#camera').onclick = () => camera(!S.camOn);
+  $('#gestures').onclick = () => gestures(!S.gestOn);
   $('#look').onclick = () => { unlock(); const img = frame(); if (!img) return; const seen = [...new Set(S.lastSeen)]; ask(seen.length ? `What do you see? (The camera spots: ${seen.join(', ')}.)` : 'What do you see?', { image: img }); };
   $('#keyboard').onclick = () => { const open = !$('#typed').classList.contains('open'); $('#typed').classList.toggle('open', open); document.body.classList.toggle('typing', open); $('#keyboard').setAttribute('aria-pressed', String(open)); if (open) $('#typed-in').focus(); };
   $('#typed').onsubmit = (e) => { e.preventDefault(); unlock(); const v = $('#typed-in').value.trim(); if (!v || S.busy) return; $('#typed-in').value = ''; ask(v, { image: S.camOn && /\b(see|look|this|ini|itu|lihat)\b/i.test(v) ? frame() : null }); };
