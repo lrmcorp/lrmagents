@@ -174,6 +174,9 @@ _BRIEF_ASK = re.compile(r"^(?:\W*(?:hai|halo|hey|ok|tolong|coba|minta|bacakan|ba
                         r"(?:(?:laporan|ringkasan|rekap)(?:\W+(?:operasional|harian|hari ini|terakhir|terbaru|cabang|semua cabang))*"
                         r"|(?:the\W+)?(?:latest\W+|daily\W+|today'?s\W+)*(?:report|brief|summary))"
                         r"(?:\W+(?:sora|dong|ya|please))*\W*$", re.I)
+# "selesai", "udah dulu ya", "bye": the Shortcut's loop stops on its own; Sora just says goodbye.
+GOODBYE = re.compile(r"^\W*(?:ok(?:e|ay)?\W+)?(?:selesai|sudah dulu|udah dulu|cukup(?: dulu)?|stop(?: dulu)?|berhenti|bye|good ?bye|"
+                     r"that'?s all|end(?: the)? conversation|sampai nanti|dadah)(?:\W+(?:ya|yah|dong|sora|thanks|makasih))*\W*$", re.I)
 # Past this, the iPhone hears a short note and the full answer goes to the owner's WhatsApp (Shortcuts give up near 60 s).
 WAIT = float(os.environ.get("LRMAGENT_SHORTCUT_WAIT", "25") or 25)
 LATE = "Ini perlu waktu lebih lama. Jawabannya saya kirim lewat WhatsApp begitu siap."
@@ -237,7 +240,10 @@ def _answer_within(text, lang, wait):
 
 def _ask_audio(text, lang, req=None):
     started = time.time()
-    if _BRIEF_ASK.match(text):
+    if GOODBYE.match(text):
+        answer, how = ("Okay, talk soon." if re.search(r"bye|that|end|stop$", text, re.I) and not re.search(r"dulu|ya\b", text, re.I)
+                       else "Oke, sampai nanti."), "goodbye"
+    elif _BRIEF_ASK.match(text):
         answer, how = _brief_speech(_owner_name(req)), "brief"
     else:
         answer = _answer_within(text, lang, WAIT)

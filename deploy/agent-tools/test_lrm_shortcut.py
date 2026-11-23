@@ -217,6 +217,14 @@ check("slow answer: note spoken", (status, CALLS[-1][2]["text"]), (200, api.LATE
 check("slow answer: sent on WhatsApp", (gate.wait(3), SENT), (True, [("personal", "🎙 From your iPhone: ada meeting apa besok?\n\nAda dua meeting.")]))
 api.WAIT = 25
 
+for bye, said in (("Selesai.", "Oke, sampai nanti."), ("udah dulu ya Sora", "Oke, sampai nanti."), ("bye", "Okay, talk soon.")):
+    CALLS.clear()
+    call("POST", "ask_audio", body={"text": bye})
+    check(f"goodbye: {bye}", ([c[0] for c in CALLS], CALLS[-1][2]["text"]), (["voice"], said))
+CALLS.clear()
+call("POST", "ask_audio", body={"text": "selesai rapatnya jam berapa?"})
+check("a question with selesai is not a goodbye", CALLS[-1][2]["text"], "Ada dua meeting.")
+
 check("ask_audio without text", call("POST", "ask_audio", body={"text": ""})[0], 400)
 check("GET ask_audio -> 405", call("GET", "ask_audio")[0], 405)
 

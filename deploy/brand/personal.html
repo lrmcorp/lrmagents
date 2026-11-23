@@ -207,6 +207,8 @@
     return S.stream;
   }
   const SILENCE_MS = 1300; // this long a pause after speaking ends the recording
+  const CONVO_IDLE_MS = 5 * 60 * 1000;
+  const GOODBYE = /^\W*(?:ok(?:e|ay)?\W+)?(?:selesai|sudah dulu|udah dulu|cukup(?: dulu)?|stop(?: dulu)?|berhenti|bye|good ?bye|that'?s all|end(?: the)? conversation|sampai nanti|dadah)(?:\W+(?:ya|yah|dong|sora|thanks|makasih))*\W*$/i;
 
   // Live transcription in the browser (Chrome, Edge, Safari)
   // It writes down what the owner says while they speak, so the words are ready the moment
@@ -263,6 +265,8 @@
     S.rec.onstop = () => {
       releaseMic(); const blob = new Blob(S.chunks, { type: S.rec?.mimeType || type || 'audio/webm' }); S.rec = null;
       $('#talk').classList.remove('on'); $('#talk-l').textContent = 'Talk';
+      // In a conversation a quiet spell keeps her listening; it ends on Talk, Esc, "selesai", or 5 quiet minutes.
+      if (S.discard && S.conversation && S.turns && Date.now() - (S.lastTurn || 0) < CONVO_IDLE_MS) { S.discard = false; liveStop(); setState('idle', 'still listening'); listenAgain(); return; }
       if (S.discard) { S.discard = false; liveStop(); S.conversation = false; releaseMic(true); setState('idle', S.turns ? 'tap to talk again' : "didn't hear anything"); S.turns = 0; return; }
       if (blob.size > 2500) heard(blob); else setState('idle');
     };
@@ -317,6 +321,13 @@
 
   // Talking to the assistant
   async function ask(text, { lang = '', image = null } = {}) {
+    if (!image && GOODBYE.test(text || '')) {
+      S.conversation = false; S.turns = 0; $('#you').textContent = `“${text}”`;
+      const bye = guessLang(text) === 'id' || /selesai|sudah|udah|cukup|berhenti|sampai|dadah/i.test(text) ? 'Oke, sampai nanti.' : 'Okay, talk soon.';
+      $('#it').textContent = bye; if (!S.muted) await speak(bye, ''); else setState('idle');
+      setState('idle', 'tap to talk again'); return;
+    }
+    S.lastTurn = Date.now();
     S.busy = true; $('#you').textContent = text ? `“${text}”` : ''; $('#it').textContent = ''; setState('thinking');
     try {
       const r = await fetch('/api/lrm/voice?op=chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
