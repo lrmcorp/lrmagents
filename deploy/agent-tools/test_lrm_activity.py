@@ -90,5 +90,17 @@ check("same call refused again", again and "already refused" in again, again)
 other = A.gate(ex, "bash", {"command": long_b}, "t3")
 check("different tail is a new request", other and "Nobody approved" in other, other)
 
+# Page scripts are refused outright: no approval is created and the owner is not asked.
+with A._lock, A._connect() as conn:
+    before = conn.execute("SELECT COUNT(*) FROM approvals").fetchone()[0]
+blocked = A.gate(ex, "browser", {"action": "evaluate", "script": "document.title"}, "t4")
+with A._lock, A._connect() as conn:
+    after = conn.execute("SELECT COUNT(*) FROM approvals").fetchone()[0]
+check("evaluate refused without asking", blocked and "turned off" in blocked and after == before, blocked)
+os.environ["LRMAGENT_BROWSER_SCRIPTS"] = "ask"
+asked = A.gate(ex, "browser", {"action": "evaluate", "script": "document.title"}, "t5")
+check("evaluate asks again when switched to ask", asked and "turned off" not in asked, asked)
+del os.environ["LRMAGENT_BROWSER_SCRIPTS"]
+
 print("FAILED" if PASS["f"] else "ALL PASSED")
 sys.exit(1 if PASS["f"] else 0)

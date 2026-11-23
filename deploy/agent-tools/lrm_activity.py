@@ -393,6 +393,13 @@ def gate(executor, tool_name, arguments, tool_call_id):
             waited = _wait_for_browser(executor, tool_call_id)
             if waited:
                 return waited
+        if tool_name == "browser" and str((arguments or {}).get("action", "")).lower() == "evaluate" \
+                and os.environ.get("LRMAGENT_BROWSER_SCRIPTS", "off").lower() != "ask":
+            # The owner turned page scripts off: refused outright instead of asking for approval every time.
+            executor._lrm_approval = "blocked: page scripts are off"
+            return ("Running scripts on websites (browser evaluate) is turned off in LRMagent, so it did not run. "
+                    "Read the page with the browser's normal actions instead (open it, read its content, scroll, click to "
+                    "show more) and continue with what you can read; if a number cannot be read, say so in your answer.")
         why = risk(tool_name, arguments, get_mode(), getattr(executor, "_lrm_refs", None))
         if not why:
             return None
