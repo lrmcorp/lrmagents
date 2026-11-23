@@ -585,13 +585,13 @@ window.SoraGesture = (() => {
     if (p.type === 'stat') return `${title}<div class="val">${esc(p.value)}</div>${p.sub ? `<div class="sub">${esc(p.sub)}</div>` : ''}`;
     if (p.type === 'chart') return `${title}${chart(p.labels || [], p.values || [])}`;
     if (p.type === 'list') return `${title}<ul>${(p.items || []).slice(0, 8).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
-    if (p.type === 'image' && /^https?:\/\//.test(p.url || '')) return `${title}<img src="${esc(p.url)}" alt="${esc(p.title || '')}" referrerpolicy="no-referrer" loading="lazy">`;
+    if (p.type === 'image' && /^(?:https?:\/\/|\/api\/lrm\/voice\?op=file&f=)/.test(p.url || '')) return `${title}<img src="${esc(p.url)}" alt="${esc(p.title || '')}" referrerpolicy="no-referrer" loading="lazy">`;
     if (p.type === 'link') { const u = httpsUrl(p.url); return `${title}${p.body ? `<p>${esc(p.body)}</p>` : ''}${u ? `<div class="host"><i class="fa-solid fa-link" aria-hidden="true"></i>${esc(hostOf(u))}</div>` : ''}`; }
     return `${title}<p>${esc(p.body || p.text || '')}</p>`;
   }
   // The same panel, full size for the viewer: every list item, the whole picture, the chart's numbers.
   function fullCard(p) {
-    if (p.type === 'image' && /^https?:\/\//.test(p.url || '')) return `<img src="${esc(p.url)}" alt="${esc(p.title || 'Picture')}" referrerpolicy="no-referrer" draggable="false">`;
+    if (p.type === 'image' && /^(?:https?:\/\/|\/api\/lrm\/voice\?op=file&f=)/.test(p.url || '')) return `<img src="${esc(p.url)}" alt="${esc(p.title || 'Picture')}" referrerpolicy="no-referrer" draggable="false">`;
     if (p.type === 'list') return `<ul>${(p.items || []).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`;
     if (p.type === 'chart') {
       const labels = p.labels || []; const values = p.values || [];

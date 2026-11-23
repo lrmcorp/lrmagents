@@ -68,6 +68,53 @@ def split_hud(text):
     return spoken, clean
 
 
+_MD_IMAGE = re.compile(r"!\[([^\]\n]*)\]\(\s*<?([^)\s>]+)>?\s*\)")
+_MD_LINK = re.compile(r"(?<!!)\[([^\]\n]+)\]\(\s*<?(https?://[^)\s>]+)>?\s*\)")
+_LOCAL_PATH = re.compile(r"(?:file://)?/(?:home|app|tmp|root|var)/[^\s)\]>'\"]+")
+_IMAGE_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+FILE_URL = "/api/lrm/voice?op=file&f="
+
+
+def _workspace_file(path, workspace):
+    """The path as a file inside the personal workspace, or None (outside it, missing, or not a picture)."""
+    try:
+        root = Path(workspace).resolve()
+        target = (root / path).resolve() if not str(path).startswith("/") else Path(path).resolve()
+        target.relative_to(root)
+    except Exception:
+        return None
+    return target if target.suffix.lower() in _IMAGE_EXT and target.is_file() else None
+
+
+def media_panels(text, workspace=None):
+    """(text to say, panels): markdown pictures become image panels (local screenshots through
+    op=file), web links become link panels, and no file path or markdown is ever spoken."""
+    from urllib.parse import quote
+    panels = []
+
+    def image(m):
+        alt, url = m.group(1).strip(), m.group(2)
+        if re.match(r"https?://", url):
+            panels.append({"type": "image", "title": alt or "Picture", "url": url})
+        elif workspace:
+            found = _workspace_file(re.sub(r"^file://", "", url), workspace)
+            if found:
+                rel = found.relative_to(Path(workspace).resolve()).as_posix()
+                panels.append({"type": "image", "title": "Screenshot" if "screenshot" in (alt or rel).lower() else (alt or "Picture"),
+                               "url": FILE_URL + quote(rel)})
+        return " "
+
+    def link(m):
+        panels.append({"type": "link", "title": m.group(1).strip(), "url": m.group(2)})
+        return m.group(1)
+
+    said = _MD_IMAGE.sub(image, text or "")
+    said = _MD_LINK.sub(link, said)
+    said = _LOCAL_PATH.sub("", said)
+    said = re.sub(r"[ \t]+([.,!?])", r"\1", re.sub(r"[ \t]{2,}", " ", said))
+    return re.sub(r"\n{3,}", "\n\n", said).strip(), panels
+
+
 def _save_image(data_url, ws):
     m = re.match(r"data:image/(jpeg|png|webp);base64,(.+)$", data_url or "", re.S)
     if not m:
@@ -230,7 +277,7 @@ def fast_reply(text, lang, profile, post=None):
     if not answer or "[[AGENT" in answer or answer.strip("[]. ").upper() == "AGENT":
         logger.info(f"[Voice] fast lane handed the turn to the agent after {time.time() - started:.1f}s")
         return None
-    answer = split_hud(answer)[0]
+    answer = media_panels(split_hud(answer)[0])[0]
     _remember(day, text, answer)
     logger.info(f"[Voice] fast lane answered in {time.time() - started:.1f}s ({len(answer)} chars)")
     return answer
@@ -307,6 +354,8 @@ def chat(text, image=None, lang=None, spoken_only=False):
         raise RuntimeError(why or f"the assistant answered {e.code}")
     logger.info(f"[Voice] spoken turn answered in {time.time() - began:.1f}s ({len(answer)} chars)")
     spoken, panels = split_hud(answer)
+    spoken, media = media_panels(spoken, profile.workspace)
+    panels = (media + panels)[:12]
     if text and spoken:
         _remember(day, text, spoken)
     return {"text": spoken, "hud": panels, "agent": {"id": profile.id, "name": profile.name}}
@@ -316,6 +365,19 @@ class LrmVoiceHandler:
     def GET(self):
         _require_auth()
         from agent import lrm_personal
+        from urllib.parse import parse_qs
+        query = parse_qs(web.ctx.env.get("QUERY_STRING", ""))
+        if (query.get("op") or [""])[0] == "file":
+            # Pictures Sora made (browser screenshots) shown in her panels; only inside her workspace.
+            p = lrm_personal.profile()
+            found = _workspace_file((query.get("f") or [""])[0], p.workspace) if p else None
+            if found is None or (query.get("f") or [""])[0].startswith("/"):
+                return _json("404 Not Found", {"error": "not found"})
+            types = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif"}
+            web.header("Content-Type", types[found.suffix.lower()])
+            web.header("Cache-Control", "private, max-age=3600")
+            web.header("X-Content-Type-Options", "nosniff")
+            return found.read_bytes()
         lrm_personal.ensure_agent()
         p = lrm_personal.profile()
         try:

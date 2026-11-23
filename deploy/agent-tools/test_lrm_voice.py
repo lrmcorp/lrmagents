@@ -134,5 +134,21 @@ check("fast lane failure falls back", _voice_src.fast_reply("Halo", None, _prof,
 _conf.pop("deepseek_api_key")
 check("no key, no fast lane", _voice_src.fast_reply("Halo", None, _prof, post=_post("x")) is None)
 
+
+# Markdown pictures and links: panels, never spoken; local files only from the workspace.
+_shot_dir = os.path.join(_ws, "tmp"); os.makedirs(_shot_dir, exist_ok=True)
+open(os.path.join(_shot_dir, "screenshot_006768d8.png"), "wb").write(b"\x89PNG")
+reply = ("Aku cek dulu websitenya. ![screenshot_006768d8.png](" + os.path.join(_shot_dir, "screenshot_006768d8.png") + ") "
+         "Ini tampilannya, lihat [jadwal kelas](https://example.com/jadwal). File di /home/agent/cow/x.txt juga.")
+said, panels = _voice_src.media_panels(reply, _ws)
+check("no markdown or path is spoken", said == "Aku cek dulu websitenya. Ini tampilannya, lihat jadwal kelas. File di juga.")
+check("screenshot becomes an image panel", panels[0] == {"type": "image", "title": "Screenshot", "url": "/api/lrm/voice?op=file&f=tmp/screenshot_006768d8.png"})
+check("web link becomes a link panel", panels[1] == {"type": "link", "title": "jadwal kelas", "url": "https://example.com/jadwal"})
+outside = tempfile.mkdtemp(); open(os.path.join(outside, "x.png"), "wb").write(b"x")
+check("pictures outside the workspace are not shown", _voice_src.media_panels("![a](" + os.path.join(outside, "x.png") + ")", _ws) == ("", []))
+check("no climbing out of the workspace", _voice_src._workspace_file("../" + os.path.basename(outside) + "/x.png", _ws) is None)
+check("only pictures are served", _voice_src._workspace_file("USER.md", _ws) is None)
+check("web pictures stay as they are", _voice_src.media_panels("![Logo](https://example.com/a.png)")[1] == [{"type": "image", "title": "Logo", "url": "https://example.com/a.png"}])
+
 print("FAILED" if PASS["f"] else "ALL PASSED")
 sys.exit(1 if PASS["f"] else 0)
