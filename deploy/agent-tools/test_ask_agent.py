@@ -151,7 +151,7 @@ CALLS.clear()
 BEHAVE.update({"cfo": 0.0, "hrd": "timeout", "operations": 0.0})
 r = ask_many({"agents": [{"agent": "cfo", "question": "Omzet?"}, {"agent": "hrd", "question": "Absensi?"}, "operations"],
               "question": "Status?"})
-check("timeout labelled, others kept", ("HRD: no answer within 240 s" in r.result, "CFO answered" in r.result, r.status), (True, True, "success"))
+check("timeout labelled, others kept", ("HRD: no answer within 180 s" in r.result, "CFO answered" in r.result, r.status), (True, True, "success"))
 check("timeout never retried", CALLS["hrd"], 1)
 
 CALLS.clear()

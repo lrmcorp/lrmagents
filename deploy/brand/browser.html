@@ -44,7 +44,7 @@
   .keep .row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .keep form { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; } .keep form input { flex: 1 1 160px; }
   .st { font-size: 12px; font-weight: 600; border-radius: 999px; padding: 2px 9px; white-space: nowrap; }
-  .st.signed_in { background: var(--ok-bg); color: var(--ok); } .st.signed_out, .st.error { background: var(--warn-bg); color: var(--warn); } .st.unchecked, .st.checking { background: var(--muted-bg); color: var(--text-3); }
+  .st.signed_in { background: var(--ok-bg); color: var(--ok); } .st.signed_out, .st.down, .st.error { background: var(--warn-bg); color: var(--warn); } .st.unchecked, .st.checking { background: var(--muted-bg); color: var(--text-3); }
 
   /* Phones: 16px fields (iOS zooms into smaller ones), 44px touch targets; a visible focus ring. */
   @media (max-width: 640px) { input, select, textarea { font-size: 16px !important; }
@@ -150,7 +150,7 @@ $('#control').addEventListener('click', async () => {
   try { const d = await post({ op: 'control', take: state.control?.who !== 'owner' }); state.control = d.control; renderState(); toast(state.control.who === 'owner' ? 'You are driving; agents wait' : 'Handed back to the agents'); } catch (e) { toast(e.message, true); }
 });
 // Keep signed in
-const ST = { signed_in: 'Signed in', signed_out: 'Signed out', error: 'Could not check', unchecked: 'Not checked yet', checking: 'Checking…' };
+const ST = { signed_in: 'Signed in', signed_out: 'Signed out', down: 'Site down', error: 'Could not check', unchecked: 'Not checked yet', checking: 'Checking…' };
 async function keepPanel() {
   const get = async () => (await (await fetch('/api/lrm/browser?op=keep', { credentials: 'same-origin' })).json());
   let d = await get(); let list = d.sites || []; let logins = d.logins || []; let editing = -1;

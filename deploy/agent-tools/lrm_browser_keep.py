@@ -209,17 +209,33 @@ def _signed_out(page):
     return bool(_LOGIN_URL.search(urlparse(url).path + "?" + (urlparse(url).query or ""))) or password
 
 
+def _has_content(page):
+    try:
+        return (page.url or "").startswith(("http://", "https://")) and page.locator("body *:visible").count() > 0
+    except Exception:
+        return False
+
+
 def _check_one(service, site):
     """Open the site in a background tab (never the agent's own), see whether it is signed in."""
     def run():
         ctx = service._context
         page = ctx.new_page()
         try:
-            page.goto(site["url"], timeout=45000, wait_until="domcontentloaded")
+            response, load_error = None, ""
+            try:
+                response = page.goto(site["url"], timeout=45000, wait_until="domcontentloaded")
+            except Exception as e:
+                load_error = f"{type(e).__name__}: {(str(e).splitlines() or [''])[0][:100]}"
             try:
                 page.wait_for_load_state("networkidle", timeout=6000)
             except Exception:
                 pass
+            # A slow page that still shows something (e.g. its login form) is judged on what loaded;
+            # only no page at all, or a server error, means the site itself is down.
+            code = getattr(response, "status", None) or 0
+            if code >= 500 or (load_error and not _has_content(page)):
+                return {"down": True, "url": page.url, "title": "", "why": load_error or f"the site answered HTTP {code}"}
             out = _signed_out(page)
             why = ""
             if out:
@@ -279,6 +295,11 @@ def check_all(notify=_notify, only=None, force=False):
     for site in items:
         try:
             r = _check_one(service, site)
+            if r.get("down"):
+                # The site is unreachable, which says nothing about the session: no sign-out alert.
+                site["status"], site["why"], site["detail"] = "down", "", r["why"][:160]
+                site["checked"] = now
+                continue
             was = site.get("status")
             site["status"] = "signed_out" if r["signed_out"] else "signed_in"
             site["why"] = (r.get("why") or "")[:200] if r["signed_out"] else ""

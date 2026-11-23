@@ -12,6 +12,7 @@ echo "== voice"; dc exec -T cowagent python -c "import urllib.request;print(urll
 echo "== gateway log"; dc logs --no-color --tail 400 whatsapp-gateway 2>&1 | grep -iE 'error|fail|warn|connect|close|logged|agent call|restart|private vault|relay' | tail -80
 echo "== agent errors"; dc logs --no-color --tail 4000 cowagent 2>&1 | grep -iE 'error|exception|traceback|fallback|lrmplans|insufficient|402|401|OpenAI API|ChatMemory|failed|Personal|Voice|\[Origin\]' | tail -120
 echo "== last agent tracebacks"; dc logs --no-color --tail 4000 cowagent 2>&1 | grep -A25 'Traceback' | tail -120
+echo "== codex sign-in"; dc exec -T teammates codex login status 2>&1 | tail -3
 echo "== teammates log"; dc logs --no-color --tail 200 teammates 2>&1 | tail -40
 echo "== agent state"; sudo -n docker compose -f deploy/compose.yaml exec -T cowagent sh -c 'cd /app && PYTHONPATH=/app python - <<PY 2>&1 | grep -v "^\[" | tail -40
 from config import load_config, conf
@@ -46,6 +47,17 @@ for cp in c.get("custom_providers") or []:
             except Exception as e:
                 body = getattr(e, "read", lambda: b"")()[:200]
                 print("  answer failed:", m, e, body)
+ds_key, ds_base = c.get("deepseek_api_key"), (c.get("deepseek_api_base") or "https://api.deepseek.com/v1").rstrip("/")
+for m in [l.get("model") for l in (c.get("chat_fallback") or {}).get("chain", []) if l.get("provider") == "deepseek"] or ["deepseek-flash"]:
+    if not ds_key:
+        print("  deepseek:", m, "no key"); break
+    try:
+        req = _u.Request(ds_base + "/chat/completions", data=_j.dumps({"model": m, "max_tokens": 5, "messages": [{"role": "user", "content": "Reply with OK"}]}).encode(),
+                         headers={"Authorization": "Bearer " + ds_key, "Content-Type": "application/json"})
+        r = _j.load(_u.urlopen(req, timeout=60))
+        print("  deepseek answer:", m, repr(r["choices"][0]["message"]["content"])[:40], "| served as", r.get("model"))
+    except Exception as e:
+        print("  deepseek failed:", m, e, getattr(e, "read", lambda: b"")()[:200])
 import agent.lrm_personal as pp
 pr = pp.profile()
 print("personal:", pr and (pr.id, pr.name, pr.workspace))

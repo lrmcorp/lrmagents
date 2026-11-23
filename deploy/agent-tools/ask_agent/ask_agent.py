@@ -25,9 +25,9 @@ RETRY_DELAY = 3
 
 def _timeout():
     try:
-        return max(10, int(os.environ.get("LRMAGENT_ASK_TIMEOUT") or 240))
+        return max(10, int(os.environ.get("LRMAGENT_ASK_TIMEOUT") or 180))
     except ValueError:
-        return 240
+        return 180
 
 
 def _timed_out(e):
