@@ -85,6 +85,17 @@ def main():
     fails += check("lower-case marker", out.classify("catatan\n[kirim]Stok aman.[/kirim]"), ("final", "Stok aman."))
     fails += check("all empty", out.classify(M.format("") + " lalu " + M.format(" ")), ("silent", ""))
 
+    # A failed run is never delivered: integration stops on "failed" and only the owner is told.
+    told = []
+    agent = types.ModuleType("agent")
+    agent.lrm_activity = types.SimpleNamespace(_agent_name=lambda a: "Lorium",
+                                               _notify_owner=lambda a, text: told.append((a, text)))
+    sys.modules["agent"], sys.modules["agent.lrm_activity"] = agent, agent.lrm_activity
+    outcome, reason = out.classify("")
+    out.note_failed("lorium", {"name": "Laporan harian"}, reason)
+    fails += check("failed run -> owner only", (outcome, len(told), "Nothing was sent" in told[0][1]), ("failed", 1, True))
+    del sys.modules["agent"], sys.modules["agent.lrm_activity"]
+
     print("FAILED" if fails else "ALL PASSED")
     return 1 if fails else 0
 

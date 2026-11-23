@@ -46,12 +46,19 @@ class _Resp(io.BytesIO):
 
 # chat suffix -> "ok" | "refused" | "offline"
 ANSWER = {}
+STATUS = {}
+SENT = []       # (chat, text) posted to /send
+OWNER = []      # texts posted to /notify-owner
 
 
 def _urlopen(req, timeout=30):
     if req.full_url.endswith("/status"):
+        return _Resp(json.dumps(STATUS).encode())
+    if req.full_url.endswith("/notify-owner"):
+        OWNER.append(json.loads(req.data)["text"])
         return _Resp(b"{}")
     chat = json.loads(req.data)["chat"]
+    SENT.append((chat, json.loads(req.data)["text"]))
     how = next((v for k, v in ANSWER.items() if chat.endswith(k)), "ok")
     if how == "refused":
         raise urllib.error.HTTPError(req.full_url, 403, "no", {}, io.BytesIO(b'{"error":"not a designated contact"}'))
@@ -116,6 +123,47 @@ check("order id not tagged", wr._mentions_for(act, "order@20261119001 selesai"),
 check("dot before @ not tagged", wr._mentions_for(act, "x.@6281234567890"), [])
 check("local 0 number not tagged", wr._mentions_for(act, "hubungi @081234567890"), [])
 check("off by default", wr._mentions_for({}, "@6281234567890"), [])
+
+# (d) the *LAPORAN rule for scheduled AI reports (owner +64225802322, one designated contact).
+ANSWER.clear()
+STATUS.update({"accounts": [{"agent": "default", "status": "linked", "phone": "6281000", "ownerNumbers": ["64225802322"]}],
+               "designated": [{"name": "Reyner", "phone": "628111"}]})
+OWN, REY = P + "64225802322@s.whatsapp.net", P + "628111@s.whatsapp.net"
+AI = {"type": "agent_task", "receiver": REY, "receivers": [OWN]}
+good = types.SimpleNamespace(content="  *LAPORAN HARIAN*\nOmzet naik")
+bad = types.SimpleNamespace(content="Error: tool returned 500")
+
+
+def run(channel, action, text):
+    SENT.clear(), OWNER.clear()
+    ch = wr.fanout(channel, action, "openai_api")
+    ch.send(text)
+    return ch
+
+
+ch = run(wr.relay_for(REY), {"type": "agent_task", "receiver": REY}, good)
+check("valid report -> recipient", [c for c, _ in SENT], ["628111@s.whatsapp.net"])
+check("valid report, owner not warned", OWNER, [])
+ch = run(None, AI, good)
+check("valid report fan-out -> both", sorted(c for c, _ in SENT), ["628111@s.whatsapp.net", "64225802322@s.whatsapp.net"])
+ch = run(None, AI, bad)
+check("missing prefix fan-out -> nobody", SENT, [])
+check("missing prefix -> owner only, with note",
+      OWNER[0].startswith("⚠️ Not sent to Reyner: the result did not start with *LAPORAN.") and "500" in OWNER[0], True)
+check("missing prefix noted in History", "Not delivered to Reyner" in ch.delivery_note and "owner only" in ch.delivery_note, True)
+ch = run(wr.relay_for(REY), {"type": "agent_task", "receiver": REY}, bad)
+check("missing prefix single -> owner only", (SENT, len(OWNER)), ([], 1))
+ch = run(wr.relay_for(OWN), {"type": "agent_task", "receiver": OWN}, bad)
+check("owner-only task unaffected", ([c for c, _ in SENT], OWNER, ch.delivery_note), (["64225802322@s.whatsapp.net"], [], ""))
+ch = run(wr.relay_for(REY), {"type": "send_message", "receiver": REY}, types.SimpleNamespace(content="Ingat rapat jam 3"))
+check("reminder unaffected", ([c for c, _ in SENT], OWNER), (["628111@s.whatsapp.net"], []))
+ch = run(None, {"type": "send_message", "receiver": REY, "receivers": [OWN]}, types.SimpleNamespace(content="Ingat rapat"))
+check("reminder fan-out unaffected", (len(SENT), OWNER), (2, []))
+os.environ["LRMAGENT_REPORT_PREFIX"] = ""
+ch = run(wr.relay_for(REY), {"type": "agent_task", "receiver": REY}, bad)
+check("empty prefix disables the rule", (len(SENT), OWNER), (1, []))
+del os.environ["LRMAGENT_REPORT_PREFIX"]
+check("prefix case-insensitive", wr.report_guard(AI, [REY], "*Laporan Mingguan"), None)
 
 print("FAILED" if PASS["f"] else "ALL PASSED")
 sys.exit(1 if PASS["f"] else 0)

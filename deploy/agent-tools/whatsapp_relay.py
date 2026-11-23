@@ -63,6 +63,70 @@ def _mention_note(result):
     return " [" + "; ".join(bits) + "]"
 
 
+# Owner's rule: a scheduled AI report reaches its recipients only when it starts with this
+# prefix; anything else (tool output, an error, the model's notes) goes to the owner alone.
+def report_prefix():
+    return os.environ.get("LRMAGENT_REPORT_PREFIX", "*LAPORAN")
+
+
+def _digits(n):
+    return re.sub(r"\D", "", str(n or ""))
+
+
+def _owner_receivers(state):
+    """Receivers that are an owner's own chat, from the gateway's ownerNumbers per agent."""
+    out = set()
+    for account in state.get("accounts") or []:
+        agent = account.get("agent")
+        for n in account.get("ownerNumbers") or ([account.get("phone")] if account.get("phone") else []):
+            if agent and _digits(n):
+                out.add(f"{SESSION_PREFIX}{agent}:{_digits(n)}@s.whatsapp.net")
+    return out
+
+
+def report_guard(action, receivers, text):
+    """None to deliver as usual, else the names of the non-owner receivers it must not reach.
+    Only agent runs are checked: reminders, tool and skill calls send fixed content (their
+    action type is send_message/tool_call/skill_call), and an owner-only delivery is exempt."""
+    prefix = report_prefix()
+    if not prefix or (action or {}).get("type") != "agent_task":
+        return None
+    if (text or "").lstrip().upper().startswith(prefix.upper()):
+        return None
+    state = _gateway_status()
+    others = [r for r in receivers if r not in _owner_receivers(state)]
+    if not others:
+        return None
+    names = {r["receiver"]: r["name"] for r in task_recipients(state)}
+    return [names.get(r, "+" + r.rsplit(":", 1)[-1].split("@")[0] if "@s.whatsapp.net" in r else r.rsplit(":", 1)[-1])
+            for r in others]
+
+
+def _notify_owner(agent_id, text):
+    """(ok, error) for a message to the agent's owner through the gateway. Never raises."""
+    token = str(conf().get("external_api_token") or "")
+    request = urllib.request.Request(
+        f"{GATEWAY_URL}/whatsapp/internal/notify-owner",
+        data=json.dumps({"agentId": agent_id, "text": text}).encode(), method="POST",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read()
+        return True, ""
+    except Exception as e:
+        return False, str(e)[:160]
+
+
+def hold_for_owner(agent_id, names, text):
+    """Send a report that failed the prefix check to the owner only; returns the History note."""
+    prefix = report_prefix()
+    who = ", ".join(names)
+    ok, why = _notify_owner(agent_id, f"⚠️ Not sent to {who}: the result did not start with {prefix}.\n\n{text}")
+    logger.warning(f"[WhatsAppRelay] report held for the owner, missing {prefix!r}; not sent to {who}")
+    return (f"\n\nNot delivered to {who}: the result did not start with {prefix}. "
+            + ("Sent to the owner only." if ok else f"Sending it to the owner failed too ({why})."))
+
+
 class WhatsAppRelay:
     def __init__(self, agent_id, chat):
         self.agent_id = agent_id
@@ -93,6 +157,10 @@ class WhatsAppRelay:
         if not text:
             return
         self.last_result = {}
+        held = report_guard(self.action, [f"{SESSION_PREFIX}{self.agent_id}:{self.chat}"], text)
+        if held:
+            self.delivery_note = hold_for_owner(self.agent_id, held, text)
+            return
         refused = self._post(text, swallow_refusal=True, mentions=_mentions_for(self.action, text))
         # A refusal is final (no retry), so History must say it was not delivered.
         self.delivery_note = (f"\n\nNot delivered: the WhatsApp gateway refused it ({refused})" if refused
@@ -266,10 +334,17 @@ class FanOut:
         text = str(getattr(reply, "content", "") or "").strip()
         if not text:
             return
+        targets = self.targets()
+        held = report_guard(self.action, targets, text)
+        if held:
+            agent = (targets[0][len(SESSION_PREFIX):].partition(":")[0]
+                     if targets and targets[0].startswith(SESSION_PREFIX) else instance_agent(self.action.get("instance_id")))
+            self.delivery_note = hold_for_owner(agent, held, text)
+            return
         names = {r["receiver"]: r["name"] for r in task_recipients()}
         mentions = _mentions_for(self.action, text)
         transient = False
-        for receiver in self.targets():
+        for receiver in targets:
             relay = relay_for(receiver)
             if relay is None:
                 self.results.append((receiver, False, "not a WhatsApp recipient", ""))

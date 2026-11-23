@@ -129,12 +129,14 @@ jobs:
           OPEN_AI_API_KEY: ${{ secrets.OPEN_AI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # OpenRouter (one key, many models) replaces the direct DeepSeek account when its key is set;
-          # its models are listed under OpenRouter in the model picker (the main model is chosen there).
+          # OpenRouter is off (its credit ran out, 402); set the LRMAGENT_USE_OPENROUTER variable to "true" to bring it back.
+          USE_OPENROUTER: ${{ vars.LRMAGENT_USE_OPENROUTER }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODELS: ${{ vars.LRMAGENT_OPENROUTER_MODELS || 'deepseek/deepseek-v4-pro-0813,deepseek/deepseek-v4.1-flash-1017' }}
+          # Backups on the official DeepSeek API (DEEPSEEK_API_KEY secret), strongest first.
+          DEEPSEEK_MODELS: ${{ vars.LRMAGENT_DEEPSEEK_MODELS || 'deepseek-v4-pro,deepseek-flash' }}
           # The main model of every agent (an agent's own model in Agents, and a chat's pick, still win).
-          # Default: Codex on the owner's ChatGPT plan, with the OpenRouter models as automatic backups
+          # Default: Codex on the owner's ChatGPT plan, with DeepSeek as automatic backups
           # (they also answer contacts, who can't use the owner's plans).
           MAIN_PROVIDER: ${{ vars.LRMAGENT_MAIN_PROVIDER || 'custom:lrmplans' }}
           MAIN_MODEL: ${{ vars.LRMAGENT_MAIN_MODEL || 'codex' }}
@@ -159,7 +161,20 @@ jobs:
             echo "Model fallback: $CHAT_FALLBACK" >> "$GITHUB_STEP_SUMMARY"
           fi
           CLEAR=""
-          if [[ -n "$OPENROUTER_API_KEY" ]]; then
+          # The owner's plan is the main model whichever backups are used.
+          BOT_TYPE="$MAIN_PROVIDER"; MODEL="$MAIN_MODEL"; export BOT_TYPE MODEL
+          if [[ "$USE_OPENROUTER" != "true" ]]; then
+            # An explicit empty list also drops an OpenRouter provider saved earlier, so it can't be picked.
+            export CUSTOM_PROVIDERS="[]"
+            if [[ -z "$MODEL_FALLBACK" ]]; then
+              CHAT_FALLBACK="$(python3 -c 'import os
+          models = [m.strip() for m in os.environ["DEEPSEEK_MODELS"].split(",") if m.strip()]
+          print(repr({"enabled": True, "chain": [{"provider": "deepseek", "model": m} for m in models]}))')"
+              export CHAT_FALLBACK
+            fi
+            [[ -n "$DEEPSEEK_API_KEY" ]] || echo "::warning::No DEEPSEEK_API_KEY secret: the DeepSeek backups only work if a key was saved in the console."
+            echo "Main model: $BOT_TYPE / $MODEL · backups: ${CHAT_FALLBACK:-console setting}" >> "$GITHUB_STEP_SUMMARY"
+          elif [[ -n "$OPENROUTER_API_KEY" ]]; then
             # A custom (OpenAI-compatible) provider, as Python literals: LRMagent reads list- and
             # dict-valued settings from the environment with ast.literal_eval.
             eval "$(python3 -c 'import os, shlex
@@ -173,9 +188,6 @@ jobs:
             DEEPSEEK_API_KEY=""; CLEAR="DEEPSEEK_API_KEY"
             export LRMAGENT_HIDDEN_PROVIDERS="deepseek"
             if [[ "$MODEL" == deepseek* && "$MODEL" != */* ]]; then MODEL=""; fi
-            # Settings saved in the console still pointed at the direct DeepSeek account: set the main
-            # model explicitly (an empty variable would not override them).
-            BOT_TYPE="$MAIN_PROVIDER"; MODEL="$MAIN_MODEL"; export BOT_TYPE MODEL
             if [[ -z "$MODEL_FALLBACK" ]]; then
               CHAT_FALLBACK="$(python3 -c 'import os
           models = [m.strip() for m in os.environ["OPENROUTER_MODELS"].split(",") if m.strip()]
@@ -186,7 +198,7 @@ jobs:
             echo "Main model: $BOT_TYPE / $MODEL · backups: $OPENROUTER_MODELS" >> "$GITHUB_STEP_SUMMARY"
             echo "OpenRouter models in the picker: $OPENROUTER_MODELS" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::warning::No OPENROUTER_API_KEY secret: add it (Settings → Secrets → Actions) to switch the agents to OpenRouter."
+            echo "::warning::LRMAGENT_USE_OPENROUTER is true but there is no OPENROUTER_API_KEY secret."
           fi
           { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL BOT_TYPE CUSTOM_PROVIDERS LRMAGENT_HIDDEN_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
               if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
