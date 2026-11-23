@@ -168,6 +168,7 @@ def chat(text, image=None, lang=None, spoken_only=False):
     fast = voice_model()
     if fast:
         body["model"] = fast
+        logger.info(f"[Voice] spoken turn on {fast}")
     else:
         logger.warning("[Voice] no fast model on offer; using the agent's own model (slower). Set LRMAGENT_VOICE_MODEL.")
     # A spoken answer is one to three short sentences; capping it keeps the reply, and so the voice, quick.
