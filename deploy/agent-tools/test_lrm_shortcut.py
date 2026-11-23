@@ -5,6 +5,8 @@ hand to Sora's chat and the voice service. The in-container modules are stubbed 
 request state, the voice handler module, the conversation store) so this runs anywhere.
 """
 import json
+import datetime
+import re
 import time
 import os
 import sys
@@ -173,7 +175,16 @@ CALLS.clear()
 _STORE["store"] = _Store(rows)
 status, audio = call("POST", "brief_audio")
 check("brief_audio", (status, audio), (200, b"ID3mp3"))
-check("brief_audio reads the brief", CALLS[0][2]["text"].startswith("LAPORAN Ringkasan"), True)
+check("brief_audio greets, then reads the brief", re.match(r"^Halo, berikut laporan operasional (?:terakhir, \d{2}-\d{2}-\d{4} pukul|\w+ ini, pukul) \d{2}:\d{2}\. LAPORAN Ringkasan", CALLS[0][2]["text"]) is not None, True)
+CALLS.clear()
+call("POST", "brief_audio", body={"name": "Budi"})
+check("brief_audio with the owner's name", CALLS[0][2]["text"].startswith("Halo Budi, berikut laporan operasional "), True)
+at = datetime.datetime.strptime(api.latest_brief()["at"], "%d-%m-%Y %H:%M")
+check("brief today: part of day", api._brief_speech("Budi", now=at).split(". ")[0],
+      f"Halo Budi, berikut laporan operasional {'pagi' if at.hour < 11 else 'siang' if at.hour < 15 else 'sore' if at.hour < 18 else 'malam'} ini, pukul {at:%H:%M}")
+check("brief from an earlier day says its date", api._brief_speech("", now=at + datetime.timedelta(days=1)).split(". ")[0],
+      f"Halo, berikut laporan operasional terakhir, {at:%d-%m-%Y} pukul {at:%H:%M}")
+check("owner name is cleaned", api._owner_name({"name": " Budi<script> "}), "Budiscript")
 
 # ask_audio: one request asks Sora and returns her voice, in the language the owner spoke.
 _voice.chat = lambda text, image=None, lang=None, spoken_only=False: CALLS.append(("chat", text, image, lang, spoken_only)) or {"text": "Jam tiga sore.", "hud": [], "agent": {}}
@@ -189,7 +200,7 @@ _STORE["store"] = _Store(rows)
 for ask in ("laporan harian", "Tolong bacakan ringkasan operasional hari ini", "Laporan", "daily report please"):
     CALLS.clear()
     call("POST", "ask_audio", body={"text": ask})
-    check(f"brief ask: {ask}", ([c[0] for c in CALLS], CALLS[-1][2]["text"].startswith("Ringkasan ")), (["voice"], True))
+    check(f"brief ask: {ask}", ([c[0] for c in CALLS], CALLS[-1][2]["text"].startswith("Halo, berikut laporan operasional ")), (["voice"], True))
 CALLS.clear()
 call("POST", "ask_audio", body={"text": "buatkan laporan stok cabang Bekasi minggu ini"})
 check("other report asks go to the model", CALLS[0][0], "chat")

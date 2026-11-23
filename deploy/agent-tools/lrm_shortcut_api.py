@@ -4,7 +4,7 @@ GET  ?op=brief                -> {text, at, task}   latest successful "Ringkasan
 POST ?op=ask   {text, lang?}  -> {text}             one turn with Sora (the Personal page's voice chat)
 POST ?op=ask_audio {text, lang?} -> audio/mpeg     ask and speak in one request (fastest for Siri and Back Tap)
 POST ?op=tts   {text}         -> audio/mpeg         Sora's voice for a text
-POST ?op=brief_audio          -> audio/mpeg         the brief, read aloud
+POST ?op=brief_audio {name?}  -> audio/mpeg         the brief, read aloud with a greeting
 
 Auth is a long shared token in the X-LRM-Token header (LRMAGENT_SHORTCUT_TOKEN), not the console
 cookie: Shortcuts cannot sign in. With no token configured the endpoint does not exist (404).
@@ -179,11 +179,25 @@ WAIT = float(os.environ.get("LRMAGENT_SHORTCUT_WAIT", "25") or 25)
 LATE = "Ini perlu waktu lebih lama. Jawabannya saya kirim lewat WhatsApp begitu siap."
 
 
-def _brief_speech():
+def _owner_name(req):
+    name = str((req or {}).get("name") or os.environ.get("LRMAGENT_OWNER_NAME") or "").strip()
+    return re.sub(r"[^\w .'-]", "", name)[:40].strip()
+
+
+def _brief_speech(name="", now=None):
+    """The brief as Sora says it: "Halo <name>, berikut laporan operasional siang ini, pukul 12:05. ..." """
     brief = latest_brief()
+    hello = f"Halo {name}" if name else "Halo"
     if not brief["at"]:
-        return brief["text"]
-    return f"Ringkasan {brief['at']}. {brief['text']}"[:BRIEF_AUDIO_MAX]
+        return f"{hello}. {brief['text']}"
+    at = datetime.datetime.strptime(brief["at"], "%d-%m-%Y %H:%M")
+    today = (now or datetime.datetime.now(_WIB)).date()
+    part = "pagi" if at.hour < 11 else "siang" if at.hour < 15 else "sore" if at.hour < 18 else "malam"
+    if at.date() == today:
+        when = f"laporan operasional {part} ini, pukul {at:%H:%M}"
+    else:
+        when = f"laporan operasional terakhir, {at:%d-%m-%Y} pukul {at:%H:%M}"
+    return f"{hello}, berikut {when}. {brief['text']}"[:BRIEF_AUDIO_MAX]
 
 
 def _whatsapp_owner(agent_id, text):
@@ -221,10 +235,10 @@ def _answer_within(text, lang, wait):
     return box["result"]["text"]
 
 
-def _ask_audio(text, lang):
+def _ask_audio(text, lang, req=None):
     started = time.time()
     if _BRIEF_ASK.match(text):
-        answer, how = _brief_speech(), "brief"
+        answer, how = _brief_speech(_owner_name(req)), "brief"
     else:
         answer = _answer_within(text, lang, WAIT)
         how = "model (late, WhatsApp)" if answer is LATE else "model"
@@ -281,7 +295,8 @@ class LrmShortcutHandler:
             return denied
         op = _op()
         if op == "brief_audio":
-            return _guarded(op, lambda: _speak(latest_brief()["text"][:BRIEF_AUDIO_MAX]))
+            req = _body() or {}
+            return _guarded(op, lambda: _speak(_brief_speech(_owner_name(req)), "id"))
         if op not in ("ask", "ask_audio", "tts"):
             if op == "brief":
                 return _json("405 Method Not Allowed", {"error": "use GET for op=brief"})
@@ -299,5 +314,5 @@ class LrmShortcutHandler:
             return _guarded(op, lambda: _speak(text))
         lang = req.get("lang") if isinstance(req.get("lang"), str) and req.get("lang") else None
         if op == "ask_audio":
-            return _guarded(op, lambda: _ask_audio(text, lang))
+            return _guarded(op, lambda: _ask_audio(text, lang, req))
         return _guarded(op, lambda: _json("200 OK", {"text": _voice_api().chat(text, None, lang, spoken_only=True)["text"]}))
