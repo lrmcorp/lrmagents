@@ -48,6 +48,19 @@ def none(name, text, lang=None):
     check(name, _voice_src.reflex(text, lang) is None)
 
 
+# Greetings and thanks, as iPhone dictation writes them.
+rx("greet id how", "Halo, bagaimana kabarmu?", None, r"^Halo, kabar saya baik\. Ada yang bisa saya bantu\?$")
+rx("greet id apa kabar", "apa kabar", None, r"^Halo, kabar saya baik\.")
+rx("greet id sora", "Hai Sora", None, r"^Halo\. Ada yang bisa saya bantu\?$")
+rx("greet id pagi", "Selamat pagi Sora, apa kabar?", None, r"^Selamat pagi, kabar saya baik\.")
+rx("greet en", "Hello, how are you?", None, r"^Hi, I'm doing well\.")
+rx("greet en morning", "good morning", None, r"^Good morning\. What can I do for you\?$")
+rx("thanks id", "Terima kasih, Sora.", None, r"^Sama-sama\.")
+rx("thanks en", "thank you", None, r"^You're welcome\.")
+none("greeting with a question", "halo, ada meeting apa besok?")
+none("kabar of a branch", "bagaimana kabar cabang Bekasi?")
+none("plain ok", "ok")
+
 # Time and date, English and Bahasa Indonesia.
 rx("time en", "what time is it", None, r"^It's \d{2}:\d{2}\.$")
 rx("time en short", "the time?", None, r"^It's \d{2}:\d{2}\.$")
@@ -64,7 +77,7 @@ none("meeting time en", "what time do we meet tomorrow")
 none("meeting time id", "jam berapa meeting besok")
 none("date in sentence", "can you move the date of the dentist")
 none("empty", "")
-none("greeting", "hey sora how are you")
+rx("greeting answered at once", "hey sora how are you", None, r"^Hi, I'm doing well\.")
 none("long", "what time is it in Tokyo right now and also in London please")
 
 # HUD split: the spoken text is clean, only known panel types survive.

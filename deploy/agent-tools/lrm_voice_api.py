@@ -112,6 +112,34 @@ _DATE_Q = re.compile(r"^(?:hey |ok )?(?:sora[, ]+)?(?:what(?:'s| is)? (?:the |to
                      r"tanggal berapa hari ini)\s*\??$", re.I)
 
 
+# Small talk the iPhone hears most: answered at once (and its voice comes from the TTS cache after the first time).
+_LEAD = r"^(?:hey |hai |halo |hi |hello |ok )?(?:sora )?"
+_GREET = re.compile(_LEAD + r"(?:halo|hai|hello|hi|hey|selamat (pagi|siang|sore|malam)|good (morning|afternoon|evening))?"
+                    r"(?: sora)?(?: ?(?:apa kabar|bagaimana kabar(?:mu| kamu| anda)?|gimana kabar(?:nya|mu)?|kabar(?:mu)? (?:baik|gimana)|"
+                    r"how are you(?: doing)?|how(?:'s| is) it going))?(?: sora)?$", re.I)
+_THANKS = re.compile(_LEAD + r"(?:terima kasih(?: banyak)?|makasih(?: ya)?|thanks?(?: you)?(?: so much)?|thank you)(?: sora)?$", re.I)
+_ID_WORDS = re.compile(r"\b(halo|hai|selamat|pagi|siang|sore|malam|apa|kabar|bagaimana|gimana|terima|kasih|makasih)\b", re.I)
+
+
+def _small_talk(q, lang):
+    plain = re.sub(r"\s+", " ", re.sub(r"[^\w' ]+", " ", q)).strip()
+    if not plain:
+        return None
+    want_id = lang == "id" or (lang != "en" and bool(_ID_WORDS.search(plain)))
+    if _THANKS.match(plain):
+        return "Sama-sama. Kabari saja kalau butuh yang lain." if want_id else "You're welcome. Just ask if you need anything else."
+    m = _GREET.match(plain)
+    if not m or not plain:
+        return None
+    asks_how = bool(re.search(r"kabar|how are|how's|how is", plain, re.I))
+    part = m.group(1)
+    if want_id:
+        hello = f"Selamat {part}" if part else "Halo"
+        return f"{hello}, kabar saya baik. Ada yang bisa saya bantu?" if asks_how else f"{hello}. Ada yang bisa saya bantu?"
+    hello = f"Good {m.group(2)}" if m.group(2) else "Hi"
+    return f"{hello}, I'm doing well. What can I do for you?" if asks_how else f"{hello}. What can I do for you?"
+
+
 def reflex(text, lang=None):
     """An instant answer for the few deterministic, high-frequency asks (the current time and
     date), so the orb replies without a model round-trip. Returns {text, hud} or None. English
@@ -122,7 +150,8 @@ def reflex(text, lang=None):
     is_time = bool(_TIME_Q.match(q))
     is_date = bool(_DATE_Q.match(q))
     if not (is_time or is_date):
-        return None
+        said = _small_talk(q, lang)
+        return {"text": said, "hud": []} if said else None
     want_id = lang == "id" or (lang != "en" and bool(re.search(r"\b(jam|pukul|berapa|hari|tanggal|sekarang|ini)\b", q, re.I)))
     now = datetime.datetime.now(_WIB)
     hhmm = now.strftime("%H:%M")
