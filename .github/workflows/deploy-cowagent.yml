@@ -148,6 +148,8 @@ jobs:
           MODEL_FALLBACK: ${{ vars.LRMAGENT_MODEL_FALLBACK }}
           # Optional prices for the Usage page: {"model-prefix": [usd_per_M_input, usd_per_M_output]}.
           LRMAGENT_PRICES: ${{ vars.LRMAGENT_PRICES }}
+          # The iPhone Shortcuts API (/api/lrm/shortcut); empty or under 24 characters keeps it off.
+          LRMAGENT_SHORTCUT_TOKEN: ${{ secrets.LRMAGENT_SHORTCUT_TOKEN }}
         run: |
           host="${AGENT_DOMAIN%%,*}"; export WEB_PUBLIC_URL="https://${host// /}"
           if [[ ${#WEB_PASSWORD} -lt 12 ]]; then
@@ -203,7 +205,7 @@ jobs:
           else
             echo "::warning::LRMAGENT_USE_OPENROUTER is true but there is no OPENROUTER_API_KEY secret."
           fi
-          { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL BOT_TYPE CUSTOM_PROVIDERS LRMAGENT_HIDDEN_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY; do
+          { for name in WEB_PASSWORD WEB_PUBLIC_URL MODEL BOT_TYPE CUSTOM_PROVIDERS LRMAGENT_HIDDEN_PROVIDERS CHAT_FALLBACK LRMAGENT_PRICES CLAUDE_API_KEY OPEN_AI_API_KEY DEEPSEEK_API_KEY GEMINI_API_KEY LRMAGENT_SHORTCUT_TOKEN; do
               if [[ -n "${!name}" ]]; then printf '%s=%s\n' "$name" "${!name}"; fi
             done
             for name in $CLEAR; do printf '%s=\n' "$name"; done

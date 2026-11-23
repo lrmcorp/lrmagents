@@ -45,6 +45,7 @@ COPY deploy/agent-tools/whatsapp_tool /app/agent/tools/whatsapp_tool/
 # Personal assistant: agent, voice page API, reports from other agents.
 COPY deploy/agent-tools/lrm_personal.py /app/agent/lrm_personal.py
 COPY deploy/agent-tools/lrm_voice_api.py /app/channel/web/api/lrm_voice.py
+COPY deploy/agent-tools/lrm_shortcut_api.py /app/channel/web/api/lrm_shortcut.py
 COPY deploy/agent-tools/lrm_chats_api.py /app/channel/web/api/lrm_chats.py
 # Vault updates: agents propose, Lorium checks, the owner approves.
 COPY deploy/agent-tools/lrm_vault_flow.py /app/agent/lrm_vault_flow.py

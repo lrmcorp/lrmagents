@@ -793,6 +793,12 @@ patch("web_channel.py", "from channel.web.api.lrm_busy import LrmBusyHandler  # 
       "from channel.web.api.lrm_runs import LrmRunsHandler  # noqa: F401,E402\n")
 patch("web_channel.py", "    '/api/lrm/busy', 'LrmBusyHandler',\n",
       "    '/api/lrm/busy', 'LrmBusyHandler',\n    '/api/lrm/runs', 'LrmRunsHandler',\n")
+# The owner's iPhone (Apple Shortcuts): the daily brief and Sora, behind its own token (lrm_shortcut.py).
+patch("web_channel.py", "from channel.web.api.lrm_runs import LrmRunsHandler  # noqa: F401,E402\n",
+      "from channel.web.api.lrm_runs import LrmRunsHandler  # noqa: F401,E402\n"
+      "from channel.web.api.lrm_shortcut import LrmShortcutHandler  # noqa: F401,E402\n")
+patch("web_channel.py", "    '/api/lrm/runs', 'LrmRunsHandler',\n",
+      "    '/api/lrm/runs', 'LrmRunsHandler',\n    '/api/lrm/shortcut', 'LrmShortcutHandler',\n")
 
 # Tasks page, run detail: a link to that run's tool calls and approvals (Activity page, ?run=).
 patch("static/js/views/tasks.js", '    fetch(`/api/scheduler/runs/detail?run_id=${encodeURIComponent(run.run_id)}`)\n', '    // LRMagent: the run\'s tool calls and approvals, on the Activity page.\n    document.getElementById(\'lrm-run-trace\')?.remove();\n    if (run.run_id) outEl.insertAdjacentHTML(\'afterend\', `<a id="lrm-run-trace" href="/assets/brand/activity.html?run=${encodeURIComponent(run.run_id)}" target="_blank" rel="noopener" class="inline-block mt-3 text-xs font-semibold underline">Tool calls and approvals of this run</a>`);\n    fetch(`/api/scheduler/runs/detail?run_id=${encodeURIComponent(run.run_id)}`)\n')
