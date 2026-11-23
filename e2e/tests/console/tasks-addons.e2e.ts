@@ -34,8 +34,10 @@ async function mockTasks(browser: any, tasks: object[], loadMembers: Members) {
   await browser.route(/\/api\/scheduler\/recipients/, (route: any) => route.fulfill({
     json: { status: 'success', recipients: [recipient(GROUP_A, 'Group: Sales'), recipient(GROUP_B, 'Group: Finance')] },
   }));
-  await browser.route(/\/api\/scheduler\/update/, (route: any) => {
-    saved.push(JSON.parse(route.request.postData || '{}'));
+  await browser.route(/\/api\/scheduler\/(update|toggle)/, (route: any) => {
+    const body = JSON.parse(route.request.postData || '{}');
+    if (route.request.url.includes('/toggle')) body.__toggle = true;
+    saved.push(body);
     return route.fulfill({ json: { status: 'success' } });
   });
   await browser.route(/\/whatsapp\/api\/groups\/members/, async (route: any) => {
@@ -89,6 +91,108 @@ test('Tasks: a closed edit leaves no mentions behind for the next task', async (
   await editTask(browser, 'e2e-a', GROUP_A);
   await expect(tick(browser, 1)).toBeChecked();
   await expect(tick(browser, 2)).not.toBeChecked();
+  await healthy(browser);
+});
+
+const alsoTo = (browser: any, jid: string) => browser.locator(`#lrm-receivers input[value="${PRE}${jid}"]`);
+// A task update sent by anything but the open form's Save (here: from the page's own script).
+const sendUpdate = (browser: any, id: string) => browser.evaluate(async (args: any) => {
+  await fetch('/api/scheduler/update', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: args.id, agent_id: 'default', action: { type: 'send_message', channel_type: 'openai_api', instance_id: args.inst, receiver: args.receiver, content: 'x' } }),
+  });
+}, { id, inst: INST, receiver: PRE + GROUP_A });
+
+test('Tasks: updates outside the open form carry nothing from it', async ({ app, browser }) => {
+  const saved = await mockTasks(browser, [
+    task('e2e-a', 'Sales report', GROUP_A, { receivers: [PRE + GROUP_A, PRE + GROUP_B] }),
+    task('e2e-b', 'Sales follow-up', GROUP_A),
+  ], async () => ({ status: 200, json: members(3) }));
+  await openTasks(app, browser);
+
+  await editTask(browser, 'e2e-a', GROUP_A);
+  await expect(alsoTo(browser, GROUP_B)).toBeChecked();
+  await browser.locator('#task-edit-modal-cancel').click();
+
+  // Switching B off from the list sends only the switch.
+  await browser.locator('#tasks-list label[for="toggle-e2e-b"]').click();
+  await expect.poll(() => saved.length).toBe(1);
+  expect(saved[0].__toggle).toBe(true);
+  expect(saved[0].task_id).toBe('e2e-b');
+  expect(saved[0].action).toBeUndefined();
+
+  // An update for B with the form closed goes out as sent.
+  await sendUpdate(browser, 'e2e-b');
+  await expect.poll(() => saved.length).toBe(2);
+  expect(saved[1].action.receivers).toBeUndefined();
+  expect(saved[1].action.mentions).toBeUndefined();
+
+  // With A's form open, an update for B still carries nothing from A's form.
+  await editTask(browser, 'e2e-a', GROUP_A);
+  await expect(alsoTo(browser, GROUP_B)).toBeChecked();
+  await sendUpdate(browser, 'e2e-b');
+  await expect.poll(() => saved.length).toBe(3);
+  expect(saved[2].task_id).toBe('e2e-b');
+  expect(saved[2].action.receivers).toBeUndefined();
+
+  // A's own Save keeps A's recipients.
+  await browser.locator('#task-edit-modal-save').click();
+  await expect.poll(() => saved.length).toBe(4);
+  expect(saved[3].task_id).toBe('e2e-a');
+  expect(saved[3].action.receivers).toEqual([PRE + GROUP_A, PRE + GROUP_B]);
+  await healthy(browser);
+});
+
+test('Tasks: each form shows its own task\'s "Also send to"', async ({ app, browser }) => {
+  const saved = await mockTasks(browser, [
+    task('e2e-a', 'Sales report', GROUP_A, { receivers: [PRE + GROUP_A, PRE + GROUP_B] }),
+    task('e2e-b', 'Sales follow-up', GROUP_A),
+  ], async () => ({ status: 200, json: members(3) }));
+  await openTasks(app, browser);
+
+  await editTask(browser, 'e2e-a', GROUP_A);
+  await expect(alsoTo(browser, GROUP_B)).toBeChecked();
+  await browser.locator('#task-edit-modal-cancel').click();
+
+  await editTask(browser, 'e2e-b', GROUP_A);
+  await expect(alsoTo(browser, GROUP_B)).not.toBeChecked();
+  await browser.locator('#task-edit-modal-save').click();
+  await expect.poll(() => saved.length).toBe(1);
+  expect(saved[0].task_id).toBe('e2e-b');
+  expect(saved[0].action.receivers).toEqual([]);
+
+  // A, opened again after B, shows what A has stored.
+  await editTask(browser, 'e2e-a', GROUP_A);
+  await expect(alsoTo(browser, GROUP_B)).toBeChecked();
+  await healthy(browser);
+});
+
+test('Task history: Stop ends a running run', async ({ app, browser }) => {
+  await mockTasks(browser, [task('e2e-a', 'Sales report', GROUP_A)], async () => ({ status: 200, json: members(3) }));
+  const now = Math.floor(Date.now() / 1000);
+  const run = (run_id: string, status: string, extra: object = {}) => ({
+    run_id, status, task_id: 'e2e-a', task_name: 'Sales report', agent_id: 'default', trigger: 'scheduled',
+    channel_type: 'openai_api', instance_id: INST, started_at: now - 3000, ended_at: null, error: '', output_preview: '', ...extra,
+  });
+  await browser.route(/\/api\/scheduler\/runs\?/, (route: any) => route.fulfill({
+    json: { status: 'success', runs: [run('run-live', 'running'), run('run-old', 'done', { ended_at: now - 2000, output_preview: 'Sent' })] },
+  }));
+  const stops: any[] = [];
+  await browser.route(/\/api\/lrm\/runs/, (route: any) => {
+    stops.push(JSON.parse(route.request.postData || '{}'));
+    return route.fulfill({ json: { status: 'success', result: 'stopped' } });
+  });
+  await openTasks(app, browser);
+  await browser.locator('#tasks-tab-records').click();
+  await expect(browser.locator('#runs-list .lrm-run-stop')).toHaveCount(1);
+
+  await browser.locator('#runs-list .lrm-run-stop').click();
+  await expect.poll(() => stops.length).toBe(1);
+  expect(stops[0]).toEqual({ op: 'stop', run_id: 'run-live' });
+  await expect(browser.locator('#runs-list .lrm-run-stop')).toHaveCount(0);
+  await expect(browser.locator('#runs-list').first()).toContainText('Stopped');
+  // The click stops the run without opening its detail.
+  await expect(browser.locator('#run-detail-modal-overlay')).toBeHidden();
   await healthy(browser);
 });
 
