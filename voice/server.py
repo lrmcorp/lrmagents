@@ -329,7 +329,9 @@ def transcribe_groq(data, lang=None, prompt=None, post=None):
              f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
     if post is None:
         request = urllib.request.Request("https://api.groq.com/openai/v1/audio/transcriptions", data=body, method="POST",
-                                         headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": f"multipart/form-data; boundary={boundary}"})
+                                         headers={"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": f"multipart/form-data; boundary={boundary}",
+                                                  # Groq's edge refuses Python's default User-Agent with a 403.
+                                                  "User-Agent": "lrmagent-voice/1.0"})
         with urllib.request.urlopen(request, timeout=20) as r:
             reply = json.loads(r.read())
     else:
@@ -344,7 +346,8 @@ def transcribe(data, lang=None, prompt=None):
         try:
             return transcribe_groq(data, lang, prompt)
         except Exception as e:  # noqa: BLE001 - the local model answers instead
-            print(f"[voice] Groq speech-to-text unavailable, using the local model: {type(e).__name__}: {str(e)[:120]}", flush=True)
+            why = getattr(e, "read", lambda: b"")()[:200].decode(errors="replace")
+            print(f"[voice] Groq speech-to-text unavailable, using the local model: {type(e).__name__}: {str(e)[:120]} {why}", flush=True)
     audio = decode(data)
     with _stt_lock:
         # Fast settings for short spoken requests: one beam, no timestamps, no carrying text
